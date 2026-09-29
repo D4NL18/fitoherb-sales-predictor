@@ -1,0 +1,95 @@
+# ==========================================
+# Planilhas e Arquivos de Dados (Prevenção de vazamento de dados)
+# ==========================================
+*.csv
+*.tsv
+*.xlsx
+*.xls
+*.xlsm
+*.xlsb
+*.parquet
+*.feather
+*.h5
+*.hdf5
+*.pkl
+*.pickle
+*.sqlite
+*.sqlite3
+*.db
+
+# Pastas de dados brutos / confidenciais
+datasets/
+data/
+data/raw/
+data/processed/
+data/interim/
+data/external/
+
+# ==========================================
+# Exceções: Permitir templates e exemplos fictícios
+# ==========================================
+!templates/
+!templates/**
+!*template*.csv
+!*template*.xlsx
+!data/templates/
+!data/templates/**
+
+# ==========================================
+# Python & Ambientes Virtuais
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Ambientes virtuais
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Jupyter Notebook & Checkpoints
+.ipynb_checkpoints/
+*-checkpoint.ipynb
+
+# Variáveis de ambiente e segredos
+.env
+.env.*
+!.env.example
+
+# IDEs e Editores / Agentes
+.agents/
+AGENTS.md
+agents.md
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Logs e Sistema Operacional
+*.log
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
