@@ -1,0 +1,502 @@
+<div class="inventory-container">
+  <!-- Feature Hero Header -->
+  <section class="feature-hero">
+    <div class="hero-content">
+      <div class="title-group">
+        <div class="title-with-badge">
+          <h2 class="hero-title">Estoque Ideal & Previsão de Compras</h2>
+          <span class="ai-badge">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+            </svg>
+            IA Reposição Probabilística
+          </span>
+        </div>
+        <p class="hero-subtitle">
+          Inteligência Operacional B2B • Prevenção de Rupturas, Detecção de Overstock e Sugestão de Compras por Giro Real
+        </p>
+      </div>
+
+      <div class="hero-actions">
+        @if (lastCalculatedAt()) {
+          <div class="cache-badge" title="Data do último cálculo salvo em cache">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"></circle>
+              <polyline points="12 6 12 12 16 14"></polyline>
+            </svg>
+            <span>Último cálculo: {{ lastCalculatedAt() }}</span>
+          </div>
+        }
+
+        <button
+          type="button"
+          class="btn btn-secondary"
+          (click)="openSettingsModal()"
+          title="Ajustar hiperparâmetros de reposição"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+          <span>Parâmetros</span>
+        </button>
+
+        <button
+          type="button"
+          class="btn btn-primary"
+          [disabled]="isLoading()"
+          (click)="calculateInventory()"
+          title="Disparar novo cálculo analítico de reposição"
+        >
+          @if (isLoading()) {
+            <span class="spinner"></span>
+            <span>Calculando...</span>
+          } @else {
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+            </svg>
+            <span>Recalcular Estoque</span>
+          }
+        </button>
+
+        <button
+          type="button"
+          class="btn btn-success"
+          [disabled]="isDownloading() || products().length === 0"
+          (click)="downloadCsv()"
+          title="Baixar lista consolidada de compras em formato CSV"
+        >
+          @if (isDownloading()) {
+            <span class="spinner"></span>
+            <span>Gerando CSV...</span>
+          } @else {
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            <span>Baixar Pedido CSV</span>
+          }
+        </button>
+      </div>
+    </div>
+
+    <!-- Proof Bar / Cards de Métricas Principais -->
+    @if (kpis(); as kpi) {
+      <div class="proof-bar">
+        <div class="kpi-card card-danger">
+          <div class="kpi-label">
+            <span class="status-dot dot-danger"></span>
+            Ruptura Iminente
+          </div>
+          <div class="kpi-value">{{ kpi.skusEmRupturaCritica }} <span class="kpi-unit">SKUs</span></div>
+          <div class="kpi-sub">Estoque zera antes do prazo de entrega</div>
+        </div>
+
+        <div class="kpi-card card-warning">
+          <div class="kpi-label">
+            <span class="status-dot dot-warning"></span>
+            Reposição Necessária
+          </div>
+          <div class="kpi-value">{{ kpi.skusNecessitamReposicao }} <span class="kpi-unit">SKUs</span></div>
+          <div class="kpi-sub">Estoque atual abaixo do ROP</div>
+        </div>
+
+        <div class="kpi-card card-healthy">
+          <div class="kpi-label">
+            <span class="status-dot dot-healthy"></span>
+            Estoque Saudável
+          </div>
+          <div class="kpi-value">{{ kpi.skusEstoqueSaudavel }} <span class="kpi-unit">SKUs</span></div>
+          <div class="kpi-sub">Autonomia segura dentro da meta</div>
+        </div>
+
+        <div class="kpi-card card-overstock">
+          <div class="kpi-label">
+            <span class="status-dot dot-overstock"></span>
+            Excesso / Overstock
+          </div>
+          <div class="kpi-value">{{ kpi.skusEmOverstock }} <span class="kpi-unit">SKUs</span></div>
+          <div class="kpi-sub">Capital parado: R$ {{ kpi.capitalImobilizadoOverstock | number:'1.2-2' }}</div>
+        </div>
+
+        <div class="kpi-card card-financial">
+          <div class="kpi-label">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <line x1="12" y1="1" x2="12" y2="23"></line>
+              <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+            </svg>
+            Investimento Sugerido
+          </div>
+          <div class="kpi-value-highlight">R$ {{ kpi.investimentoTotalSugerido | number:'1.2-2' }}</div>
+          <div class="kpi-sub">Total de compra orçado a preço de custo</div>
+        </div>
+      </div>
+    }
+  </section>
+
+  <!-- Barra de Filtros e Busca -->
+  <section class="filters-panel">
+    <div class="search-box">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="11" cy="11" r="8"></circle>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+      </svg>
+      <input
+        type="text"
+        placeholder="Buscar por descrição, código ou EAN..."
+        [ngModel]="searchTerm()"
+        (ngModelChange)="searchTerm.set($event); currentPage.set(1)"
+      />
+      @if (searchTerm()) {
+        <button class="clear-search" (click)="searchTerm.set(''); currentPage.set(1)">×</button>
+      }
+    </div>
+
+    <div class="filter-controls">
+      <!-- Seletor de Fornecedor / Fabricante -->
+      <div class="select-group">
+        <label for="supFilter">Laboratório / Fornecedor:</label>
+        <select
+          id="supFilter"
+          [ngModel]="selectedSupplier()"
+          (ngModelChange)="selectedSupplier.set($event); currentPage.set(1)"
+        >
+          @for (sup of suppliers(); track sup.fornecedor) {
+            <option [value]="sup.fornecedor">
+              {{ sup.nome }} ({{ sup.totalSkus }})
+            </option>
+          }
+        </select>
+      </div>
+
+      <!-- Filtro por Status Operacional -->
+      <div class="pill-group">
+        <button
+          type="button"
+          class="pill-btn"
+          [class.active]="statusFilter() === 'ALL'"
+          (click)="statusFilter.set('ALL'); currentPage.set(1)"
+        >
+          Todos ({{ products().length }})
+        </button>
+        <button
+          type="button"
+          class="pill-btn pill-danger"
+          [class.active]="statusFilter() === 'CRITICAL_STOCKOUT'"
+          (click)="statusFilter.set('CRITICAL_STOCKOUT'); currentPage.set(1)"
+        >
+          🔴 Ruptura
+        </button>
+        <button
+          type="button"
+          class="pill-btn pill-warning"
+          [class.active]="statusFilter() === 'REORDER_NEEDED'"
+          (click)="statusFilter.set('REORDER_NEEDED'); currentPage.set(1)"
+        >
+          🟡 Reposição
+        </button>
+        <button
+          type="button"
+          class="pill-btn pill-healthy"
+          [class.active]="statusFilter() === 'HEALTHY'"
+          (click)="statusFilter.set('HEALTHY'); currentPage.set(1)"
+        >
+          🟢 Saudável
+        </button>
+        <button
+          type="button"
+          class="pill-btn pill-overstock"
+          [class.active]="statusFilter() === 'OVERSTOCK'"
+          (click)="statusFilter.set('OVERSTOCK'); currentPage.set(1)"
+        >
+          🔵 Overstock
+        </button>
+      </div>
+
+      <!-- Filtro Curva ABC -->
+      <div class="select-group">
+        <label for="abcFilter">Curva ABC:</label>
+        <select
+          id="abcFilter"
+          [ngModel]="curvaAbcFilter()"
+          (ngModelChange)="curvaAbcFilter.set($event); currentPage.set(1)"
+        >
+          <option value="ALL">Todas (A, B, C)</option>
+          <option value="A">Curva A (80% da Receita)</option>
+          <option value="B">Curva B (15% da Receita)</option>
+          <option value="C">Curva C (5% da Receita)</option>
+        </select>
+      </div>
+    </div>
+  </section>
+
+  <!-- Mensagens de Alerta -->
+  @if (errorMessage()) {
+    <div class="alert alert-danger">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"></circle>
+        <line x1="12" y1="8" x2="12" y2="12"></line>
+        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+      </svg>
+      <span>{{ errorMessage() }}</span>
+      <button class="alert-close" (click)="errorMessage.set(null)">×</button>
+    </div>
+  }
+
+  @if (successMessage()) {
+    <div class="alert alert-success">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+        <polyline points="22 4 12 14.01 9 11.01"></polyline>
+      </svg>
+      <span>{{ successMessage() }}</span>
+      <button class="alert-close" (click)="successMessage.set(null)">×</button>
+    </div>
+  }
+
+  <!-- Tabela de Produtos e Recomendações -->
+  <section class="table-section">
+    <div class="table-header-info">
+      <span>Exibindo <strong>{{ filteredProducts().length }}</strong> de <strong>{{ products().length }}</strong> produtos</span>
+    </div>
+
+    <div class="table-wrapper">
+      <table class="inventory-table">
+        <thead>
+          <tr>
+            <th (click)="toggleSort('codigo')" class="sortable">
+              Código
+              @if (sortColumn() === 'codigo') {
+                <span class="sort-indicator">{{ sortDirection() === 'asc' ? '↑' : '↓' }}</span>
+              }
+            </th>
+            <th (click)="toggleSort('descricao')" class="sortable">
+              Descrição
+              @if (sortColumn() === 'descricao') {
+                <span class="sort-indicator">{{ sortDirection() === 'asc' ? '↑' : '↓' }}</span>
+              }
+            </th>
+            <th>Laboratório</th>
+            <th>Curva</th>
+            <th (click)="toggleSort('estoqueAtual')" class="sortable text-right">
+              Estoque Atual
+              @if (sortColumn() === 'estoqueAtual') {
+                <span class="sort-indicator">{{ sortDirection() === 'asc' ? '↑' : '↓' }}</span>
+              }
+            </th>
+            <th (click)="toggleSort('vmd')" class="sortable text-right">
+              VMD (Giro/Dia)
+              @if (sortColumn() === 'vmd') {
+                <span class="sort-indicator">{{ sortDirection() === 'asc' ? '↑' : '↓' }}</span>
+              }
+            </th>
+            <th (click)="toggleSort('diasCobertura')" class="sortable text-right">
+              Autonomia (Dias)
+              @if (sortColumn() === 'diasCobertura') {
+                <span class="sort-indicator">{{ sortDirection() === 'asc' ? '↑' : '↓' }}</span>
+              }
+            </th>
+            <th class="text-right">ROP</th>
+            <th class="text-right">Estoque Ideal</th>
+            <th (click)="toggleSort('qtdSugeridaCompra')" class="sortable text-right highlight-col">
+              Sugestão Compra
+              @if (sortColumn() === 'qtdSugeridaCompra') {
+                <span class="sort-indicator">{{ sortDirection() === 'asc' ? '↑' : '↓' }}</span>
+              }
+            </th>
+            <th class="text-right">Custo Real</th>
+            <th (click)="toggleSort('investimentoTotalItem')" class="sortable text-right highlight-col">
+              Investimento
+              @if (sortColumn() === 'investimentoTotalItem') {
+                <span class="sort-indicator">{{ sortDirection() === 'asc' ? '↑' : '↓' }}</span>
+              }
+            </th>
+            <th (click)="toggleSort('status')" class="sortable text-center">
+              Status
+              @if (sortColumn() === 'status') {
+                <span class="sort-indicator">{{ sortDirection() === 'asc' ? '↑' : '↓' }}</span>
+              }
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (prod of paginatedProducts(); track prod.codigo) {
+            <tr [class.row-alert]="prod.status === 'CRITICAL_STOCKOUT'">
+              <td class="font-mono text-muted">{{ prod.codigo }}</td>
+              <td class="product-name" [title]="prod.descricao">
+                <span class="name-text">{{ prod.descricao }}</span>
+                <span class="ean-text">EAN: {{ prod.ean || '-' }}</span>
+              </td>
+              <td><span class="supplier-badge">{{ prod.fornecedor }}</span></td>
+              <td><span class="abc-badge abc-{{ prod.curvaAbc }}">{{ prod.curvaAbc }}</span></td>
+              <td class="text-right font-medium">{{ prod.estoqueAtual | number:'1.0-0' }}</td>
+              <td class="text-right">{{ prod.vmd | number:'1.2-2' }}</td>
+              <td class="text-right" [class.text-danger]="prod.diasCobertura < prod.leadTime && prod.vmd > 0">
+                {{ prod.diasCobertura === 999 ? '∞' : (prod.diasCobertura | number:'1.1-1') + 'd' }}
+              </td>
+              <td class="text-right text-muted">{{ prod.rop }}</td>
+              <td class="text-right font-medium">{{ prod.estoqueIdeal }}</td>
+              <td class="text-right highlight-col font-bold" [class.text-buy]="prod.qtdSugeridaCompra > 0">
+                {{ prod.qtdSugeridaCompra > 0 ? (prod.qtdSugeridaCompra | number:'1.0-0') : '-' }}
+              </td>
+              <td class="text-right text-muted">R$ {{ prod.custoUnitario | number:'1.2-2' }}</td>
+              <td class="text-right highlight-col font-bold">
+                {{ prod.investimentoTotalItem > 0 ? ('R$ ' + (prod.investimentoTotalItem | number:'1.2-2')) : '-' }}
+              </td>
+              <td class="text-center">
+                <span class="status-tag status-{{ prod.status.toLowerCase() }}">
+                  {{ prod.statusLabel }}
+                </span>
+              </td>
+            </tr>
+          } @empty {
+            <tr>
+              <td colspan="13" class="empty-state">
+                <div class="empty-content">
+                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                  </svg>
+                  <p>Nenhum produto encontrado com os filtros selecionados.</p>
+                </div>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Paginação -->
+    @if (totalPages() > 1) {
+      <div class="pagination-bar">
+        <button
+          type="button"
+          class="btn-page"
+          [disabled]="currentPage() === 1"
+          (click)="setPage(currentPage() - 1)"
+        >
+          ‹ Anterior
+        </button>
+        <span class="page-indicator">Página {{ currentPage() }} de {{ totalPages() }}</span>
+        <button
+          type="button"
+          class="btn-page"
+          [disabled]="currentPage() === totalPages()"
+          (click)="setPage(currentPage() + 1)"
+        >
+          Próxima ›
+        </button>
+      </div>
+    }
+  </section>
+
+  <!-- Modal de Calibração de Parâmetros -->
+  @if (isSettingsModalOpen()) {
+    <div class="modal-backdrop" (click)="closeSettingsModal()">
+      <div class="modal-card" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <div class="modal-title-group">
+            <h3>Parâmetros de Simulação de Estoque</h3>
+            <p>Ajuste os parâmetros matemáticos do motor preditivo</p>
+          </div>
+          <button class="modal-close-btn" (click)="closeSettingsModal()">×</button>
+        </div>
+
+        <div class="modal-body">
+          <!-- Janela de Histórico de Vendas -->
+          <div class="param-row">
+            <div class="param-label">
+              <label>Janela de Vendas Recentes (Dias)</label>
+              <span class="param-value-tag">{{ historyWindowDays() }} dias</span>
+            </div>
+            <input
+              type="range"
+              min="15"
+              max="180"
+              step="15"
+              [ngModel]="historyWindowDays()"
+              (ngModelChange)="historyWindowDays.set($event)"
+            />
+            <span class="param-desc">Período de vendas faturadas considerado para o cálculo da VMD.</span>
+          </div>
+
+          <!-- Lead Time Médio de Entrega -->
+          <div class="param-row">
+            <div class="param-label">
+              <label>Lead Time de Ressuprimento (Dias)</label>
+              <span class="param-value-tag">{{ leadTimeDays() }} dias</span>
+            </div>
+            <input
+              type="range"
+              min="5"
+              max="60"
+              step="1"
+              [ngModel]="leadTimeDays()"
+              (ngModelChange)="leadTimeDays.set($event)"
+            />
+            <span class="param-desc">Prazo médio de entrega da fábrica até o Centro de Distribuição.</span>
+          </div>
+
+          <!-- Cobertura Alvo no Estoque Ideal -->
+          <div class="param-row">
+            <div class="param-label">
+              <label>Autonomia Alvo de Estoque (Dias)</label>
+              <span class="param-value-tag">{{ targetCoverageDays() }} dias</span>
+            </div>
+            <input
+              type="range"
+              min="15"
+              max="90"
+              step="5"
+              [ngModel]="targetCoverageDays()"
+              (ngModelChange)="targetCoverageDays.set($event)"
+            />
+            <span class="param-desc">Meta de dias de vendas a serem cobertos pelo novo pedido.</span>
+          </div>
+
+          <!-- Nível de Serviço Probabilístico -->
+          <div class="param-row">
+            <div class="param-label">
+              <label>Nível de Serviço Probabilístico (Z-Score)</label>
+              <span class="param-value-tag">{{ serviceLevel() * 100 | number:'1.0-0' }}%</span>
+            </div>
+            <select
+              [ngModel]="serviceLevel()"
+              (ngModelChange)="serviceLevel.set($event)"
+              class="form-select"
+            >
+              <option [value]="0.90">Conservador (90% de disponibilidade, Z = 1.28)</option>
+              <option [value]="0.95">Padrão Distribuidora (95% de disponibilidade, Z = 1.65)</option>
+              <option [value]="0.98">Crítico / Sem Ruptura (98% de disponibilidade, Z = 2.05)</option>
+            </select>
+            <span class="param-desc">Proteção contra picos inesperados de demanda durante o lead time.</span>
+          </div>
+
+          <!-- Teto Orçamentário de Compras -->
+          <div class="param-row">
+            <div class="param-label">
+              <label>Teto Orçamentário Máximo (Opcional)</label>
+              <span class="param-value-tag">
+                {{ budgetLimit() ? ('R$ ' + (budgetLimit() | number:'1.0-0')) : 'Sem Limite' }}
+              </span>
+            </div>
+            <input
+              type="number"
+              placeholder="Ex: 150000 (deixe em branco para sem teto)"
+              [ngModel]="budgetLimit()"
+              (ngModelChange)="budgetLimit.set($event)"
+              class="form-input"
+            />
+            <span class="param-desc">Se preenchido, o motor prioriza os itens de maior risco e Curva A.</span>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" (click)="closeSettingsModal()">Cancelar</button>
+          <button type="button" class="btn btn-primary" (click)="applyModalSettings()">Aplicar e Recalcular</button>
+        </div>
+      </div>
+    </div>
+  }
+</div>

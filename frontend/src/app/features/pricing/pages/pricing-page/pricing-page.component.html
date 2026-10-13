@@ -1,0 +1,1167 @@
+<!-- Barra de Progresso Superior Ultra-Fina (Laser Line) -->
+@if (isProgressActive()) {
+  <div class="top-progress-container">
+    <div class="top-progress-fill" [style.width.%]="progressPercent()"></div>
+  </div>
+}
+
+<section class="feature-hero-header">
+  <div class="feature-hero-container">
+    <div class="feature-hero-title-group">
+      <div class="feature-badge-row">
+        <span class="feature-tag">Módulo Comercial de IA</span>
+        @if (lastSavedDate()) {
+          <div class="cache-badge" title="Previsão mais recente salva em cache e restaurada automaticamente">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <polyline points="12 6 12 12 16 14"></polyline>
+            </svg>
+            <span>Última previsão: {{ lastSavedDate() }}</span>
+          </div>
+        }
+      </div>
+      <h1 class="feature-title">Pricing Predictor</h1>
+      <p class="feature-subtitle">Inteligência Comercial B2B • Precificação Compensatória em Cesta Fechada</p>
+    </div>
+
+    <div class="feature-actions-bar">
+      <!-- Botão de Ajuda / Tutorial Interativo (Regra P-028) -->
+      <button 
+        type="button" 
+        class="btn-help" 
+        (click)="openTutorial()" 
+        title="Ver tutorial de como usar o sistema passo a passo"
+      >
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="16" x2="12" y2="12"></line>
+          <line x1="12" y1="8" x2="12.01" y2="8"></line>
+        </svg>
+        <span>Como Usar</span>
+      </button>
+
+      <!-- Botão de Parâmetros com Ícone de Engrenagem (Regra P-025 - Estilo Secundário) -->
+      <button 
+        type="button" 
+        class="btn-gear" 
+        (click)="openSettingsModal()" 
+        title="Abrir modal de configuração de parâmetros"
+      >
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+        <span>Parâmetros</span>
+      </button>
+
+      <!-- Botão de Realizar Previsão na Tela Principal (Fora do Modal - Estilo Primário Verde) -->
+      <button 
+        type="button" 
+        class="btn-predict-main" 
+        [disabled]="isLoading() || isProgressActive()" 
+        (click)="runPrediction()" 
+        title="Executar simulação e previsão de preços com os parâmetros atuais"
+      >
+        @if (isLoading()) {
+          <span class="spinner spinner-sm"></span>
+          <span>Calculando...</span>
+        } @else {
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+          </svg>
+          <span>Realizar Previsão</span>
+        }
+      </button>
+
+      <!-- Botão de Exportação CSV (Estilo Primário) -->
+      <button 
+        type="button" 
+        class="btn-export-nav" 
+        [disabled]="previewProducts().length === 0 || isDownloading()" 
+        (click)="downloadCsv()" 
+        title="Baixar lista de preços atual em formato CSV"
+      >
+        @if (isDownloading()) {
+          <span class="spinner spinner-sm"></span>
+        } @else {
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+        }
+        <span>Baixar CSV</span>
+      </button>
+    </div>
+  </div>
+</section>
+
+<main class="main-container">
+  <!-- Card de Progresso Interativo Dinâmico -->
+  @if (isProgressActive()) {
+    <div class="progress-card">
+      <div class="progress-card-header">
+        <div class="progress-info">
+          <span class="spinner spinner-primary"></span>
+          <span class="progress-message">{{ progressMessage() }}</span>
+        </div>
+        <span class="progress-percentage">{{ progressPercent() }}%</span>
+      </div>
+      <div class="progress-track">
+        <div class="progress-fill" [style.width.%]="progressPercent()"></div>
+      </div>
+    </div>
+  }
+
+  @if (errorMessage()) {
+    <div class="alert alert-error">
+      <div class="alert-icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="12" y1="8" x2="12" y2="12"/>
+          <line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+      </div>
+      <div class="alert-content">
+        <strong>Atenção:</strong> {{ errorMessage() }}
+        <p class="alert-help">Certifique-se de que a API FastAPI está em execução: <code>python -m uvicorn src.api:app --reload --port 8000</code></p>
+      </div>
+    </div>
+  }
+
+  @if (successMessage()) {
+    <div class="alert alert-success">
+      <div class="alert-icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+          <polyline points="22 4 12 14.01 9 11.01"/>
+        </svg>
+      </div>
+      <div class="alert-content">{{ successMessage() }}</div>
+    </div>
+  }
+
+  <!-- Empty State Amigável quando não houver produtos calculados -->
+  @if (previewProducts().length === 0 && !isProgressActive()) {
+    <div class="empty-main-card">
+      <div class="empty-main-icon">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <polyline points="14 2 14 8 20 8"></polyline>
+          <line x1="16" y1="13" x2="8" y2="13"></line>
+          <line x1="16" y1="17" x2="8" y2="17"></line>
+          <polyline points="10 9 9 9 8 9"></polyline>
+        </svg>
+      </div>
+      <h2 class="empty-main-title">Nenhuma precificação gerada no momento</h2>
+      <p class="empty-main-desc">
+        Acesse os parâmetros através do botão de engrenagem no cabeçalho para calibrar sua estratégia, ou inicie o cálculo com os valores padrão.
+      </p>
+      <div class="empty-main-actions">
+        <button type="button" class="btn btn-primary" (click)="openSettingsModal()">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+          <span>Configurar Parâmetros</span>
+        </button>
+        <button type="button" class="btn btn-secondary" [disabled]="isLoading()" (click)="runPrediction()">
+          <span>Calcular com Valores Padrão</span>
+        </button>
+      </div>
+    </div>
+  }
+
+  <!-- Tabela Completa de Precificação com Filtros, Paginação e Busca (US-12, P-019 a P-021) -->
+  @if (previewProducts().length > 0) {
+    <section class="card catalog-card catalog-section full-width">
+      
+      <!-- Cabeçalho da Seção com Título e Badges de Contagem -->
+      <div class="catalog-header">
+        <div class="catalog-title-col">
+          <h2 class="catalog-title">Tabela de Precificação Prescritiva</h2>
+          <p class="catalog-subtitle">
+            Visualização completa dos 1.398 SKUs do catálogo com novos preços sugeridos e regras comerciais:
+          </p>
+        </div>
+        <div class="catalog-badges">
+          <span class="badge-count badge-total">Total: {{ roleCounts().all }} SKUs</span>
+          <span class="badge-count badge-filtered">Exibindo: {{ filteredProducts().length }}</span>
+        </div>
+      </div>
+
+      <!-- Barra de Ferramentas: Busca, Filtros de Papel e Marca -->
+      <div class="catalog-toolbar">
+        
+        <!-- Campo de Busca Textual Global -->
+        <div class="search-box">
+          <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"/>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <input 
+            type="text" 
+            [ngModel]="searchTerm()" 
+            (ngModelChange)="setSearchTerm($event)"
+            placeholder="Buscar por código, descrição, marca ou regra..." 
+            class="search-input"
+          />
+          @if (searchTerm()) {
+            <button type="button" class="btn-clear-search" (click)="clearSearch()" title="Limpar busca">×</button>
+          }
+        </div>
+
+        <!-- Filtro por Marca / Fornecedor -->
+        <div class="filter-select-wrapper">
+          <label for="brandSelect" class="filter-label">Marca:</label>
+          <select 
+            id="brandSelect"
+            [ngModel]="brandFilter()" 
+            (ngModelChange)="setBrandFilter($event)" 
+            class="filter-select"
+          >
+            <option value="ALL">Todas as Marcas ({{ availableBrands().length }})</option>
+            @for (b of availableBrands(); track b) {
+              <option [value]="b">{{ b }}</option>
+            }
+          </select>
+        </div>
+
+        <!-- Filtro Rápido por Papel Estratégico (Pills Segmentadas) -->
+        <div class="role-filter-pills">
+          <button 
+            type="button" 
+            class="pill-btn" 
+            [class.active]="roleFilter() === 'ALL'" 
+            (click)="setRoleFilter('ALL')"
+          >
+            Todos ({{ roleCounts().all }})
+          </button>
+          <button 
+            type="button" 
+            class="pill-btn pill-btn-anchor" 
+            [class.active]="roleFilter() === 'ANCHOR'" 
+            (click)="setRoleFilter('ANCHOR')"
+          >
+            Âncoras ({{ roleCounts().anchors }})
+          </button>
+          <button 
+            type="button" 
+            class="pill-btn pill-btn-comp" 
+            [class.active]="roleFilter() === 'COMP'" 
+            (click)="setRoleFilter('COMP')"
+          >
+            Compensadores ({{ roleCounts().comps }})
+          </button>
+          <button 
+            type="button" 
+            class="pill-btn pill-btn-neutral" 
+            [class.active]="roleFilter() === 'NEUTRAL'" 
+            (click)="setRoleFilter('NEUTRAL')"
+          >
+            Neutros ({{ roleCounts().neutrals }})
+          </button>
+        </div>
+
+        @if (searchTerm() || roleFilter() !== 'ALL' || brandFilter() !== 'ALL' || sortColumn()) {
+          <button type="button" class="btn-reset-filters" (click)="clearAllFilters()" title="Redefinir todos os filtros">
+            Limpar Filtros
+          </button>
+        }
+
+      </div>
+
+      <!-- Tabela Responsiva com Cabeçalhos Ordenáveis -->
+      <div class="table-responsive">
+        <table class="catalog-table">
+          <thead>
+            <tr>
+              <th class="cursor-pointer" (click)="toggleSort('codigo')">
+                <div class="th-content">
+                  <span>Código</span>
+                  <span class="sort-icon">{{ sortColumn() === 'codigo' ? (sortDirection() === 'asc' ? '▲' : '▼') : '↕' }}</span>
+                </div>
+              </th>
+              <th class="cursor-pointer" (click)="toggleSort('descricao')">
+                <div class="th-content">
+                  <span>Descrição do Produto</span>
+                  <span class="sort-icon">{{ sortColumn() === 'descricao' ? (sortDirection() === 'asc' ? '▲' : '▼') : '↕' }}</span>
+                </div>
+              </th>
+              <th class="cursor-pointer" (click)="toggleSort('fornecedor')">
+                <div class="th-content">
+                  <span>Marca</span>
+                  <span class="sort-icon">{{ sortColumn() === 'fornecedor' ? (sortDirection() === 'asc' ? '▲' : '▼') : '↕' }}</span>
+                </div>
+              </th>
+              <th class="cursor-pointer" (click)="toggleSort('papelEstrategico')">
+                <div class="th-content">
+                  <span>Papel</span>
+                  <span class="sort-icon">{{ sortColumn() === 'papelEstrategico' ? (sortDirection() === 'asc' ? '▲' : '▼') : '↕' }}</span>
+                </div>
+              </th>
+              <th class="text-right cursor-pointer" (click)="toggleSort('precoAtual')">
+                <div class="th-content justify-end">
+                  <span>Preço Vigente</span>
+                  <span class="sort-icon">{{ sortColumn() === 'precoAtual' ? (sortDirection() === 'asc' ? '▲' : '▼') : '↕' }}</span>
+                </div>
+              </th>
+              <th class="text-right cursor-pointer" (click)="toggleSort('novoPreco')">
+                <div class="th-content justify-end">
+                  <span>Novo Preço</span>
+                  <span class="sort-icon">{{ sortColumn() === 'novoPreco' ? (sortDirection() === 'asc' ? '▲' : '▼') : '↕' }}</span>
+                </div>
+              </th>
+              <th class="text-right cursor-pointer" (click)="toggleSort('variacaoPct')">
+                <div class="th-content justify-end">
+                  <span>Variação</span>
+                  <span class="sort-icon">{{ sortColumn() === 'variacaoPct' ? (sortDirection() === 'asc' ? '▲' : '▼') : '↕' }}</span>
+                </div>
+              </th>
+              <th class="cursor-pointer" (click)="toggleSort('regraComercial')">
+                <div class="th-content">
+                  <span>Regra Comercial</span>
+                  <span class="sort-icon">{{ sortColumn() === 'regraComercial' ? (sortDirection() === 'asc' ? '▲' : '▼') : '↕' }}</span>
+                </div>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            @if (paginatedProducts().length === 0) {
+              <tr>
+                <td colspan="8" class="empty-state-cell">
+                  <div class="empty-state">
+                    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="11" cy="11" r="8"/>
+                      <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                      <line x1="8" y1="11" x2="14" y2="11"/>
+                    </svg>
+                    <p class="empty-title">Nenhum produto encontrado</p>
+                    <p class="empty-desc">Não há produtos correspondentes aos filtros ou busca selecionados.</p>
+                    <button type="button" class="btn btn-secondary btn-sm" (click)="clearAllFilters()">
+                      Limpar Filtros de Busca
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            } @else {
+              @for (prod of paginatedProducts(); track prod.codigo) {
+                <tr [class.row-anchor]="prod.papelEstrategico.includes('ÂNCORA')" [class.row-comp]="prod.papelEstrategico.includes('COMPENSADOR')">
+                  <td class="cell-code">{{ prod.codigo }}</td>
+                  <td class="cell-desc" [title]="prod.descricao">{{ prod.descricao }}</td>
+                  <td class="cell-brand">{{ prod.fornecedor }}</td>
+                  <td>
+                    @if (prod.papelEstrategico.includes('ÂNCORA')) {
+                      <span class="badge badge-anchor">PRODUTO ÂNCORA</span>
+                    } @else if (prod.papelEstrategico.includes('COMPENSADOR')) {
+                      <span class="badge badge-comp">COMPENSADOR</span>
+                    } @else {
+                      <span class="badge badge-neutral">NEUTRO</span>
+                    }
+                  </td>
+                  <td class="text-right cell-price">R$ {{ prod.precoAtual | number:'1.2-2' }}</td>
+                  <td class="text-right cell-price font-bold">R$ {{ prod.novoPreco | number:'1.2-2' }}</td>
+                  <td class="text-right cell-variation" [class.text-danger]="prod.variacaoPct < 0" [class.text-success]="prod.variacaoPct > 0" [class.text-muted]="prod.variacaoPct === 0">
+                    {{ prod.variacaoPct > 0 ? '+' : '' }}{{ prod.variacaoPct | number:'1.1-1' }}%
+                  </td>
+                  <td class="cell-rule" [title]="prod.regraComercial">
+                    <span class="rule-text" [class.rule-anchor]="prod.papelEstrategico.includes('ÂNCORA')" [class.rule-comp]="prod.papelEstrategico.includes('COMPENSADOR')">
+                      {{ prod.regraComercial }}
+                    </span>
+                  </td>
+                </tr>
+              }
+            }
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Rodapé da Paginação Completa (P-021) -->
+      <div class="pagination-footer">
+        <div class="pagination-info">
+          {{ paginationSummary() }}
+        </div>
+
+        <div class="pagination-page-size">
+          <label for="pageSizeSelect">Itens por página:</label>
+          <select 
+            id="pageSizeSelect" 
+            [ngModel]="pageSize()" 
+            (ngModelChange)="setPageSize($event)"
+            class="page-size-select"
+          >
+            <option [value]="10">10</option>
+            <option [value]="25">25</option>
+            <option [value]="50">50</option>
+            <option [value]="100">100</option>
+            <option [value]="-1">Todos (1.398)</option>
+          </select>
+        </div>
+
+        <div class="pagination-nav">
+          <button 
+            type="button" 
+            class="page-btn nav-btn" 
+            [disabled]="currentPage() === 1" 
+            (click)="goToPage(1)" 
+            title="Primeira página"
+          >
+            «
+          </button>
+          <button 
+            type="button" 
+            class="page-btn nav-btn" 
+            [disabled]="currentPage() === 1" 
+            (click)="goToPage(currentPage() - 1)" 
+            title="Página anterior"
+          >
+            ‹
+          </button>
+
+          @for (p of paginationPages(); track p) {
+            <button 
+              type="button" 
+              class="page-btn" 
+              [class.active]="currentPage() === p" 
+              (click)="goToPage(p)"
+            >
+              {{ p }}
+            </button>
+          }
+
+          <button 
+            type="button" 
+            class="page-btn nav-btn" 
+            [disabled]="currentPage() === totalPages()" 
+            (click)="goToPage(currentPage() + 1)" 
+            title="Próxima página"
+          >
+            ›
+          </button>
+          <button 
+            type="button" 
+            class="page-btn nav-btn" 
+            [disabled]="currentPage() === totalPages()" 
+            (click)="goToPage(totalPages())" 
+            title="Última página"
+          >
+            »
+          </button>
+        </div>
+      </div>
+
+    </section>
+  }
+</main>
+
+<!-- Modal de Parâmetros de Precificação (Regras P-025 e P-026) -->
+@if (isSettingsModalOpen()) {
+  <div class="modal-backdrop" (click)="closeSettingsModal()"></div>
+  <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="modal-settings-title">
+    
+    <!-- Cabeçalho do Modal -->
+    <div class="modal-header">
+      <div class="modal-title-wrap">
+        <div class="modal-icon-badge">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+        </div>
+        <div>
+          <h2 id="modal-settings-title" class="modal-title">Parâmetros de Precificação</h2>
+          <p class="modal-subtitle">Configure as diretrizes comerciais ou selecione uma estratégia predefinida</p>
+        </div>
+      </div>
+      <button type="button" class="btn-modal-close" (click)="closeSettingsModal()" title="Fechar modal">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Corpo do Modal -->
+    <div class="modal-body">
+      
+      <!-- Seção 1: Seleção de Estratégia com Botão Confirmar Embutido (P-025) -->
+      <div class="strategy-banner-card">
+        <div class="strategy-banner-header">
+          <div class="strategy-banner-title-wrap">
+            <span class="strategy-label">Perfil da Estratégia</span>
+            <span class="strategy-badge">Calibração Automática</span>
+          </div>
+          <p class="strategy-banner-desc">
+            Selecione a abordagem comercial desejada e clique em <strong>Confirmar</strong> para recalcular os parâmetros ideais e a lista de preços automaticamente:
+          </p>
+        </div>
+
+        <div class="strategy-select-container">
+          <div class="custom-strategy-dropdown" [class.open]="isStrategyDropdownOpen()">
+            <!-- Trigger do Select -->
+            <button 
+              type="button" 
+              class="strategy-dropdown-trigger" 
+              (click)="toggleStrategyDropdown()"
+              [attr.aria-expanded]="isStrategyDropdownOpen()"
+              aria-haspopup="listbox"
+              id="strategySelectTrigger"
+              title="Clique para escolher a estratégia e confirmar"
+            >
+              <div class="selected-strategy-display">
+                <span class="strategy-option-icon">
+                  @if (selectedStrategy() === 'volume_focused') { 📈 }
+                  @else if (selectedStrategy() === 'profit_focused') { 🎯 }
+                  @else { ⚖️ }
+                </span>
+                <div class="selected-strategy-info">
+                  <span class="selected-strategy-title">{{ selectedStrategyTitle() }}</span>
+                  <span class="selected-strategy-subtitle">{{ selectedStrategySubtitle() }}</span>
+                </div>
+              </div>
+              <svg class="dropdown-chevron" [class.rotated]="isStrategyDropdownOpen()" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="6 9 12 15 18 9"></polyline>
+              </svg>
+            </button>
+
+            <!-- Painel de Opções com Botão de Confirmação Embutido (Regra P-032) -->
+            @if (isStrategyDropdownOpen()) {
+              <div class="strategy-options-panel animate-dropdown" role="listbox">
+                <div class="strategy-options-header">
+                  <span>Escolha o perfil desejado:</span>
+                </div>
+
+                <div class="strategy-options-list">
+                  <!-- Opção 1: Leve -->
+                  <div 
+                    class="strategy-option-item" 
+                    [class.active]="selectedStrategy() === 'volume_focused'"
+                    (click)="selectStrategy('volume_focused')"
+                    role="option"
+                    [attr.aria-selected]="selectedStrategy() === 'volume_focused'"
+                  >
+                    <div class="option-content">
+                      <span class="option-icon">📈</span>
+                      <div class="option-text">
+                        <strong class="option-title">Leve</strong>
+                        <span class="option-desc">Foco em volume de vendas, giro rápido e atração máxima</span>
+                      </div>
+                    </div>
+                    @if (selectedStrategy() === 'volume_focused') {
+                      <svg class="check-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                      </svg>
+                    }
+                  </div>
+
+                  <!-- Opção 2: Equilibrado -->
+                  <div 
+                    class="strategy-option-item" 
+                    [class.active]="selectedStrategy() === 'balanced'"
+                    (click)="selectStrategy('balanced')"
+                    role="option"
+                    [attr.aria-selected]="selectedStrategy() === 'balanced'"
+                  >
+                    <div class="option-content">
+                      <span class="option-icon">⚖️</span>
+                      <div class="option-text">
+                        <div class="option-title-row">
+                          <strong class="option-title">Equilibrado</strong>
+                          <span class="badge-recommended">Recomendado</span>
+                        </div>
+                        <span class="option-desc">Equilíbrio saudável entre atratividade das âncoras e margem total</span>
+                      </div>
+                    </div>
+                    @if (selectedStrategy() === 'balanced') {
+                      <svg class="check-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                      </svg>
+                    }
+                  </div>
+
+                  <!-- Opção 3: Agressivo -->
+                  <div 
+                    class="strategy-option-item" 
+                    [class.active]="selectedStrategy() === 'profit_focused'"
+                    (click)="selectStrategy('profit_focused')"
+                    role="option"
+                    [attr.aria-selected]="selectedStrategy() === 'profit_focused'"
+                  >
+                    <div class="option-content">
+                      <span class="option-icon">🎯</span>
+                      <div class="option-text">
+                        <strong class="option-title">Agressivo</strong>
+                        <span class="option-desc">Foco em margem de contribuição e rentabilidade máxima</span>
+                      </div>
+                    </div>
+                    @if (selectedStrategy() === 'profit_focused') {
+                      <svg class="check-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                      </svg>
+                    }
+                  </div>
+                </div>
+
+                <!-- Botão de Confirmação Dentro do Painel de Opções do Select -->
+                <div class="strategy-dropdown-footer">
+                  <button 
+                    type="button" 
+                    class="btn-confirm-inside-options" 
+                    [disabled]="isAutoTuning() || isLoading()" 
+                    (click)="confirmStrategyAndRecalculate()"
+                    title="Confirmar escolha e recalcular parâmetros automaticamente"
+                  >
+                    @if (isAutoTuning()) {
+                      <span class="spinner spinner-sm"></span>
+                      <span>Calibrando...</span>
+                    } @else {
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                      </svg>
+                      <span>Confirmar Escolha</span>
+                    }
+                  </button>
+                </div>
+              </div>
+            }
+          </div>
+        </div>
+      </div>
+
+      <!-- Seção 2: Ajuste Detalhado dos Parâmetros com Tooltips Explicativos (P-026) -->
+      <div class="params-section-title">
+        <span>Ajuste Detalhado dos Parâmetros</span>
+      </div>
+
+      <div class="inputs-grid-modal">
+        
+        <!-- Parâmetro 1: Trava Comercial de Parâmetros (K%) -->
+        <div class="input-card" [class.highlight-card]="variableKRatio()">
+          <div class="label-row">
+            <div class="label-with-info">
+              <label for="modal-kRatio">Trava Comercial de Pedido (K%)</label>
+              <div class="info-tooltip-wrap" tabindex="0">
+                <svg class="info-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="12" y1="16" x2="12" y2="12"></line>
+                  <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                </svg>
+                <div class="tooltip-bubble" role="tooltip">
+                  <strong>Trava Comercial de Pedido (K%):</strong><br>
+                  Controla a proporção máxima de produtos em promoção (com desconto) que um cliente pode levar em relação ao total do pedido. Isso impede que comprem apenas itens com desconto sem levar outros produtos lucrativos.
+                </div>
+              </div>
+            </div>
+            
+            @if (variableKRatio()) {
+              <span class="pill-badge pill-primary" title="Travas individuais calibradas pelo consumo histórico">
+                Otimizada ({{ summary()?.minKRatio ? (summary()!.minKRatio! * 100 | number:'1.0-0') : '9' }}% a {{ summary()?.maxKRatio ? (summary()!.maxKRatio! * 100 | number:'1.0-0') : '36' }}%)
+              </span>
+            } @else {
+              <span class="pill-badge pill-neutral">{{ kRatio() }}% Fixa</span>
+            }
+          </div>
+
+          <div class="lock-mode-toggle">
+            <label class="toggle-container" title="Alternar entre trava dinâmica por produto ou trava uniforme fixa">
+              <input 
+                type="checkbox" 
+                [checked]="variableKRatio()" 
+                (change)="toggleVariableKRatio()"
+              />
+              <span class="toggle-track">
+                <span class="toggle-indicator"></span>
+              </span>
+              <span class="toggle-text">
+                @if (variableKRatio()) {
+                  <strong>Trava Dinâmica Inteligente</strong> (Recomendada)
+                } @else {
+                  <span>Trava Uniforme Fixa</span>
+                }
+              </span>
+            </label>
+          </div>
+
+          <input 
+            id="modal-kRatio" 
+            type="range" 
+            min="15" 
+            max="35" 
+            step="1" 
+            [ngModel]="kRatio()" 
+            (ngModelChange)="onKRatioChange($event)"
+            class="range-slider"
+          />
+        </div>
+
+        <!-- Parâmetro 2: Desconto no Produto Âncora -->
+        <div class="input-card">
+          <div class="label-row">
+            <div class="label-with-info">
+              <label for="modal-anchorDiscount">Desconto no Produto Âncora</label>
+              <div class="info-tooltip-wrap" tabindex="0">
+                <svg class="info-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="12" y1="16" x2="12" y2="12"></line>
+                  <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                </svg>
+                <div class="tooltip-bubble" role="tooltip">
+                  <strong>Desconto no Produto Âncora:</strong><br>
+                  Percentual de desconto promocional aplicado nos produtos mais vendidos (âncoras). Serve como isca comercial para atrair os clientes, com trava de segurança para nunca vender abaixo do custo + 5%.
+                </div>
+              </div>
+            </div>
+            <span class="pill-badge pill-danger">{{ anchorDiscount() }}%</span>
+          </div>
+          
+          <input 
+            id="modal-anchorDiscount" 
+            type="range" 
+            min="-15" 
+            max="-5" 
+            step="1" 
+            [ngModel]="anchorDiscount()" 
+            (ngModelChange)="anchorDiscount.set($event)"
+            class="range-slider range-danger"
+          />
+        </div>
+
+        <!-- Parâmetro 3: Teto de Reajuste Compensador -->
+        <div class="input-card">
+          <div class="label-row">
+            <div class="label-with-info">
+              <label for="modal-compMaxIncrease">Teto de Reajuste Compensador</label>
+              <div class="info-tooltip-wrap" tabindex="0">
+                <svg class="info-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="12" y1="16" x2="12" y2="12"></line>
+                  <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                </svg>
+                <div class="tooltip-bubble" role="tooltip">
+                  <strong>Teto de Reajuste Compensador:</strong><br>
+                  Acréscimo sutil nos produtos complementares que são frequentemente comprados junto com os itens âncora. Este ajuste suave financia o desconto e preserva a margem total da empresa.
+                </div>
+              </div>
+            </div>
+            <span class="pill-badge pill-success">+{{ compMaxIncrease() }}%</span>
+          </div>
+
+          <input 
+            id="modal-compMaxIncrease" 
+            type="range" 
+            min="1" 
+            max="8" 
+            step="1" 
+            [ngModel]="compMaxIncrease()" 
+            (ngModelChange)="compMaxIncrease.set($event)"
+            class="range-slider range-success"
+          />
+        </div>
+
+        <!-- Parâmetro 4: Queda de Volume no Estresse -->
+        <div class="input-card">
+          <div class="label-row">
+            <div class="label-with-info">
+              <label for="modal-stressDrop">Queda de Volume no Estresse</label>
+              <div class="info-tooltip-wrap" tabindex="0">
+                <svg class="info-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="12" y1="16" x2="12" y2="12"></line>
+                  <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                </svg>
+                <div class="tooltip-bubble" role="tooltip">
+                  <strong>Queda de Volume no Estresse:</strong><br>
+                  Simulação de segurança preventiva: estima uma possível redução na quantidade vendida dos produtos reajustados para assegurar que, mesmo em um cenário de mercado adverso, sua rentabilidade permaneça protegida.
+                </div>
+              </div>
+            </div>
+            <span class="pill-badge pill-warning">-{{ stressDrop() }}%</span>
+          </div>
+
+          <input 
+            id="modal-stressDrop" 
+            type="range" 
+            min="1" 
+            max="10" 
+            step="1" 
+            [ngModel]="stressDrop()" 
+            (ngModelChange)="stressDrop.set($event)"
+            class="range-slider"
+          />
+        </div>
+
+        <!-- Parâmetro 5: Quantidade de Produtos Âncora -->
+        <div class="input-card">
+          <div class="label-row">
+            <div class="label-with-info">
+              <label for="modal-topAnchors">Quantidade de Âncoras</label>
+              <div class="info-tooltip-wrap" tabindex="0">
+                <svg class="info-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="12" y1="16" x2="12" y2="12"></line>
+                  <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                </svg>
+                <div class="tooltip-bubble" role="tooltip">
+                  <strong>Quantidade de Âncoras:</strong><br>
+                  Número de produtos líderes em vendas do catálogo que serão selecionados como 'âncoras' para atrair os clientes e alavancar a cesta de compras da loja.
+                </div>
+              </div>
+            </div>
+            <span class="pill-badge pill-neutral">{{ topAnchors() }} SKUs</span>
+          </div>
+
+          <input 
+            id="modal-topAnchors" 
+            type="number" 
+            min="5" 
+            max="30" 
+            [ngModel]="topAnchors()" 
+            (ngModelChange)="topAnchors.set($event)"
+            class="input-number"
+          />
+        </div>
+
+        <!-- Parâmetro 6: Período de Análise (Dias) -->
+        <div class="input-card">
+          <div class="label-row">
+            <div class="label-with-info">
+              <label for="modal-halfLifeDays">Período de Análise (Dias)</label>
+              <div class="info-tooltip-wrap" tabindex="0">
+                <svg class="info-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="12" y1="16" x2="12" y2="12"></line>
+                  <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                </svg>
+                <div class="tooltip-bubble" role="tooltip">
+                  <strong>Período de Análise Histórica:</strong><br>
+                  Quantidade de dias do histórico de vendas considerada no cálculo, dando maior peso às compras recentes para refletir com precisão os hábitos de compra atuais.
+                </div>
+              </div>
+            </div>
+            <span class="pill-badge pill-neutral">{{ halfLifeDays() }} dias</span>
+          </div>
+
+          <input 
+            id="modal-halfLifeDays" 
+            type="number" 
+            min="30" 
+            max="365" 
+            step="5"
+            [ngModel]="halfLifeDays()" 
+            (ngModelChange)="halfLifeDays.set($event)"
+            class="input-number"
+          />
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- Rodapé do Modal -->
+    <div class="modal-footer">
+      <button 
+        type="button" 
+        class="btn-footer-link" 
+        (click)="resetDefaults()" 
+        title="Restaurar parâmetros recomendados padrão"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+          <path d="M3 3v5h5"/>
+        </svg>
+        <span>Restaurar Padrão</span>
+      </button>
+
+      <div class="modal-footer-actions">
+        <button 
+          type="button" 
+          class="btn btn-secondary" 
+          (click)="closeSettingsModal()"
+        >
+          Cancelar
+        </button>
+
+        <button 
+          type="button" 
+          class="btn btn-primary" 
+          [disabled]="isLoading() || isAutoTuning()" 
+          (click)="applyManualParameters()"
+        >
+          @if (isLoading()) {
+            <span class="spinner spinner-sm"></span>
+            <span>Calculando...</span>
+          } @else {
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M13 10V3L4 14h7v7l9-11h-7z"/>
+            </svg>
+            <span>Aplicar e Calcular</span>
+          }
+        </button>
+      </div>
+    </div>
+
+  </div>
+}
+
+<!-- Modal de Tutorial Interativo / Onboarding Passo a Passo (Regras P-028 a P-030) -->
+@if (isTutorialModalOpen()) {
+  <div class="modal-backdrop" (click)="closeTutorial()"></div>
+  <div class="modal-dialog tutorial-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="tutorial-modal-title">
+    
+    <!-- Cabeçalho do Tutorial -->
+    <div class="modal-header">
+      <div class="modal-title-wrap">
+        <div class="modal-icon-badge tutorial-icon-badge">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="16" x2="12" y2="12"></line>
+            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+          </svg>
+        </div>
+        <div>
+          <h2 id="tutorial-modal-title" class="modal-title">Guia de Uso do Sistema</h2>
+          <p class="modal-subtitle">Passo {{ tutorialCurrentStep() }} de {{ tutorialTotalSteps }} • Aprenda a utilizar o Pricing Predictor</p>
+        </div>
+      </div>
+      <button type="button" class="btn-modal-close" (click)="closeTutorial()" title="Fechar tutorial">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Corpo do Tutorial com Animação por Passo -->
+    <div class="modal-body tutorial-modal-body">
+      @switch (tutorialCurrentStep()) {
+        
+        @case (1) {
+          <div class="tutorial-step-card animate-fade">
+            <div class="tutorial-step-tag">Etapa 1 de 5 • Propósito</div>
+            <h3 class="tutorial-step-heading">O que é a Precificação Compensatória?</h3>
+            <p class="tutorial-step-text">
+              O <strong>Pricing Predictor</strong> é uma ferramenta de inteligência comercial desenvolvida para distribuidores e atacadistas da Fitoherb Nordeste.
+            </p>
+            <p class="tutorial-step-text">
+              Ao invés de dar descontos generalizados que reduzem seu lucro, o sistema identifica produtos <strong>âncora</strong> para atrair pedidos e aplica um reajuste sutil nos produtos <strong>complementares</strong> que os clientes compram juntos. O resultado é maior volume de vendas sem abrir mão da rentabilidade global da empresa.
+            </p>
+
+            <div class="tutorial-flow-visual">
+              <div class="flow-box flow-anchor">
+                <span class="flow-icon">🎯</span>
+                <span class="flow-label">Produto Âncora</span>
+                <span class="flow-sub">Desconto atrativo (-10%)</span>
+              </div>
+              <div class="flow-plus">+</div>
+              <div class="flow-box flow-comp">
+                <span class="flow-icon">⚖️</span>
+                <span class="flow-label">Itens Complementares</span>
+                <span class="flow-sub">Acréscimo suave (+6%)</span>
+              </div>
+              <div class="flow-equals">=</div>
+              <div class="flow-box flow-result">
+                <span class="flow-icon">🛡️</span>
+                <span class="flow-label">Margem Protegida</span>
+                <span class="flow-sub">Mais vendas com lucro seguro</span>
+              </div>
+            </div>
+          </div>
+        }
+
+        @case (2) {
+          <div class="tutorial-step-card animate-fade">
+            <div class="tutorial-step-tag">Etapa 2 de 5 • Classificação</div>
+            <h3 class="tutorial-step-heading">Os 3 Papéis Estratégicos dos Produtos</h3>
+            <p class="tutorial-step-text">
+              Cada um dos 1.398 produtos do catálogo recebe uma classificação automática calculada a partir do histórico real de vendas:
+            </p>
+
+            <div class="tutorial-role-grid">
+              <div class="role-tutorial-card card-anchor">
+                <div class="role-badge badge-anchor">PRODUTO ÂNCORA</div>
+                <h4>Líderes de Giro ("Iscas")</h4>
+                <p>
+                  Produtos de alto volume e relevância que os clientes sempre procuram. Recebem desconto promocional controlado para fechar pedidos.
+                </p>
+              </div>
+
+              <div class="role-tutorial-card card-comp">
+                <div class="role-badge badge-comp">COMPENSADOR</div>
+                <h4>Itens de Financiamento</h4>
+                <p>
+                  Produtos que o comprador quase sempre adiciona na mesma cesta com o âncora. Recebem acréscimo leve (+1% a +8%) para financiar o desconto.
+                </p>
+              </div>
+
+              <div class="role-tutorial-card card-neutral">
+                <div class="role-badge badge-neutral">NEUTRO</div>
+                <h4>Preço de Mercado</h4>
+                <p>
+                  Produtos independentes sem associação frequente com os âncoras. Permanecem com seus preços vigentes sem alterações.
+                </p>
+              </div>
+            </div>
+          </div>
+        }
+
+        @case (3) {
+          <div class="tutorial-step-card animate-fade">
+            <div class="tutorial-step-tag">Etapa 3 de 5 • Configuração</div>
+            <h3 class="tutorial-step-heading">Ajustando Parâmetros na Engrenagem</h3>
+            <p class="tutorial-step-text">
+              No topo da página, clique no botão <strong>Parâmetros (Engrenagem)</strong> para abrir o painel de diretrizes comerciais:
+            </p>
+
+            <div class="tutorial-feature-list">
+              <div class="feature-item">
+                <div class="feature-num">1</div>
+                <div>
+                  <strong>Selecione uma Estratégia Pronta:</strong>
+                  <p>Escolha entre <em>Leve</em> (foco em volume e giro), <em>Equilibrado</em> (padrão recomendado) ou <em>Agressivo</em> (foco em rentabilidade máxima) e clique em <strong>Confirmar</strong>.</p>
+                </div>
+              </div>
+
+              <div class="feature-item">
+                <div class="feature-num">2</div>
+                <div>
+                  <strong>Consulte os Tooltips Informativos (i):</strong>
+                  <p>Passe o mouse ou toque no ícone <strong>(i)</strong> ao lado de qualquer parâmetro para ler em linguagem leiga exatamente o que ele faz no seu negócio.</p>
+                </div>
+              </div>
+
+              <div class="feature-item">
+                <div class="feature-num">3</div>
+                <div>
+                  <strong>Trava Dinâmica Inteligente:</strong>
+                  <p>Mantém cada produto âncora restrito ao seu consumo natural nos pedidos, impedindo que compradores levem apenas itens em promoção sem outros produtos lucrativos.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        }
+
+        @case (4) {
+          <div class="tutorial-step-card animate-fade">
+            <div class="tutorial-step-tag">Etapa 4 de 5 • Navegação</div>
+            <h3 class="tutorial-step-heading">Explorando a Tabela de Preços</h3>
+            <p class="tutorial-step-text">
+              A tabela reúne todos os 1.398 SKUs com preços atuais, preços novos sugeridos e regras comerciais:
+            </p>
+
+            <div class="tutorial-tips-grid">
+              <div class="tip-card">
+                <span class="tip-icon">🔍</span>
+                <strong>Busca Instantânea</strong>
+                <p>Digite qualquer código, descrição ou marca na caixa de busca para filtrar produtos em tempo real.</p>
+              </div>
+
+              <div class="tip-card">
+                <span class="tip-icon">🏷️</span>
+                <strong>Filtros Rápidos</strong>
+                <p>Clique nas abas <em>Âncoras</em>, <em>Compensadores</em> ou <em>Neutros</em> para focar apenas no grupo desejado.</p>
+              </div>
+
+              <div class="tip-card">
+                <span class="tip-icon">↕️</span>
+                <strong>Ordenação por Coluna</strong>
+                <p>Clique no título de qualquer coluna (ex: <em>Novo Preço</em> ou <em>Variação</em>) para ordenar do maior para o menor.</p>
+              </div>
+
+              <div class="tip-card">
+                <span class="tip-icon">📄</span>
+                <strong>Paginação Completa</strong>
+                <p>Alterne entre páginas ou escolha ver 10, 25, 50, 100 ou todos os itens em uma única lista contínua.</p>
+              </div>
+            </div>
+          </div>
+        }
+
+        @case (5) {
+          <div class="tutorial-step-card animate-fade">
+            <div class="tutorial-step-tag">Etapa 5 de 5 • Exportação & Cache</div>
+            <h3 class="tutorial-step-heading">Exportação CSV e Histórico Automático</h3>
+            <p class="tutorial-step-text">
+              Finalizou a calibração de preços? O sistema facilita a aplicação prática no seu dia a dia:
+            </p>
+
+            <div class="tutorial-action-preview">
+              <div class="preview-box">
+                <div class="preview-badge">Exportação</div>
+                <h4>Baixar Tabela de Preços (CSV)</h4>
+                <p>Clique no botão <strong>Baixar CSV</strong> no cabeçalho. Um arquivo completo formatado em UTF-8 será baixado imediatamente, pronto para importação no seu sistema ERP de faturamento ou envio à equipe de vendas.</p>
+              </div>
+
+              <div class="preview-box">
+                <div class="preview-badge badge-cache">Cache Inteligente</div>
+                <h4>Trabalho Sempre Salvo</h4>
+                <p>Toda previsão calculada fica armazenada no seu navegador. Quando você fechar e abrir o site novamente amanhã, o resultado estará esperando por você sem precisar recalcular.</p>
+              </div>
+            </div>
+          </div>
+        }
+
+      }
+    </div>
+
+    <!-- Rodapé de Navegação do Tutorial (Bolinhas e Botões Anterior/Próximo) -->
+    <div class="modal-footer tutorial-modal-footer">
+      <button 
+        type="button" 
+        class="btn-footer-link" 
+        (click)="closeTutorial()"
+      >
+        Pular Tutorial
+      </button>
+
+      <!-- Bolinhas Indicadoras de Passo (Dots) (Regra P-029) -->
+      <div class="tutorial-dots" role="tablist" aria-label="Indicador de progresso do tutorial">
+        @for (step of [1, 2, 3, 4, 5]; track step) {
+          <button 
+            type="button" 
+            class="dot-btn" 
+            [class.active]="tutorialCurrentStep() === step" 
+            (click)="setTutorialStep(step)"
+            [title]="'Ir para a etapa ' + step"
+            [attr.aria-label]="'Etapa ' + step"
+          >
+            <span class="dot-indicator"></span>
+          </button>
+        }
+      </div>
+
+      <!-- Botões Anterior e Próximo/Concluir -->
+      <div class="tutorial-nav-buttons">
+        <button 
+          type="button" 
+          class="btn btn-secondary" 
+          [disabled]="tutorialCurrentStep() === 1" 
+          (click)="prevTutorialStep()"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="15 18 9 12 15 6"></polyline>
+          </svg>
+          <span>Anterior</span>
+        </button>
+
+        <button 
+          type="button" 
+          class="btn btn-primary" 
+          (click)="nextTutorialStep()"
+        >
+          @if (tutorialCurrentStep() < tutorialTotalSteps) {
+            <span>Próximo</span>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="9 18 15 12 9 6"></polyline>
+            </svg>
+          } @else {
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+            <span>Concluir e Começar</span>
+          }
+        </button>
+      </div>
+    </div>
+
+  </div>
+}
