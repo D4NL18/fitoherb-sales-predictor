@@ -51,7 +51,7 @@ jobs:
 
       - name: Executar Testes Unitários de API e Domínio
         run: |
-          pytest tests/test_api.py -v
+          pytest tests/test_auth.py tests/test_elasticity_model.py -v
 
   build-and-deploy:
     name: 🚀 CD - Build & Deploy Cloud Run

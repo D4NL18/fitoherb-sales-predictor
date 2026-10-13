@@ -45,19 +45,27 @@ def get_cached_base_data(force_reload: bool = False) -> Dict[str, Any]:
     Garante respostas instantâneas (< 300ms) para simulações.
     """
     if force_reload or "rules_df" not in _DATA_CACHE:
-        # Extração 100% direta via Banco SQL Server da Fitoherb (P-022)
+        # Extração direta via Banco SQL Server da Fitoherb (P-022) com fallback seguro para templates em ambiente de CI/CD
         logger.info("Conectando ao SQL Server da Fitoherb para carregar catálogo e vendas atualizadas...")
         db_check = test_db_connection()
-        if not db_check.get("connected"):
-            raise ConnectionError(db_check.get("message", "Banco SQL Server indisponível"))
-
-        catalog_df = load_catalog_from_database()
-        raw_sales = fetch_sales_from_database()
-        data_source = "sql_server"
-        logger.info(
-            f"Dados carregados com sucesso diretamente do SQL Server: "
-            f"{len(catalog_df)} produtos e {len(raw_sales)} vendas."
-        )
+        if db_check.get("connected"):
+            catalog_df = load_catalog_from_database()
+            raw_sales = fetch_sales_from_database()
+            data_source = "sql_server"
+            logger.info(
+                f"Dados carregados com sucesso diretamente do SQL Server: "
+                f"{len(catalog_df)} produtos e {len(raw_sales)} vendas."
+            )
+        else:
+            logger.warning(f"Banco SQL Server indisponível ({db_check.get('message')}). Utilizando templates sanitizados para simulação...")
+            template_catalog = Path("templates/lista_precos_template.csv")
+            template_sales = Path("templates/vendas_template.csv")
+            if template_catalog.exists() and template_sales.exists():
+                catalog_df = load_catalog(template_catalog, skiprows=4, encoding="utf-8")
+                raw_sales = pd.read_csv(template_sales, encoding="utf-8")
+                data_source = "templates"
+            else:
+                raise ConnectionError(db_check.get("message", "Banco SQL Server e templates indisponíveis"))
 
         clean_sales = run_etl_pipeline(raw_sales, catalog_df, config=DEFAULT_CONFIG)
 
