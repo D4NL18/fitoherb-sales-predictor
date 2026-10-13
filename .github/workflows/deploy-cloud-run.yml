@@ -34,7 +34,7 @@ jobs:
       - name: Instalar Dependências e Validar Build Angular
         run: |
           cd frontend
-          npm ci
+          npm install
           npm run build
 
       - name: Configurar Python (Backend)
