@@ -1,0 +1,121 @@
+name: CI/CD Pipeline - Cloud Run Deploy
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+  GAR_LOCATION: ${{ vars.GCP_REGION || 'southamerica-east1' }}
+  REPOSITORY: ${{ vars.GAR_REPOSITORY || 'fitoherb-repo' }}
+  SERVICE_NAME: ${{ vars.CLOUD_RUN_SERVICE || 'fitoherb-sales-predictor' }}
+  IMAGE_NAME: ${{ vars.GCP_REGION || 'southamerica-east1' }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.GAR_REPOSITORY || 'fitoherb-repo' }}/${{ vars.CLOUD_RUN_SERVICE || 'fitoherb-sales-predictor' }}
+
+jobs:
+  test-and-lint:
+    name: 🧪 CI - Testes e Validação
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout do Código
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js (Frontend)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Instalar Dependências e Validar Build Angular
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+
+      - name: Configurar Python (Backend)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Instalar Dependências Python
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-mock httpx
+
+      - name: Executar Testes Unitários de API e Domínio
+        run: |
+          pytest tests/test_api.py -v
+
+  build-and-deploy:
+    name: 🚀 CD - Build & Deploy Cloud Run
+    needs: test-and-lint
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # Mandatório para Workload Identity Federation (WIF) OIDC
+
+    steps:
+      - name: Checkout do Código
+        uses: actions/checkout@v4
+
+      - name: Autenticar no Google Cloud (WIF ou Service Account Key)
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          # Se WIF_PROVIDER estiver configurado nos secrets, utiliza autenticação moderna sem chaves (OIDC)
+          # Caso contrário, utiliza a chave JSON tradicional de Service Account (GCP_SA_KEY)
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Configurar Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configurar Autenticação Docker com Artifact Registry
+        run: |
+          gcloud auth configure-docker ${{ env.GAR_LOCATION }}-docker.pkg.dev --quiet
+
+      - name: Configurar Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build e Push da Imagem de Contêiner
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.IMAGE_NAME }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Deploy no Google Cloud Run (FinOps Scale-to-Zero)
+        env:
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+        run: |
+          gcloud run deploy ${{ env.SERVICE_NAME }} \
+            --image=${{ env.IMAGE_NAME }}:${{ github.sha }} \
+            --region=${{ env.GAR_LOCATION }} \
+            --platform=managed \
+            --allow-unauthenticated \
+            --port=8080 \
+            --min-instances=0 \
+            --max-instances=3 \
+            --cpu-throttling \
+            --memory=1Gi \
+            --concurrency=80 \
+            --timeout=300 \
+            --set-env-vars="PORT=8080,ENV=production,DB_HOST=${DB_HOST},DB_PORT=${DB_PORT},DB_NAME=${DB_NAME},DB_USER=${DB_USER},DB_PASSWORD=${DB_PASSWORD}"

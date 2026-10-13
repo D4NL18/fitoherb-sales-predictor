@@ -1,0 +1,14 @@
+# Dependências principais do Fitoherb Sales Predictor
+pandas>=2.0.0
+numpy>=1.26.0
+scipy>=1.14.0
+scikit-learn>=1.5.0
+mlxtend>=0.23.0
+pulp>=2.8.0
+lightgbm>=4.0.0
+pytest>=8.0.0
+fastapi>=0.110.0
+uvicorn>=0.28.0
+pydantic>=2.6.0
+pyodbc>=5.0.0
+python-dotenv>=1.0.0

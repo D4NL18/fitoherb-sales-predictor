@@ -1,0 +1,89 @@
+"""
+Schemas Pydantic v2 para a API de Estoque e Compras (Inventory & Replenishment AI).
+Segue o padrão de envelope corporativo {'data': ..., 'meta': ...} (P-012).
+"""
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel, Field
+
+
+class InventoryPredictRequest(BaseModel):
+    """Payload de parâmetros para a simulação de estoque e compras."""
+    historyWindowDays: int = Field(default=60, ge=15, le=365, description="Janela de histórico de vendas em dias")
+    leadTimeDays: int = Field(default=15, ge=1, le=90, description="Lead time médio de entrega do fornecedor em dias")
+    targetCoverageDays: int = Field(default=30, ge=5, le=180, description="Dias de cobertura desejada no estoque ideal")
+    serviceLevel: float = Field(default=0.95, ge=0.80, le=0.999, description="Nível de serviço probabilístico (z-score)")
+    fornecedor: Optional[str] = Field(default=None, description="Filtro opcional por laboratório/fornecedor")
+    budgetLimit: Optional[float] = Field(default=None, ge=0.0, description="Teto orçamentário opcional para compras")
+
+
+class CurvaADistribuicao(BaseModel):
+    qtdItens: int
+    percentualItens: float
+
+
+class InventoryKPIs(BaseModel):
+    totalSkusAnalisados: int
+    skusEmRupturaCritica: int
+    skusNecessitamReposicao: int
+    skusEstoqueSaudavel: int
+    skusEmOverstock: int
+    investimentoTotalSugerido: float
+    capitalImobilizadoOverstock: float
+    curvaADistribuicao: CurvaADistribuicao
+
+
+class InventoryProductItem(BaseModel):
+    codigo: int
+    descricao: str
+    ean: str
+    fornecedor: str
+    tipo: str
+    estoqueAtual: float
+    vmd: float
+    desvioPadraoDemanda: float
+    diasCobertura: float
+    leadTime: int
+    estoqueSeguranca: int
+    rop: int
+    estoqueIdeal: int
+    qtdSugeridaCompra: int
+    custoUnitario: float
+    precoVenda: float
+    investimentoTotalItem: float
+    status: str
+    statusLabel: str
+    curvaAbc: str
+
+
+class InventoryPredictData(BaseModel):
+    kpis: InventoryKPIs
+    produtos: List[InventoryProductItem]
+
+
+class ResponseMeta(BaseModel):
+    timestamp: str = Field(default_factory=lambda: datetime.utcnow().isoformat() + "Z")
+    version: str = "1.0.0"
+    executionTimeMs: Optional[float] = None
+
+
+class InventoryPredictResponse(BaseModel):
+    data: InventoryPredictData
+    meta: ResponseMeta
+
+
+class SupplierItem(BaseModel):
+    fornecedor: str
+    nome: str
+    totalSkus: int
+
+
+class SuppliersResponse(BaseModel):
+    data: List[SupplierItem]
+    meta: ResponseMeta
+
+
+class InventoryConfigResponse(BaseModel):
+    data: Dict[str, Any]
+    meta: ResponseMeta

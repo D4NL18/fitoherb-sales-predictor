@@ -1,0 +1,15 @@
+.platform-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--surface, #f9faf8);
+  color: var(--on-surface, #191c18);
+  font-family: var(--font-family-body, 'Inter', sans-serif);
+}
+
+.platform-main {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}

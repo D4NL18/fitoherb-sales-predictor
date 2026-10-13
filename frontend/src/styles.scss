@@ -1,0 +1,186 @@
+/* ==========================================================================
+   Design System Oficial Fitoherb Nordeste: "The Editorial Botanist"
+   Referência Mestre: Stitch projects/1095247278277166682
+   Pesquisa de Conversão: Lazyweb Research (Hero, Proof Bar & Action Ergonomics)
+   ========================================================================== */
+
+:root {
+  /* Tipografia Editorial */
+  --font-family-headline: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-family-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-family-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  /* Aliases legados para compatibilidade */
+  --font-family-sans: var(--font-family-body);
+  --font-family-display: var(--font-family-headline);
+
+  /* Paleta Oficial The Editorial Botanist (Clorofila & Vitalidade Botânica) */
+  --primary: #21401a;
+  --primary-container: #38582f;
+  --primary-hover: #1b3515;
+  --primary-light: #eaf3e7;
+  --on-primary: #ffffff;
+
+  --secondary: #45673d;
+  --secondary-container: #c3ebb6;
+  --on-secondary: #ffffff;
+  --on-secondary-container: #21401a;
+  --on-secondary-variant: #35532d;
+
+  --tertiary: #592a41;
+  --tertiary-container: #734058;
+  --tertiary-fixed: #ffd8e7;
+
+  /* Superfícies Orgânicas (Tonal Layering & Living Whites) */
+  --surface: #f9faf8;
+  --surface-dim: #d9dad8;
+  --surface-bright: #f9faf8;
+  --surface-container-lowest: #ffffff;
+  --surface-container-low: #f3f4f2;
+  --surface-container: #edeeec;
+  --surface-container-high: #e7e8e6;
+  --surface-container-highest: #e1e3e1;
+
+  --on-surface: #191c1b;
+  --on-surface-variant: #43483f;
+  --outline: #73796e;
+  --outline-variant: #c3c8bc;
+
+  /* Feedback e Acentos Semânticos */
+  --color-success: #27ae60;
+  --color-success-bg: #ecfdf5;
+  --color-success-border: #a7f3d0;
+
+  --color-danger: #ba1a1a;
+  --color-danger-bg: #ffdad6;
+  --color-danger-border: #f87171;
+
+  --color-warning: #d97706;
+  --color-warning-bg: #fef3c7;
+  --color-warning-border: #fcd34d;
+
+  /* Variáveis de Compatibilidade */
+  --color-primary: var(--primary-container);
+  --color-primary-hover: var(--primary);
+  --color-primary-dark: var(--primary);
+  --color-primary-light: var(--primary-light);
+  --color-primary-border: var(--secondary-container);
+  --color-primary-subtle: #f0f7ee;
+
+  --green-900: var(--primary);
+  --green-800: #294c20;
+  --green-700: var(--primary-container);
+  --green-600: #46673c;
+  --green-500: var(--secondary);
+  --green-400: #628857;
+  --green-300: #8bb280;
+  --green-200: var(--secondary-container);
+  --green-100: #e2f4dc;
+  --green-50:  #f4fbf0;
+
+  --color-bg: var(--surface);
+  --color-card: var(--surface-container-lowest);
+  --color-border: rgba(195, 200, 188, 0.45);
+  --color-border-hover: rgba(115, 121, 110, 0.5);
+
+  --color-text: var(--on-surface);
+  --color-text-secondary: var(--on-surface-variant);
+  --color-muted: #73796e;
+
+  /* Raio de Curvatura Hierárquico */
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 22px;
+  --radius-full: 9999px;
+
+  /* Sombras Ambientais Difusas Botânicas (The No-Line Rule) */
+  --shadow-sm: 0 1px 3px rgba(33, 64, 26, 0.04), 0 1px 2px rgba(33, 64, 26, 0.02);
+  --shadow-md: 0 4px 14px -2px rgba(33, 64, 26, 0.06), 0 2px 6px -1px rgba(33, 64, 26, 0.04);
+  --shadow-lg: 0 12px 32px -4px rgba(33, 64, 26, 0.08), 0 4px 12px -2px rgba(33, 64, 26, 0.04);
+  --shadow-modal: 0 24px 60px -8px rgba(33, 64, 26, 0.16), 0 8px 24px -4px rgba(33, 64, 26, 0.08);
+
+  /* Transições Fluídas */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-smooth: 350ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--primary-container) var(--surface-container-low);
+}
+
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--surface-container-low);
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: var(--outline-variant);
+  border-radius: 4px;
+  transition: background-color var(--transition-fast);
+
+  &:hover {
+    background-color: var(--primary-container);
+  }
+}
+
+html {
+  font-size: 16px;
+  scroll-behavior: smooth;
+  background-color: var(--surface);
+}
+
+body {
+  font-family: var(--font-family-body);
+  background-color: var(--surface);
+  color: var(--on-surface);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-family-headline);
+  font-weight: 700;
+  color: var(--primary);
+  letter-spacing: -0.02em;
+}
+
+button, input, select, textarea {
+  font-family: var(--font-family-body);
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-container);
+    outline-offset: 2px;
+  }
+}
+
+/* Shimmer Animation para Skeleton Loaders */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.skeleton-box {
+  display: inline-block;
+  height: 1em;
+  background: linear-gradient(90deg, var(--surface-container-low) 25%, var(--surface-container-highest) 50%, var(--surface-container-low) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: var(--radius-sm);
+}
