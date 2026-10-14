@@ -106,7 +106,8 @@ def execute_inventory_prediction(request: InventoryPredictRequest) -> Tuple[Dict
         target_coverage_days=request.targetCoverageDays,
         service_level=request.serviceLevel,
         supplier_filter=request.fornecedor,
-        budget_limit=request.budgetLimit
+        budget_limit=request.budgetLimit,
+        max_purchase_variation_pct=request.maxPurchaseVariationPct
     )
     elapsed_ms = round((time.time() - t0) * 1000, 2)
     return result, elapsed_ms
@@ -139,6 +140,9 @@ def generate_inventory_csv(request: InventoryPredictRequest) -> str:
         "rop": "Ponto de Reposição (ROP)",
         "estoqueIdeal": "Estoque Ideal",
         "qtdSugeridaCompra": "Qtd Sugerida de Compra",
+        "qtdSugeridaTeorica": "Demanda Teórica Plena",
+        "limitadoPorEspaco": "Limitado por Espaço Físico",
+        "tetoCompraFisica": "Teto Físico de Compra",
         "custoUnitario": "Último Custo Real (R$)",
         "precoVenda": "Preço de Venda (R$)",
         "investimentoTotalItem": "Investimento Total Sugerido (R$)",

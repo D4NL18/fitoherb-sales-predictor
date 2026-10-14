@@ -129,7 +129,14 @@
             Investimento Sugerido
           </div>
           <div class="kpi-value-highlight">R$ {{ kpi.investimentoTotalSugerido | number:'1.2-2' }}</div>
-          <div class="kpi-sub">Total de compra orçado a preço de custo</div>
+          <div class="kpi-sub">
+            Total de compra orçado a preço de custo
+            @if (kpi.skusLimitadosPorEspaco) {
+              <span class="proof-capped-chip" title="SKUs com sugestão de compra limitada pela capacidade física">
+                {{ kpi.skusLimitadosPorEspaco }} SKUs c/ trava física
+              </span>
+            }
+          </div>
         </div>
       </div>
     }
@@ -265,54 +272,54 @@
       <table class="inventory-table">
         <thead>
           <tr>
-            <th (click)="toggleSort('codigo')" class="sortable">
+            <th (click)="toggleSort('codigo')" (keydown.enter)="toggleSort('codigo')" tabindex="0" class="sortable col-codigo">
               Código
               @if (sortColumn() === 'codigo') {
                 <span class="sort-indicator">{{ sortDirection() === 'asc' ? '↑' : '↓' }}</span>
               }
             </th>
-            <th (click)="toggleSort('descricao')" class="sortable">
+            <th (click)="toggleSort('descricao')" (keydown.enter)="toggleSort('descricao')" tabindex="0" class="sortable col-descricao">
               Descrição
               @if (sortColumn() === 'descricao') {
                 <span class="sort-indicator">{{ sortDirection() === 'asc' ? '↑' : '↓' }}</span>
               }
             </th>
-            <th>Laboratório</th>
-            <th>Curva</th>
-            <th (click)="toggleSort('estoqueAtual')" class="sortable text-right">
-              Estoque Atual
+            <th class="col-fornecedor">Laboratório</th>
+            <th class="text-center col-curva">Curva</th>
+            <th (click)="toggleSort('estoqueAtual')" (keydown.enter)="toggleSort('estoqueAtual')" tabindex="0" class="sortable text-center col-estoque">
+              Est. Atual
               @if (sortColumn() === 'estoqueAtual') {
                 <span class="sort-indicator">{{ sortDirection() === 'asc' ? '↑' : '↓' }}</span>
               }
             </th>
-            <th (click)="toggleSort('vmd')" class="sortable text-right">
-              VMD (Giro/Dia)
+            <th (click)="toggleSort('vmd')" (keydown.enter)="toggleSort('vmd')" tabindex="0" class="sortable text-center col-vmd">
+              Giro/Dia
               @if (sortColumn() === 'vmd') {
                 <span class="sort-indicator">{{ sortDirection() === 'asc' ? '↑' : '↓' }}</span>
               }
             </th>
-            <th (click)="toggleSort('diasCobertura')" class="sortable text-right">
-              Autonomia (Dias)
+            <th (click)="toggleSort('diasCobertura')" (keydown.enter)="toggleSort('diasCobertura')" tabindex="0" class="sortable text-center col-autonomia">
+              Autonomia
               @if (sortColumn() === 'diasCobertura') {
                 <span class="sort-indicator">{{ sortDirection() === 'asc' ? '↑' : '↓' }}</span>
               }
             </th>
-            <th class="text-right">ROP</th>
-            <th class="text-right">Estoque Ideal</th>
-            <th (click)="toggleSort('qtdSugeridaCompra')" class="sortable text-right highlight-col">
-              Sugestão Compra
+            <th class="text-center col-rop">ROP</th>
+            <th class="text-center col-ideal">Est. Ideal</th>
+            <th (click)="toggleSort('qtdSugeridaCompra')" (keydown.enter)="toggleSort('qtdSugeridaCompra')" tabindex="0" class="sortable text-center highlight-col col-compra">
+              Sug. Compra
               @if (sortColumn() === 'qtdSugeridaCompra') {
                 <span class="sort-indicator">{{ sortDirection() === 'asc' ? '↑' : '↓' }}</span>
               }
             </th>
-            <th class="text-right">Custo Real</th>
-            <th (click)="toggleSort('investimentoTotalItem')" class="sortable text-right highlight-col">
+            <th class="text-center col-custo">Custo</th>
+            <th (click)="toggleSort('investimentoTotalItem')" (keydown.enter)="toggleSort('investimentoTotalItem')" tabindex="0" class="sortable text-center highlight-col col-investimento">
               Investimento
               @if (sortColumn() === 'investimentoTotalItem') {
                 <span class="sort-indicator">{{ sortDirection() === 'asc' ? '↑' : '↓' }}</span>
               }
             </th>
-            <th (click)="toggleSort('status')" class="sortable text-center">
+            <th (click)="toggleSort('status')" (keydown.enter)="toggleSort('status')" tabindex="0" class="sortable text-center col-status">
               Status
               @if (sortColumn() === 'status') {
                 <span class="sort-indicator">{{ sortDirection() === 'asc' ? '↑' : '↓' }}</span>
@@ -323,29 +330,37 @@
         <tbody>
           @for (prod of paginatedProducts(); track prod.codigo) {
             <tr [class.row-alert]="prod.status === 'CRITICAL_STOCKOUT'">
-              <td class="font-mono text-muted">{{ prod.codigo }}</td>
-              <td class="product-name" [title]="prod.descricao">
-                <span class="name-text">{{ prod.descricao }}</span>
-                <span class="ean-text">EAN: {{ prod.ean || '-' }}</span>
+              <td class="font-mono text-muted col-codigo">{{ prod.codigo }}</td>
+              <td class="col-descricao" [title]="prod.descricao">
+                <div class="product-name">
+                  <span class="name-text">{{ prod.descricao }}</span>
+                  <span class="ean-text">EAN: {{ prod.ean || '-' }}</span>
+                </div>
               </td>
-              <td><span class="supplier-badge">{{ prod.fornecedor }}</span></td>
-              <td><span class="abc-badge abc-{{ prod.curvaAbc }}">{{ prod.curvaAbc }}</span></td>
-              <td class="text-right font-medium">{{ prod.estoqueAtual | number:'1.0-0' }}</td>
-              <td class="text-right">{{ prod.vmd | number:'1.2-2' }}</td>
-              <td class="text-right" [class.text-danger]="prod.diasCobertura < prod.leadTime && prod.vmd > 0">
+              <td class="col-fornecedor"><span class="supplier-badge" [title]="prod.fornecedor">{{ prod.fornecedor }}</span></td>
+              <td class="text-center col-curva"><span class="abc-badge abc-{{ prod.curvaAbc }}">{{ prod.curvaAbc }}</span></td>
+              <td class="text-center font-medium col-estoque">{{ prod.estoqueAtual | number:'1.0-0' }}</td>
+              <td class="text-center col-vmd">{{ prod.vmd | number:'1.2-2' }}</td>
+              <td class="text-center col-autonomia" [class.text-danger]="prod.diasCobertura < prod.leadTime && prod.vmd > 0">
                 {{ prod.diasCobertura === 999 ? '∞' : (prod.diasCobertura | number:'1.1-1') + 'd' }}
               </td>
-              <td class="text-right text-muted">{{ prod.rop }}</td>
-              <td class="text-right font-medium">{{ prod.estoqueIdeal }}</td>
-              <td class="text-right highlight-col font-bold" [class.text-buy]="prod.qtdSugeridaCompra > 0">
+              <td class="text-center text-muted col-rop">{{ prod.rop }}</td>
+              <td class="text-center font-medium col-ideal" [title]="prod.limitadoPorEspaco ? ('Estoque ideal ajustado ao espaço físico (Teórico: ' + prod.estoqueIdealTeorico + ')') : ''">
+                {{ prod.estoqueIdeal }}
+              </td>
+              <td
+                class="text-center highlight-col font-bold col-compra"
+                [class.text-buy]="prod.qtdSugeridaCompra > 0"
+                [title]="prod.limitadoPorEspaco ? ('Demanda teórica: ' + prod.qtdSugeridaTeorica + ' un | Limitado pela capacidade física (Teto: ' + prod.tetoCompraFisica + ' un)') : ''"
+              >
                 {{ prod.qtdSugeridaCompra > 0 ? (prod.qtdSugeridaCompra | number:'1.0-0') : '-' }}
               </td>
-              <td class="text-right text-muted">R$ {{ prod.custoUnitario | number:'1.2-2' }}</td>
-              <td class="text-right highlight-col font-bold">
+              <td class="text-center text-muted col-custo">R$ {{ prod.custoUnitario | number:'1.2-2' }}</td>
+              <td class="text-center highlight-col font-bold col-investimento">
                 {{ prod.investimentoTotalItem > 0 ? ('R$ ' + (prod.investimentoTotalItem | number:'1.2-2')) : '-' }}
               </td>
-              <td class="text-center">
-                <span class="status-tag status-{{ prod.status.toLowerCase() }}">
+              <td class="text-center col-status">
+                <span class="status-text status-{{ prod.status.toLowerCase() }}">
                   {{ prod.statusLabel }}
                 </span>
               </td>
@@ -407,16 +422,18 @@
           <!-- Janela de Histórico de Vendas -->
           <div class="param-row">
             <div class="param-label">
-              <label>Janela de Vendas Recentes (Dias)</label>
+              <label for="historyWindowInput">Janela de Vendas Recentes (Dias)</label>
               <span class="param-value-tag">{{ historyWindowDays() }} dias</span>
             </div>
             <input
+              id="historyWindowInput"
               type="range"
               min="15"
               max="180"
               step="15"
               [ngModel]="historyWindowDays()"
               (ngModelChange)="historyWindowDays.set($event)"
+              aria-label="Janela de histórico de vendas recentes em dias"
             />
             <span class="param-desc">Período de vendas faturadas considerado para o cálculo da VMD.</span>
           </div>
@@ -424,16 +441,18 @@
           <!-- Lead Time Médio de Entrega -->
           <div class="param-row">
             <div class="param-label">
-              <label>Lead Time de Ressuprimento (Dias)</label>
+              <label for="leadTimeInput">Lead Time de Ressuprimento (Dias)</label>
               <span class="param-value-tag">{{ leadTimeDays() }} dias</span>
             </div>
             <input
+              id="leadTimeInput"
               type="range"
               min="5"
               max="60"
               step="1"
               [ngModel]="leadTimeDays()"
               (ngModelChange)="leadTimeDays.set($event)"
+              aria-label="Lead time de ressuprimento em dias"
             />
             <span class="param-desc">Prazo médio de entrega da fábrica até o Centro de Distribuição.</span>
           </div>
@@ -441,16 +460,18 @@
           <!-- Cobertura Alvo no Estoque Ideal -->
           <div class="param-row">
             <div class="param-label">
-              <label>Autonomia Alvo de Estoque (Dias)</label>
+              <label for="targetCoverageInput">Autonomia Alvo de Estoque (Dias)</label>
               <span class="param-value-tag">{{ targetCoverageDays() }} dias</span>
             </div>
             <input
+              id="targetCoverageInput"
               type="range"
               min="15"
               max="90"
               step="5"
               [ngModel]="targetCoverageDays()"
               (ngModelChange)="targetCoverageDays.set($event)"
+              aria-label="Autonomia alvo de cobertura de estoque em dias"
             />
             <span class="param-desc">Meta de dias de vendas a serem cobertos pelo novo pedido.</span>
           </div>
@@ -458,13 +479,15 @@
           <!-- Nível de Serviço Probabilístico -->
           <div class="param-row">
             <div class="param-label">
-              <label>Nível de Serviço Probabilístico (Z-Score)</label>
+              <label for="serviceLevelSelect">Nível de Serviço Probabilístico (Z-Score)</label>
               <span class="param-value-tag">{{ serviceLevel() * 100 | number:'1.0-0' }}%</span>
             </div>
             <select
+              id="serviceLevelSelect"
               [ngModel]="serviceLevel()"
               (ngModelChange)="serviceLevel.set($event)"
               class="form-select"
+              aria-label="Nível de serviço probabilístico"
             >
               <option [value]="0.90">Conservador (90% de disponibilidade, Z = 1.28)</option>
               <option [value]="0.95">Padrão Distribuidora (95% de disponibilidade, Z = 1.65)</option>
@@ -476,19 +499,62 @@
           <!-- Teto Orçamentário de Compras -->
           <div class="param-row">
             <div class="param-label">
-              <label>Teto Orçamentário Máximo (Opcional)</label>
+              <label for="budgetLimitInput">Teto Orçamentário Máximo (Opcional)</label>
               <span class="param-value-tag">
                 {{ budgetLimit() ? ('R$ ' + (budgetLimit() | number:'1.0-0')) : 'Sem Limite' }}
               </span>
             </div>
             <input
+              id="budgetLimitInput"
               type="number"
               placeholder="Ex: 150000 (deixe em branco para sem teto)"
               [ngModel]="budgetLimit()"
               (ngModelChange)="budgetLimit.set($event)"
               class="form-input"
+              aria-label="Teto orçamentário máximo em reais"
             />
             <span class="param-desc">Se preenchido, o motor prioriza os itens de maior risco e Curva A.</span>
+          </div>
+
+          <!-- Trava de Variação Máxima de Compra / Espaço Físico (P-044.4) -->
+          <div class="param-row">
+            <div class="param-label">
+              <div class="param-label-group">
+                <label for="maxPurchaseVariationInput">Margem Máxima de Variação de Compra (%)</label>
+                <div class="toggle-switch-wrapper">
+                  <label class="switch" for="enablePhysicalLimitToggle">
+                    <input
+                      id="enablePhysicalLimitToggle"
+                      type="checkbox"
+                      [checked]="enablePhysicalLimit()"
+                      (change)="enablePhysicalLimit.set($any($event.target).checked)"
+                      aria-label="Ativar ou desativar trava de espaço físico"
+                    />
+                    <span class="slider-round" aria-hidden="true"></span>
+                    <span class="sr-only">Ativar trava de espaço físico</span>
+                  </label>
+                  <span class="switch-text">{{ enablePhysicalLimit() ? 'Trava Físico Ativa' : 'Sem Limite' }}</span>
+                </div>
+              </div>
+              <span class="param-value-tag" [class.tag-disabled]="!enablePhysicalLimit()">
+                {{ enablePhysicalLimit() ? ('+' + maxPurchaseVariationPct() + '% máx') : 'Desativado' }}
+              </span>
+            </div>
+            @if (enablePhysicalLimit()) {
+              <input
+                id="maxPurchaseVariationInput"
+                type="range"
+                min="20"
+                max="500"
+                step="10"
+                [ngModel]="maxPurchaseVariationPct()"
+                (ngModelChange)="maxPurchaseVariationPct.set($event)"
+                aria-label="Margem máxima de variação de compra em porcentagem"
+              />
+            }
+            <span class="param-desc">
+              Limita a sugestão de compras a um teto percentual sobre a base física de cada SKU, impedindo que o pedido exceda a capacidade do almoxarifado.
+            </span>
           </div>
         </div>
 

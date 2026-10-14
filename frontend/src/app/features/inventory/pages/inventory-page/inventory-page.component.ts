@@ -19,14 +19,15 @@ import {
 })
 export class InventoryPageComponent implements OnInit {
   private readonly inventoryService = inject(InventoryService);
-  private readonly CACHE_KEY = 'fitoherb_inventory_cache_v1';
+  private readonly CACHE_KEY = 'fitoherb_inventory_cache_v2';
 
-  // Parâmetros de Simulação
   readonly historyWindowDays = signal<number>(60);
   readonly leadTimeDays = signal<number>(15);
   readonly targetCoverageDays = signal<number>(30);
   readonly serviceLevel = signal<number>(0.95);
   readonly budgetLimit = signal<number | null>(null);
+  readonly maxPurchaseVariationPct = signal<number>(100);
+  readonly enablePhysicalLimit = signal<boolean>(true);
 
   // Estados de Carregamento e Modais
   readonly isLoading = signal<boolean>(false);
@@ -122,6 +123,9 @@ export class InventoryPageComponent implements OnInit {
   ngOnInit(): void {
     this.loadSuppliers();
     this.loadCachedPrediction();
+    if (this.products().length === 0) {
+      this.calculateInventory();
+    }
   }
 
   loadSuppliers(): void {
@@ -146,7 +150,8 @@ export class InventoryPageComponent implements OnInit {
       targetCoverageDays: this.targetCoverageDays(),
       serviceLevel: this.serviceLevel(),
       fornecedor: this.selectedSupplier() !== 'TODOS' ? this.selectedSupplier() : null,
-      budgetLimit: this.budgetLimit()
+      budgetLimit: this.budgetLimit(),
+      maxPurchaseVariationPct: this.enablePhysicalLimit() ? this.maxPurchaseVariationPct() : null
     };
 
     this.inventoryService.predict(params).subscribe({
@@ -179,7 +184,8 @@ export class InventoryPageComponent implements OnInit {
       targetCoverageDays: this.targetCoverageDays(),
       serviceLevel: this.serviceLevel(),
       fornecedor: this.selectedSupplier() !== 'TODOS' ? this.selectedSupplier() : null,
-      budgetLimit: this.budgetLimit()
+      budgetLimit: this.budgetLimit(),
+      maxPurchaseVariationPct: this.enablePhysicalLimit() ? this.maxPurchaseVariationPct() : null
     };
 
     this.inventoryService.exportCsv(params).subscribe({
@@ -232,7 +238,13 @@ export class InventoryPageComponent implements OnInit {
 
   private saveCache(kpis: InventoryKPIs, produtos: InventoryProductItem[], savedAt: string): void {
     try {
-      const payload = { kpis, produtos, savedAt };
+      const payload = {
+        kpis,
+        produtos,
+        savedAt,
+        maxPurchaseVariationPct: this.maxPurchaseVariationPct(),
+        enablePhysicalLimit: this.enablePhysicalLimit()
+      };
       localStorage.setItem(this.CACHE_KEY, JSON.stringify(payload));
     } catch (e) {
       console.warn('Erro ao salvar cache local:', e);
@@ -248,6 +260,12 @@ export class InventoryPageComponent implements OnInit {
           this.kpis.set(parsed.kpis);
           this.products.set(parsed.produtos);
           this.lastCalculatedAt.set(parsed.savedAt || null);
+          if (parsed.maxPurchaseVariationPct !== undefined) {
+            this.maxPurchaseVariationPct.set(parsed.maxPurchaseVariationPct);
+          }
+          if (parsed.enablePhysicalLimit !== undefined) {
+            this.enablePhysicalLimit.set(parsed.enablePhysicalLimit);
+          }
           return;
         }
       }

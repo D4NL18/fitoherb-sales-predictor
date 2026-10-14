@@ -123,10 +123,12 @@ def calculate_inventory_replenishment(
     target_coverage_days: int = 30,
     service_level: float = 0.95,
     supplier_filter: Optional[str] = None,
-    budget_limit: Optional[float] = None
+    budget_limit: Optional[float] = None,
+    max_purchase_variation_pct: Optional[float] = 100.0
 ) -> Dict[str, Any]:
     """
     Executa o motor prescritivo de estoque ideal e recomendação de compras (P-042 a P-047).
+    Inclui trava física de variação máxima de compra (P-044.4).
     """
     df_prod = products_df.copy()
 
@@ -223,17 +225,41 @@ def calculate_inventory_replenishment(
         if vmd > 0:
             estoque_seguranca = int(math.ceil(z_val * std_d * lt_sqrt))
             rop = int(math.ceil((vmd * lead_time_days) + estoque_seguranca))
-            estoque_ideal = int(math.ceil((vmd * (lead_time_days + target_coverage_days)) + estoque_seguranca))
+            estoque_ideal_teorico = int(math.ceil((vmd * (lead_time_days + target_coverage_days)) + estoque_seguranca))
         else:
             estoque_seguranca = 0
             rop = 0
-            estoque_ideal = 0
+            estoque_ideal_teorico = 0
 
-        # Quantidade Sugerida de Compra
+        # Quantidade Sugerida de Compra Teórica (P-044.3)
         if vmd > 0 and (estoque_atual <= rop or dias_cobertura <= (lead_time_days + 5)):
-            qtd_sugerida = max(0, int(math.ceil(estoque_ideal - estoque_atual)))
+            qtd_sugerida_teorica = max(0, int(math.ceil(estoque_ideal_teorico - estoque_atual)))
         else:
-            qtd_sugerida = 0
+            qtd_sugerida_teorica = 0
+
+        # Trava de Variação Máxima de Compra / Governança de Espaço Físico (P-044.4)
+        limitado_por_espaco = False
+        teto_compra_fisica = None
+        if max_purchase_variation_pct is not None and max_purchase_variation_pct > 0 and qtd_sugerida_teorica > 0:
+            # Base física de referência: estoque atual quando existente, ou piso operacional mínimo para itens zerados
+            if estoque_atual > 0:
+                base_fisica = estoque_atual
+            else:
+                base_fisica = float(max(math.ceil(vmd * min(lead_time_days, 7)), 10))
+
+            teto_compra_fisica = int(math.ceil(base_fisica * (1.0 + (max_purchase_variation_pct / 100.0))))
+
+            if qtd_sugerida_teorica > teto_compra_fisica:
+                qtd_sugerida = max(0, teto_compra_fisica)
+                limitado_por_espaco = True
+                # Limita o Estoque Ideal operacional para não ter números absurdos (P-044.4)
+                estoque_ideal = int(math.ceil(estoque_atual + qtd_sugerida))
+            else:
+                qtd_sugerida = qtd_sugerida_teorica
+                estoque_ideal = estoque_ideal_teorico
+        else:
+            qtd_sugerida = qtd_sugerida_teorica
+            estoque_ideal = estoque_ideal_teorico
 
         # Status Operacional (P-045)
         if vmd > 0 and dias_cobertura < lead_time_days:
@@ -268,7 +294,11 @@ def calculate_inventory_replenishment(
             "estoqueSeguranca": estoque_seguranca,
             "rop": rop,
             "estoqueIdeal": estoque_ideal,
+            "estoqueIdealTeorico": estoque_ideal_teorico,
             "qtdSugeridaCompra": qtd_sugerida,
+            "qtdSugeridaTeorica": qtd_sugerida_teorica,
+            "limitadoPorEspaco": limitado_por_espaco,
+            "tetoCompraFisica": teto_compra_fisica,
             "custoUnitario": round(custo, 2),
             "precoVenda": round(preco, 2),
             "investimentoTotalItem": investimento_item,
@@ -329,6 +359,7 @@ def calculate_inventory_replenishment(
         "skusNecessitamReposicao": reposicao_cnt,
         "skusEstoqueSaudavel": saudavel_cnt,
         "skusEmOverstock": overstock_cnt,
+        "skusLimitadosPorEspaco": sum(1 for x in items if x.get("limitadoPorEspaco", False)),
         "investimentoTotalSugerido": round(invest_final, 2),
         "capitalImobilizadoOverstock": round(capital_overstock, 2),
         "curvaADistribuicao": {
