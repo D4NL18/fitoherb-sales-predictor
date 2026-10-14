@@ -52,12 +52,16 @@ def simulate_2026_replay(
             "faturamento_projetado": float(df["faturamento_novo"].sum()),
         }
 
+    # Otimização crítica: filtrar apenas os pedidos que possuem âncora para a análise de trava
+    df_anchor_orders = df[df["Pedido"].isin(orders_with_anchor_set)]
+
     if isinstance(k_ratio, dict):
         # Regra P-017: Validação por trava comercial individual de cada âncora
-        order_totals = df.groupby("Pedido")["faturamento_novo"].transform("sum")
-        df["order_total"] = order_totals
+        order_totals = df_anchor_orders.groupby("Pedido")["faturamento_novo"].transform("sum")
+        df_anchor_orders = df_anchor_orders.assign(order_total=order_totals)
 
-        anchor_rows = df[df["is_ancora"]].copy()
+        anchor_rows = df_anchor_orders[df_anchor_orders["is_ancora"]].copy()
+
         anchor_rows["k_limit"] = anchor_rows["Cod Produto"].map(k_ratio).fillna(0.25)
         anchor_rows["violates"] = anchor_rows["faturamento_novo"] > (
             anchor_rows["k_limit"] * anchor_rows["order_total"] + 1e-4
@@ -66,14 +70,13 @@ def simulate_2026_replay(
         eligible_orders = total_with_anchor - len(orders_violating)
     else:
         # Trava escalar uniforme tradicional
-        order_summary = df.groupby("Pedido", sort=False).agg(
+        order_summary = df_anchor_orders.groupby("Pedido", sort=False).agg(
             total_rev=("faturamento_novo", "sum"),
             ancora_rev=("ancora_rev_item", "sum"),
-            has_anchor=("is_ancora", "any")
         )
-        orders_with_anchor = order_summary[order_summary["has_anchor"]]
-        anchor_ratios = orders_with_anchor["ancora_rev"] / np.maximum(orders_with_anchor["total_rev"], 1e-4)
+        anchor_ratios = order_summary["ancora_rev"] / np.maximum(order_summary["total_rev"], 1e-4)
         eligible_orders = int((anchor_ratios <= k_ratio).sum())
+
 
     pct_eligibility = (eligible_orders / total_with_anchor) * 100.0
 

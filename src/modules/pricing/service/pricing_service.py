@@ -243,7 +243,11 @@ def execute_pricing_computation(req: PricingRequest) -> Tuple[pd.DataFrame, list
     return df_consolidated, top_anchors, pricing_recommendations, replay_metrics, stress_metrics, anchor_locks
 
 
-_PREDICTION_FILE = Path(__file__).resolve().parent.parent.parent.parent / "outputs" / "latest_shared_prediction.json"
+_PREDICTION_FILE = (
+    Path(__file__).resolve().parents[4] / "outputs" / "latest_shared_prediction.json"
+    if len(Path(__file__).resolve().parents) >= 5
+    else Path.cwd() / "outputs" / "latest_shared_prediction.json"
+)
 
 
 def save_shared_prediction(data: Dict[str, Any]) -> None:

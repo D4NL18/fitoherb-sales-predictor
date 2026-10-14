@@ -118,4 +118,4 @@ jobs:
             --memory=1Gi \
             --concurrency=80 \
             --timeout=300 \
-            --set-env-vars="PORT=8080,ENV=production,DB_HOST=${DB_HOST},DB_PORT=${DB_PORT},DB_NAME=${DB_NAME},DB_USER=${DB_USER},DB_PASSWORD=${DB_PASSWORD}"
+            --set-env-vars="ENV=production,DB_HOST=${DB_HOST},DB_PORT=${DB_PORT},DB_NAME=${DB_NAME},DB_USER=${DB_USER},DB_PASSWORD=${DB_PASSWORD}"

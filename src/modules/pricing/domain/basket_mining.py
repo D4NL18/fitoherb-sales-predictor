@@ -100,18 +100,22 @@ def calculate_anchor_score(
     order_penetration = sales_df.groupby("Cod Produto")["Pedido"].nunique() / max(total_orders, 1)
 
     # 3. Centralidade de Lift (Média de Lift quando o SKU aparece como antecedente)
-    lift_dict: Dict[int, float] = {}
+    lift_dict: Dict[int, list] = {}
     if not rules_df.empty:
-        for _, row in rules_df.iterrows():
-            antecedents = list(row["antecedents"])
-            lift_val = row["lift"]
-            for sku in antecedents:
-                lift_dict.setdefault(sku, []).append(lift_val)
+        for row in rules_df.itertuples(index=False):
+            lift_val = row.lift
+            for sku in row.antecedents:
+                comps = lift_dict.get(sku)
+                if comps is None:
+                    comps = []
+                    lift_dict[sku] = comps
+                comps.append(lift_val)
         
     avg_lift_map = {sku: float(np.mean(lifts)) for sku, lifts in lift_dict.items()}
 
     all_skus = sales_df["Cod Produto"].unique()
     scores = []
+
 
     for sku in all_skus:
         giro_val = giro_series.get(sku, 0.0)
