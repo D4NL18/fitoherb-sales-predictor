@@ -443,14 +443,14 @@
     &.col-custo,
     &.col-investimento,
     &.col-status {
-      text-align: center !important;
+      text-align: center;
     }
 
     &.text-left,
     &.col-codigo,
     &.col-descricao,
     &.col-fornecedor {
-      text-align: left !important;
+      text-align: left;
     }
   }
 
@@ -816,8 +816,8 @@
   text-transform: uppercase;
   letter-spacing: 0.03em;
   background: rgba(217, 119, 6, 0.12);
-  color: #b45309;
-  border: 1px solid rgba(217, 119, 6, 0.25);
+  color: #78350f;
+  border: 1px solid rgba(217, 119, 6, 0.35);
   border-radius: 4px;
   padding: 1px 5px;
   line-height: 1.2;
@@ -835,7 +835,7 @@
   display: inline-block;
   font-size: 0.68rem;
   font-weight: 700;
-  color: #b45309;
+  color: #78350f;
   background: rgba(217, 119, 6, 0.14);
   padding: 1px 6px;
   border-radius: 4px;
@@ -905,8 +905,20 @@
   }
 }
 
-.tag-disabled {
-  background: var(--surface-container-high) !important;
-  color: var(--outline) !important;
+.param-value-tag.tag-disabled {
+  background: var(--surface-container-high);
+  color: var(--on-surface-variant);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
 }
 

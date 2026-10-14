@@ -272,13 +272,13 @@
       <table class="inventory-table">
         <thead>
           <tr>
-            <th (click)="toggleSort('codigo')" class="sortable col-codigo">
+            <th (click)="toggleSort('codigo')" (keydown.enter)="toggleSort('codigo')" tabindex="0" class="sortable col-codigo">
               Código
               @if (sortColumn() === 'codigo') {
                 <span class="sort-indicator">{{ sortDirection() === 'asc' ? '↑' : '↓' }}</span>
               }
             </th>
-            <th (click)="toggleSort('descricao')" class="sortable col-descricao">
+            <th (click)="toggleSort('descricao')" (keydown.enter)="toggleSort('descricao')" tabindex="0" class="sortable col-descricao">
               Descrição
               @if (sortColumn() === 'descricao') {
                 <span class="sort-indicator">{{ sortDirection() === 'asc' ? '↑' : '↓' }}</span>
@@ -286,19 +286,19 @@
             </th>
             <th class="col-fornecedor">Laboratório</th>
             <th class="text-center col-curva">Curva</th>
-            <th (click)="toggleSort('estoqueAtual')" class="sortable text-center col-estoque">
+            <th (click)="toggleSort('estoqueAtual')" (keydown.enter)="toggleSort('estoqueAtual')" tabindex="0" class="sortable text-center col-estoque">
               Est. Atual
               @if (sortColumn() === 'estoqueAtual') {
                 <span class="sort-indicator">{{ sortDirection() === 'asc' ? '↑' : '↓' }}</span>
               }
             </th>
-            <th (click)="toggleSort('vmd')" class="sortable text-center col-vmd">
+            <th (click)="toggleSort('vmd')" (keydown.enter)="toggleSort('vmd')" tabindex="0" class="sortable text-center col-vmd">
               Giro/Dia
               @if (sortColumn() === 'vmd') {
                 <span class="sort-indicator">{{ sortDirection() === 'asc' ? '↑' : '↓' }}</span>
               }
             </th>
-            <th (click)="toggleSort('diasCobertura')" class="sortable text-center col-autonomia">
+            <th (click)="toggleSort('diasCobertura')" (keydown.enter)="toggleSort('diasCobertura')" tabindex="0" class="sortable text-center col-autonomia">
               Autonomia
               @if (sortColumn() === 'diasCobertura') {
                 <span class="sort-indicator">{{ sortDirection() === 'asc' ? '↑' : '↓' }}</span>
@@ -306,20 +306,20 @@
             </th>
             <th class="text-center col-rop">ROP</th>
             <th class="text-center col-ideal">Est. Ideal</th>
-            <th (click)="toggleSort('qtdSugeridaCompra')" class="sortable text-center highlight-col col-compra">
+            <th (click)="toggleSort('qtdSugeridaCompra')" (keydown.enter)="toggleSort('qtdSugeridaCompra')" tabindex="0" class="sortable text-center highlight-col col-compra">
               Sug. Compra
               @if (sortColumn() === 'qtdSugeridaCompra') {
                 <span class="sort-indicator">{{ sortDirection() === 'asc' ? '↑' : '↓' }}</span>
               }
             </th>
             <th class="text-center col-custo">Custo</th>
-            <th (click)="toggleSort('investimentoTotalItem')" class="sortable text-center highlight-col col-investimento">
+            <th (click)="toggleSort('investimentoTotalItem')" (keydown.enter)="toggleSort('investimentoTotalItem')" tabindex="0" class="sortable text-center highlight-col col-investimento">
               Investimento
               @if (sortColumn() === 'investimentoTotalItem') {
                 <span class="sort-indicator">{{ sortDirection() === 'asc' ? '↑' : '↓' }}</span>
               }
             </th>
-            <th (click)="toggleSort('status')" class="sortable text-center col-status">
+            <th (click)="toggleSort('status')" (keydown.enter)="toggleSort('status')" tabindex="0" class="sortable text-center col-status">
               Status
               @if (sortColumn() === 'status') {
                 <span class="sort-indicator">{{ sortDirection() === 'asc' ? '↑' : '↓' }}</span>
@@ -422,16 +422,18 @@
           <!-- Janela de Histórico de Vendas -->
           <div class="param-row">
             <div class="param-label">
-              <label>Janela de Vendas Recentes (Dias)</label>
+              <label for="historyWindowInput">Janela de Vendas Recentes (Dias)</label>
               <span class="param-value-tag">{{ historyWindowDays() }} dias</span>
             </div>
             <input
+              id="historyWindowInput"
               type="range"
               min="15"
               max="180"
               step="15"
               [ngModel]="historyWindowDays()"
               (ngModelChange)="historyWindowDays.set($event)"
+              aria-label="Janela de histórico de vendas recentes em dias"
             />
             <span class="param-desc">Período de vendas faturadas considerado para o cálculo da VMD.</span>
           </div>
@@ -439,16 +441,18 @@
           <!-- Lead Time Médio de Entrega -->
           <div class="param-row">
             <div class="param-label">
-              <label>Lead Time de Ressuprimento (Dias)</label>
+              <label for="leadTimeInput">Lead Time de Ressuprimento (Dias)</label>
               <span class="param-value-tag">{{ leadTimeDays() }} dias</span>
             </div>
             <input
+              id="leadTimeInput"
               type="range"
               min="5"
               max="60"
               step="1"
               [ngModel]="leadTimeDays()"
               (ngModelChange)="leadTimeDays.set($event)"
+              aria-label="Lead time de ressuprimento em dias"
             />
             <span class="param-desc">Prazo médio de entrega da fábrica até o Centro de Distribuição.</span>
           </div>
@@ -456,16 +460,18 @@
           <!-- Cobertura Alvo no Estoque Ideal -->
           <div class="param-row">
             <div class="param-label">
-              <label>Autonomia Alvo de Estoque (Dias)</label>
+              <label for="targetCoverageInput">Autonomia Alvo de Estoque (Dias)</label>
               <span class="param-value-tag">{{ targetCoverageDays() }} dias</span>
             </div>
             <input
+              id="targetCoverageInput"
               type="range"
               min="15"
               max="90"
               step="5"
               [ngModel]="targetCoverageDays()"
               (ngModelChange)="targetCoverageDays.set($event)"
+              aria-label="Autonomia alvo de cobertura de estoque em dias"
             />
             <span class="param-desc">Meta de dias de vendas a serem cobertos pelo novo pedido.</span>
           </div>
@@ -473,13 +479,15 @@
           <!-- Nível de Serviço Probabilístico -->
           <div class="param-row">
             <div class="param-label">
-              <label>Nível de Serviço Probabilístico (Z-Score)</label>
+              <label for="serviceLevelSelect">Nível de Serviço Probabilístico (Z-Score)</label>
               <span class="param-value-tag">{{ serviceLevel() * 100 | number:'1.0-0' }}%</span>
             </div>
             <select
+              id="serviceLevelSelect"
               [ngModel]="serviceLevel()"
               (ngModelChange)="serviceLevel.set($event)"
               class="form-select"
+              aria-label="Nível de serviço probabilístico"
             >
               <option [value]="0.90">Conservador (90% de disponibilidade, Z = 1.28)</option>
               <option [value]="0.95">Padrão Distribuidora (95% de disponibilidade, Z = 1.65)</option>
@@ -491,17 +499,19 @@
           <!-- Teto Orçamentário de Compras -->
           <div class="param-row">
             <div class="param-label">
-              <label>Teto Orçamentário Máximo (Opcional)</label>
+              <label for="budgetLimitInput">Teto Orçamentário Máximo (Opcional)</label>
               <span class="param-value-tag">
                 {{ budgetLimit() ? ('R$ ' + (budgetLimit() | number:'1.0-0')) : 'Sem Limite' }}
               </span>
             </div>
             <input
+              id="budgetLimitInput"
               type="number"
               placeholder="Ex: 150000 (deixe em branco para sem teto)"
               [ngModel]="budgetLimit()"
               (ngModelChange)="budgetLimit.set($event)"
               class="form-input"
+              aria-label="Teto orçamentário máximo em reais"
             />
             <span class="param-desc">Se preenchido, o motor prioriza os itens de maior risco e Curva A.</span>
           </div>
@@ -510,15 +520,18 @@
           <div class="param-row">
             <div class="param-label">
               <div class="param-label-group">
-                <label>Margem Máxima de Variação de Compra (%)</label>
+                <label for="maxPurchaseVariationInput">Margem Máxima de Variação de Compra (%)</label>
                 <div class="toggle-switch-wrapper">
-                  <label class="switch">
+                  <label class="switch" for="enablePhysicalLimitToggle">
                     <input
+                      id="enablePhysicalLimitToggle"
                       type="checkbox"
                       [checked]="enablePhysicalLimit()"
                       (change)="enablePhysicalLimit.set($any($event.target).checked)"
+                      aria-label="Ativar ou desativar trava de espaço físico"
                     />
-                    <span class="slider-round"></span>
+                    <span class="slider-round" aria-hidden="true"></span>
+                    <span class="sr-only">Ativar trava de espaço físico</span>
                   </label>
                   <span class="switch-text">{{ enablePhysicalLimit() ? 'Trava Físico Ativa' : 'Sem Limite' }}</span>
                 </div>
@@ -529,12 +542,14 @@
             </div>
             @if (enablePhysicalLimit()) {
               <input
+                id="maxPurchaseVariationInput"
                 type="range"
                 min="20"
                 max="500"
                 step="10"
                 [ngModel]="maxPurchaseVariationPct()"
                 (ngModelChange)="maxPurchaseVariationPct.set($event)"
+                aria-label="Margem máxima de variação de compra em porcentagem"
               />
             }
             <span class="param-desc">
