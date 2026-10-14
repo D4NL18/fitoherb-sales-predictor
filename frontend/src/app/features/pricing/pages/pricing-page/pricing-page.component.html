@@ -8,20 +8,18 @@
 <section class="feature-hero-header">
   <div class="feature-hero-container">
     <div class="feature-hero-title-group">
-      <div class="feature-badge-row">
-        <span class="feature-tag">Módulo Comercial de IA</span>
-        @if (lastSavedDate()) {
+      @if (lastSavedDate()) {
+        <div class="feature-badge-row">
           <div class="cache-badge" title="Previsão mais recente salva em cache e restaurada automaticamente">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <svg class="cache-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="12" cy="12" r="10"></circle>
               <polyline points="12 6 12 12 16 14"></polyline>
             </svg>
-            <span>Última previsão: {{ lastSavedDate() }}</span>
+            <span class="cache-text">Última previsão: <strong>{{ lastSavedDate() }}</strong></span>
           </div>
-        }
-      </div>
+        </div>
+      }
       <h1 class="feature-title">Pricing Predictor</h1>
-      <p class="feature-subtitle">Inteligência Comercial B2B • Precificação Compensatória em Cesta Fechada</p>
     </div>
 
     <div class="feature-actions-bar">
@@ -350,13 +348,13 @@
                   <td class="cell-code">{{ prod.codigo }}</td>
                   <td class="cell-desc" [title]="prod.descricao">{{ prod.descricao }}</td>
                   <td class="cell-brand">{{ prod.fornecedor }}</td>
-                  <td>
+                  <td class="cell-role">
                     @if (prod.papelEstrategico.includes('ÂNCORA')) {
-                      <span class="badge badge-anchor">PRODUTO ÂNCORA</span>
+                      <span class="role-text role-anchor">PRODUTO ÂNCORA</span>
                     } @else if (prod.papelEstrategico.includes('COMPENSADOR')) {
-                      <span class="badge badge-comp">COMPENSADOR</span>
+                      <span class="role-text role-comp">COMPENSADOR</span>
                     } @else {
-                      <span class="badge badge-neutral">NEUTRO</span>
+                      <span class="role-text role-neutral">NEUTRO</span>
                     }
                   </td>
                   <td class="text-right cell-price">R$ {{ prod.precoAtual | number:'1.2-2' }}</td>
@@ -509,11 +507,6 @@
               title="Clique para escolher a estratégia e confirmar"
             >
               <div class="selected-strategy-display">
-                <span class="strategy-option-icon">
-                  @if (selectedStrategy() === 'volume_focused') { 📈 }
-                  @else if (selectedStrategy() === 'profit_focused') { 🎯 }
-                  @else { ⚖️ }
-                </span>
                 <div class="selected-strategy-info">
                   <span class="selected-strategy-title">{{ selectedStrategyTitle() }}</span>
                   <span class="selected-strategy-subtitle">{{ selectedStrategySubtitle() }}</span>
@@ -541,7 +534,6 @@
                     [attr.aria-selected]="selectedStrategy() === 'volume_focused'"
                   >
                     <div class="option-content">
-                      <span class="option-icon">📈</span>
                       <div class="option-text">
                         <strong class="option-title">Leve</strong>
                         <span class="option-desc">Foco em volume de vendas, giro rápido e atração máxima</span>
@@ -563,7 +555,6 @@
                     [attr.aria-selected]="selectedStrategy() === 'balanced'"
                   >
                     <div class="option-content">
-                      <span class="option-icon">⚖️</span>
                       <div class="option-text">
                         <div class="option-title-row">
                           <strong class="option-title">Equilibrado</strong>
@@ -588,7 +579,6 @@
                     [attr.aria-selected]="selectedStrategy() === 'profit_focused'"
                   >
                     <div class="option-content">
-                      <span class="option-icon">🎯</span>
                       <div class="option-text">
                         <strong class="option-title">Agressivo</strong>
                         <span class="option-desc">Foco em margem de contribuição e rentabilidade máxima</span>
@@ -628,9 +618,41 @@
         </div>
       </div>
 
-      <!-- Seção 2: Ajuste Detalhado dos Parâmetros com Tooltips Explicativos (P-026) -->
+      <!-- Seção 2: Ajuste Detalhado dos Parâmetros com Tooltips Explicativos (P-026 & P-052) -->
       <div class="params-section-title">
-        <span>Ajuste Detalhado dos Parâmetros</span>
+        <span>Ajuste Detalhado dos Parâmetros & Governança</span>
+      </div>
+
+      <!-- Banner de Ativação da Decisão Autônoma por SKU (Regras P-048 a P-052) -->
+      <div class="autonomous-mode-card" [class.active]="autonomousSkuPricing()">
+        <div class="autonomous-mode-info">
+          <div class="autonomous-badge-title">
+            <strong>Decisão Autônoma e Dinâmica por SKU</strong>
+            <span class="pill-badge pill-primary">Algoritmo Inteligente</span>
+          </div>
+          <p class="autonomous-desc">
+            Quando ativo, o algoritmo decide autonomamente a <strong>quantidade ideal de âncoras</strong>, os <strong>descontos individualizados</strong> por elasticidade, os <strong>reajustes compensadores</strong> e <strong>prevê o impacto no volume</strong> por produto. Os controles abaixo funcionam como <em>limites máximos de segurança (guardrails)</em>.
+          </p>
+        </div>
+        <div class="autonomous-toggle-action">
+          <label class="toggle-container" title="Alternar entre decisão autônoma por SKU ou regras uniformes estáticas">
+            <input 
+              type="checkbox" 
+              [checked]="autonomousSkuPricing()" 
+              (change)="toggleAutonomousSkuPricing()"
+            />
+            <span class="toggle-track">
+              <span class="toggle-indicator"></span>
+            </span>
+            <span class="toggle-text">
+              @if (autonomousSkuPricing()) {
+                <strong>Piloto Autônomo Ativo</strong>
+              } @else {
+                <span>Modo Estático Manual</span>
+              }
+            </span>
+          </label>
+        </div>
       </div>
 
       <div class="inputs-grid-modal">
@@ -695,10 +717,16 @@
         </div>
 
         <!-- Parâmetro 2: Desconto no Produto Âncora -->
-        <div class="input-card">
+        <div class="input-card" [class.highlight-card]="autonomousSkuPricing()">
           <div class="label-row">
             <div class="label-with-info">
-              <label for="modal-anchorDiscount">Desconto no Produto Âncora</label>
+              <label for="modal-anchorDiscount">
+                @if (autonomousSkuPricing()) {
+                  Teto de Desconto Máximo Autorizado
+                } @else {
+                  Desconto no Produto Âncora
+                }
+              </label>
               <div class="info-tooltip-wrap" tabindex="0">
                 <svg class="info-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <circle cx="12" cy="12" r="10"></circle>
@@ -707,11 +735,21 @@
                 </svg>
                 <div class="tooltip-bubble" role="tooltip">
                   <strong>Desconto no Produto Âncora:</strong><br>
-                  Percentual de desconto promocional aplicado nos produtos mais vendidos (âncoras). Serve como isca comercial para atrair os clientes, com trava de segurança para nunca vender abaixo do custo + 5%.
+                  @if (autonomousSkuPricing()) {
+                    No modo autônomo, o algoritmo calibra o desconto ideal de cada SKU de acordo com sua elasticidade-preço. O controle abaixo atua como o teto máximo de desconto autorizado pela diretoria.
+                  } @else {
+                    Percentual de desconto promocional aplicado nos produtos mais vendidos (âncoras). Serve como isca comercial para atrair os clientes, com trava de segurança para nunca vender abaixo do custo + 5%.
+                  }
                 </div>
               </div>
             </div>
-            <span class="pill-badge pill-danger">{{ anchorDiscount() }}%</span>
+            @if (autonomousSkuPricing() && summary()?.avgAnchorDiscountPct) {
+              <span class="pill-badge pill-danger" title="Média real calculada individualmente por produto">
+                Média: {{ summary()!.avgAnchorDiscountPct! * 100 | number:'1.1-1' }}% (Teto {{ anchorDiscount() }}%)
+              </span>
+            } @else {
+              <span class="pill-badge pill-danger">{{ anchorDiscount() }}%</span>
+            }
           </div>
           
           <input 
@@ -727,10 +765,16 @@
         </div>
 
         <!-- Parâmetro 3: Teto de Reajuste Compensador -->
-        <div class="input-card">
+        <div class="input-card" [class.highlight-card]="autonomousSkuPricing()">
           <div class="label-row">
             <div class="label-with-info">
-              <label for="modal-compMaxIncrease">Teto de Reajuste Compensador</label>
+              <label for="modal-compMaxIncrease">
+                @if (autonomousSkuPricing()) {
+                  Teto de Reajuste Máximo Autorizado
+                } @else {
+                  Teto de Reajuste Compensador
+                }
+              </label>
               <div class="info-tooltip-wrap" tabindex="0">
                 <svg class="info-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <circle cx="12" cy="12" r="10"></circle>
@@ -739,11 +783,21 @@
                 </svg>
                 <div class="tooltip-bubble" role="tooltip">
                   <strong>Teto de Reajuste Compensador:</strong><br>
-                  Acréscimo sutil nos produtos complementares que são frequentemente comprados junto com os itens âncora. Este ajuste suave financia o desconto e preserva a margem total da empresa.
+                  @if (autonomousSkuPricing()) {
+                    No modo autônomo, cada produto compensador recebe um reajuste proporcional à sua sensibilidade e correlação na cesta. O valor abaixo limita o teto máximo permitido.
+                  } @else {
+                    Acréscimo sutil nos produtos complementares que são frequentemente comprados junto com os itens âncora. Este ajuste suave financia o desconto e preserva a margem total da empresa.
+                  }
                 </div>
               </div>
             </div>
-            <span class="pill-badge pill-success">+{{ compMaxIncrease() }}%</span>
+            @if (autonomousSkuPricing() && summary()?.avgCompIncreasePct) {
+              <span class="pill-badge pill-success" title="Média de reajuste ponderada pelo giro">
+                Média: +{{ summary()!.avgCompIncreasePct! * 100 | number:'1.1-1' }}% (Teto +{{ compMaxIncrease() }}%)
+              </span>
+            } @else {
+              <span class="pill-badge pill-success">+{{ compMaxIncrease() }}%</span>
+            }
           </div>
 
           <input 
@@ -759,10 +813,16 @@
         </div>
 
         <!-- Parâmetro 4: Queda de Volume no Estresse -->
-        <div class="input-card">
+        <div class="input-card" [class.highlight-card]="autonomousSkuPricing()">
           <div class="label-row">
             <div class="label-with-info">
-              <label for="modal-stressDrop">Queda de Volume no Estresse</label>
+              <label for="modal-stressDrop">
+                @if (autonomousSkuPricing()) {
+                  Queda de Volume Preditiva (Econométrica)
+                } @else {
+                  Queda de Volume no Estresse
+                }
+              </label>
               <div class="info-tooltip-wrap" tabindex="0">
                 <svg class="info-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <circle cx="12" cy="12" r="10"></circle>
@@ -771,11 +831,21 @@
                 </svg>
                 <div class="tooltip-bubble" role="tooltip">
                   <strong>Queda de Volume no Estresse:</strong><br>
-                  Simulação de segurança preventiva: estima uma possível redução na quantidade vendida dos produtos reajustados para assegurar que, mesmo em um cenário de mercado adverso, sua rentabilidade permaneça protegida.
+                  @if (autonomousSkuPricing()) {
+                    No modo autônomo, o algoritmo calcula o impacto previsto na demanda diretamente pela elasticidade de cada item (Sensibilidade econométrica).
+                  } @else {
+                    Simulação de segurança preventiva: estima uma possível redução na quantidade vendida dos produtos reajustados para assegurar que, mesmo em um cenário de mercado adverso, sua rentabilidade permaneça protegida.
+                  }
                 </div>
               </div>
             </div>
-            <span class="pill-badge pill-warning">-{{ stressDrop() }}%</span>
+            @if (autonomousSkuPricing() && summary()?.avgStressDropPct) {
+              <span class="pill-badge pill-warning" title="Queda média ponderada de demanda calculada pelo modelo econométrico">
+                Previsto: -{{ summary()!.avgStressDropPct! * 100 | number:'1.1-1' }}%
+              </span>
+            } @else {
+              <span class="pill-badge pill-warning">-{{ stressDrop() }}%</span>
+            }
           </div>
 
           <input 
@@ -791,10 +861,16 @@
         </div>
 
         <!-- Parâmetro 5: Quantidade de Produtos Âncora -->
-        <div class="input-card">
+        <div class="input-card" [class.highlight-card]="autonomousSkuPricing()">
           <div class="label-row">
             <div class="label-with-info">
-              <label for="modal-topAnchors">Quantidade de Âncoras</label>
+              <label for="modal-topAnchors">
+                @if (autonomousSkuPricing()) {
+                  Corte da Quantidade de Âncoras
+                } @else {
+                  Quantidade de Âncoras
+                }
+              </label>
               <div class="info-tooltip-wrap" tabindex="0">
                 <svg class="info-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <circle cx="12" cy="12" r="10"></circle>
@@ -803,11 +879,21 @@
                 </svg>
                 <div class="tooltip-bubble" role="tooltip">
                   <strong>Quantidade de Âncoras:</strong><br>
-                  Número de produtos líderes em vendas do catálogo que serão selecionados como 'âncoras' para atrair os clientes e alavancar a cesta de compras da loja.
+                  @if (autonomousSkuPricing()) {
+                    No modo autônomo, o algoritmo elege dinamicamente os itens com base na Curva ABC e no Score Composto de Cesta. O valor abaixo serve de balizador de corte.
+                  } @else {
+                    Número de produtos líderes em vendas do catálogo que serão selecionados como 'âncoras' para atrair os clientes e alavancar a cesta de compras da loja.
+                  }
                 </div>
               </div>
             </div>
-            <span class="pill-badge pill-neutral">{{ topAnchors() }} SKUs</span>
+            @if (autonomousSkuPricing() && summary()?.anchorsElected) {
+              <span class="pill-badge pill-primary" title="Quantidade eleita dinamicamente pelo algoritmo estatístico">
+                {{ summary()!.anchorsElected }} SKUs Eleitos
+              </span>
+            } @else {
+              <span class="pill-badge pill-neutral">{{ topAnchors() }} SKUs</span>
+            }
           </div>
 
           <input 
@@ -911,13 +997,6 @@
     <!-- Cabeçalho do Tutorial -->
     <div class="modal-header">
       <div class="modal-title-wrap">
-        <div class="modal-icon-badge tutorial-icon-badge">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="10"></circle>
-            <line x1="12" y1="16" x2="12" y2="12"></line>
-            <line x1="12" y1="8" x2="12.01" y2="8"></line>
-          </svg>
-        </div>
         <div>
           <h2 id="tutorial-modal-title" class="modal-title">Guia de Uso do Sistema</h2>
           <p class="modal-subtitle">Passo {{ tutorialCurrentStep() }} de {{ tutorialTotalSteps }} • Aprenda a utilizar o Pricing Predictor</p>
@@ -948,19 +1027,16 @@
 
             <div class="tutorial-flow-visual">
               <div class="flow-box flow-anchor">
-                <span class="flow-icon">🎯</span>
                 <span class="flow-label">Produto Âncora</span>
                 <span class="flow-sub">Desconto atrativo (-10%)</span>
               </div>
               <div class="flow-plus">+</div>
               <div class="flow-box flow-comp">
-                <span class="flow-icon">⚖️</span>
                 <span class="flow-label">Itens Complementares</span>
                 <span class="flow-sub">Acréscimo suave (+6%)</span>
               </div>
               <div class="flow-equals">=</div>
               <div class="flow-box flow-result">
-                <span class="flow-icon">🛡️</span>
                 <span class="flow-label">Margem Protegida</span>
                 <span class="flow-sub">Mais vendas com lucro seguro</span>
               </div>
@@ -1024,8 +1100,8 @@
               <div class="feature-item">
                 <div class="feature-num">2</div>
                 <div>
-                  <strong>Consulte os Tooltips Informativos (i):</strong>
-                  <p>Passe o mouse ou toque no ícone <strong>(i)</strong> ao lado de qualquer parâmetro para ler em linguagem leiga exatamente o que ele faz no seu negócio.</p>
+                  <strong>Consulte os Tooltips Informativos:</strong>
+                  <p>Passe o mouse ou toque no ícone ao lado de qualquer parâmetro para ler em linguagem clara exatamente o que ele faz no seu negócio.</p>
                 </div>
               </div>
 
@@ -1050,25 +1126,21 @@
 
             <div class="tutorial-tips-grid">
               <div class="tip-card">
-                <span class="tip-icon">🔍</span>
                 <strong>Busca Instantânea</strong>
                 <p>Digite qualquer código, descrição ou marca na caixa de busca para filtrar produtos em tempo real.</p>
               </div>
 
               <div class="tip-card">
-                <span class="tip-icon">🏷️</span>
                 <strong>Filtros Rápidos</strong>
                 <p>Clique nas abas <em>Âncoras</em>, <em>Compensadores</em> ou <em>Neutros</em> para focar apenas no grupo desejado.</p>
               </div>
 
               <div class="tip-card">
-                <span class="tip-icon">↕️</span>
                 <strong>Ordenação por Coluna</strong>
                 <p>Clique no título de qualquer coluna (ex: <em>Novo Preço</em> ou <em>Variação</em>) para ordenar do maior para o menor.</p>
               </div>
 
               <div class="tip-card">
-                <span class="tip-icon">📄</span>
                 <strong>Paginação Completa</strong>
                 <p>Alterne entre páginas ou escolha ver 10, 25, 50, 100 ou todos os itens em uma única lista contínua.</p>
               </div>
@@ -1086,13 +1158,11 @@
 
             <div class="tutorial-action-preview">
               <div class="preview-box">
-                <div class="preview-badge">Exportação</div>
                 <h4>Baixar Tabela de Preços (CSV)</h4>
                 <p>Clique no botão <strong>Baixar CSV</strong> no cabeçalho. Um arquivo completo formatado em UTF-8 será baixado imediatamente, pronto para importação no seu sistema ERP de faturamento ou envio à equipe de vendas.</p>
               </div>
 
               <div class="preview-box">
-                <div class="preview-badge badge-cache">Cache Inteligente</div>
                 <h4>Trabalho Sempre Salvo</h4>
                 <p>Toda previsão calculada fica armazenada no seu navegador. Quando você fechar e abrir o site novamente amanhã, o resultado estará esperando por você sem precisar recalcular.</p>
               </div>

@@ -9,18 +9,40 @@
       />
       <div class="brand-divider"></div>
       <div class="brand-text">
-        <h1 class="brand-title">Fitoherb AI Suite</h1>
-        <span class="brand-subtitle">Plataforma de Inteligência Comercial B2B</span>
+        <h1 class="brand-title">Fitoherb AI</h1>
       </div>
     </div>
 
+    <!-- Botão Hambúrguer Mobile -->
+    <button 
+      type="button" 
+      class="mobile-menu-toggle" 
+      (click)="toggleMobileMenu()" 
+      [attr.aria-expanded]="isMobileMenuOpen()"
+      aria-label="Alternar menu de navegação"
+    >
+      @if (isMobileMenuOpen()) {
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      } @else {
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="4" y1="7" x2="20" y2="7"></line>
+          <line x1="4" y1="12" x2="20" y2="12"></line>
+          <line x1="4" y1="17" x2="20" y2="17"></line>
+        </svg>
+      }
+    </button>
+
     <!-- Navegação de Serviços de IA da Plataforma -->
-    <nav class="platform-nav" aria-label="Serviços de IA">
+    <nav class="platform-nav" [class.mobile-open]="isMobileMenuOpen()" aria-label="Serviços de IA">
       <ul class="nav-list">
         <li class="nav-item">
           <a
             routerLink="/pricing"
             routerLinkActive="active"
+            (click)="closeMobileMenu()"
             class="nav-link"
             title="Acessar o módulo de Precificação Compensatória (Pricing Predictor)"
           >
@@ -36,6 +58,7 @@
           <a
             routerLink="/inventory"
             routerLinkActive="active"
+            (click)="closeMobileMenu()"
             class="nav-link"
             title="Acessar o módulo de Estoque Ideal & Previsão de Compras (Inventory Predictor)"
           >

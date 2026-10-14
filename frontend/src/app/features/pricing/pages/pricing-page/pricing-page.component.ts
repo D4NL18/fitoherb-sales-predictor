@@ -33,6 +33,7 @@ export class PricingPageComponent implements OnInit, OnDestroy {
   readonly anchorDiscount = signal<number>(-10);        // -15% a -5%
   readonly compMaxIncrease = signal<number>(6);         // +1% a +8%
   readonly stressDrop = signal<number>(5);              // 1% a 10%
+  readonly autonomousSkuPricing = signal<boolean>(true);// Autonomia Granular por SKU (P-048 a P-052)
 
   // Estados da Aplicação
   readonly isLoading = signal<boolean>(false);
@@ -262,7 +263,17 @@ export class PricingPageComponent implements OnInit, OnDestroy {
       anchorMaxDiscount: this.anchorDiscount() / 100.0,
       compMaxIncrease: this.compMaxIncrease() / 100.0,
       stressDrop: this.stressDrop() / 100.0,
+      autonomousSkuPricing: this.autonomousSkuPricing(),
     };
+  }
+
+  toggleAutonomousSkuPricing(): void {
+    this.autonomousSkuPricing.update((v) => !v);
+    this.runPrediction(
+      this.autonomousSkuPricing()
+        ? 'Recalculando precificação com decisão autônoma e dinâmica por SKU (P-048 a P-052)...'
+        : 'Recalculando precificação com parâmetros uniformes estáticos...'
+    );
   }
 
   toggleVariableKRatio(): void {

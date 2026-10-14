@@ -107,23 +107,42 @@ def predict_pricing(req: PricingRequest):
             ascending=[True, False, True]
         ).drop(columns=["_prio"])
 
-        all_products = [
-            ProductPreview(
-                codigo=int(r.Codigo),
-                descricao=str(r.Descricao),
-                fornecedor=str(r.Fornecedor_Marca),
-                papelEstrategico=str(r.Papel_Estrategico),
-                precoAtual=float(r.Preco_Atual_Tabela),
-                novoPreco=float(r.Novo_Preco_Sugerido),
-                variacaoReais=float(r.Variacao_Reais),
-                variacaoPct=float(r.Variacao_Percentual),
-                regraComercial=str(r.Regra_Comercial_Pedido),
-                travaKPercentual=float(pricing_recommendations[int(r.Codigo)]["trava_k"])
-                if int(r.Codigo) in pricing_recommendations and pricing_recommendations[int(r.Codigo)].get("trava_k") is not None
-                else None
+        all_products = []
+        anchor_discounts = []
+        comp_increases = []
+        stress_drops = []
+
+        for r in df_sorted.itertuples(index=False):
+            sku_id = int(r.Codigo)
+            info = pricing_recommendations.get(sku_id, {})
+            trava_k = float(info["trava_k"]) if "trava_k" in info and info["trava_k"] is not None else None
+            elast = float(info["elasticidade"]) if "elasticidade" in info else None
+            q_estresse = float(info["queda_volume_estresse_pct"]) if "queda_volume_estresse_pct" in info else None
+
+            var_pct = float(r.Variacao_Percentual)
+            if "ÂNCORA" in str(r.Papel_Estrategico):
+                anchor_discounts.append(var_pct)
+            elif "COMPENSADOR" in str(r.Papel_Estrategico):
+                comp_increases.append(var_pct)
+                if q_estresse is not None:
+                    stress_drops.append(q_estresse)
+
+            all_products.append(
+                ProductPreview(
+                    codigo=sku_id,
+                    descricao=str(r.Descricao),
+                    fornecedor=str(r.Fornecedor_Marca),
+                    papelEstrategico=str(r.Papel_Estrategico),
+                    precoAtual=float(r.Preco_Atual_Tabela),
+                    novoPreco=float(r.Novo_Preco_Sugerido),
+                    variacaoReais=float(r.Variacao_Reais),
+                    variacaoPct=var_pct,
+                    regraComercial=str(r.Regra_Comercial_Pedido),
+                    travaKPercentual=trava_k,
+                    elasticidade=elast,
+                    quedaVolumeEstressePct=q_estresse
+                )
             )
-            for r in df_sorted.itertuples(index=False)
-        ]
 
         k_values = list(anchor_locks.values()) if req.variable_k_ratio and anchor_locks else [req.k_ratio]
         summary = PricingSummary(
@@ -137,7 +156,13 @@ def predict_pricing(req: PricingRequest):
             marginProtected=bool(stress.get("margem_protegida", True)),
             variableKRatioApplied=req.variable_k_ratio,
             minKRatio=float(min(k_values)) if k_values else req.k_ratio,
-            maxKRatio=float(max(k_values)) if k_values else req.k_ratio
+            maxKRatio=float(max(k_values)) if k_values else req.k_ratio,
+            autonomousSkuPricingApplied=req.autonomous_sku_pricing,
+            avgAnchorDiscountPct=round(float(sum(anchor_discounts) / len(anchor_discounts)), 4) if anchor_discounts else req.anchor_min_discount,
+            minAnchorDiscountPct=round(float(min(anchor_discounts)), 4) if anchor_discounts else req.anchor_min_discount,
+            maxAnchorDiscountPct=round(float(max(anchor_discounts)), 4) if anchor_discounts else req.anchor_max_discount,
+            avgCompIncreasePct=round(float(sum(comp_increases) / len(comp_increases)), 4) if comp_increases else req.comp_max_increase,
+            avgStressDropPct=round(float(sum(stress_drops) / len(stress_drops)), 4) if stress_drops else req.stress_drop
         )
 
         result_data = {

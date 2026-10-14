@@ -51,17 +51,35 @@
       gap: 10px;
       margin-bottom: 6px;
 
-      .feature-tag {
-        font-family: var(--font-family-body);
-        font-size: 0.68rem;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        padding: 3px 10px;
-        border-radius: var(--radius-full);
-        background: var(--surface-container-high);
-        color: var(--primary);
-        border: 1px solid rgba(195, 235, 182, 0.45);
+      .cache-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 0;
+        background: transparent;
+        border: none;
+        box-shadow: none;
+        user-select: none;
+
+        .cache-icon {
+          flex-shrink: 0;
+          stroke: #52634f;
+          opacity: 0.85;
+        }
+
+        .cache-text {
+          font-family: var(--font-family-body, 'Inter', sans-serif);
+          font-size: 0.78rem;
+          font-weight: 500;
+          letter-spacing: -0.01em;
+          color: #52634f;
+
+          strong {
+            font-weight: 600;
+            color: #2b3a29;
+            margin-left: 2px;
+          }
+        }
       }
     }
 
@@ -724,6 +742,31 @@
               }
             }
 
+            &.cell-role {
+              white-space: nowrap;
+
+              .role-text {
+                font-size: 0.76rem;
+                font-weight: 700;
+                text-transform: uppercase;
+                letter-spacing: 0.04em;
+                white-space: nowrap;
+
+                &.role-anchor {
+                  color: #b83f09;
+                }
+
+                &.role-comp {
+                  color: #276b1f;
+                }
+
+                &.role-neutral {
+                  color: #6b7267;
+                  font-weight: 600;
+                }
+              }
+            }
+
             &.cell-rule {
               min-width: 240px;
               max-width: 480px;
@@ -754,7 +797,7 @@
     }
   }
 
-  /* Badges de Papel Estratégico */
+  /* Badges Legados */
   .badge {
     display: inline-block;
     padding: 3px 10px;
@@ -1264,13 +1307,110 @@
   }
 }
 
-/* Grid de Ajuste Detalhado dos Parâmetros */
+/* Grid de Ajuste Detalhado dos Parâmetros & Governança */
 .params-section-title {
   font-family: var(--font-family-headline);
   font-size: 0.95rem;
   font-weight: 800;
   color: var(--primary);
   margin-bottom: 16px;
+}
+
+.autonomous-mode-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  background: var(--surface-container-low, #f2f5f0);
+  border: 1px solid var(--outline-variant, #d8ddd5);
+  border-radius: var(--radius-lg);
+  padding: 16px 20px;
+  margin-bottom: 20px;
+  box-shadow: none;
+  transition: all var(--transition-fast);
+
+  &.active {
+    background: #edf3eb;
+    border-color: #cbd7c7;
+    box-shadow: none;
+  }
+
+  .autonomous-mode-info {
+    flex: 1;
+
+    .autonomous-badge-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.92rem;
+      color: var(--primary);
+      margin-bottom: 6px;
+    }
+
+    .autonomous-desc {
+      font-size: 0.76rem;
+      color: var(--on-surface-variant);
+      line-height: 1.45;
+      margin: 0;
+
+      strong {
+        color: var(--primary);
+      }
+      em {
+        font-style: normal;
+        color: var(--primary-container);
+        font-weight: 600;
+      }
+    }
+  }
+
+  .autonomous-toggle-action {
+    display: flex;
+    align-items: center;
+
+    .toggle-container {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+      user-select: none;
+      font-size: 0.8rem;
+      color: var(--primary);
+
+      input {
+        display: none;
+
+        &:checked + .toggle-track {
+          background: var(--primary-container);
+
+          .toggle-indicator {
+            transform: translateX(18px);
+          }
+        }
+      }
+
+      .toggle-track {
+        width: 38px;
+        height: 20px;
+        background: var(--outline-variant);
+        border-radius: var(--radius-full);
+        position: relative;
+        transition: background var(--transition-fast);
+
+        .toggle-indicator {
+          position: absolute;
+          top: 2px;
+          left: 2px;
+          width: 16px;
+          height: 16px;
+          border-radius: 50%;
+          background: #ffffff;
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+          transition: transform var(--transition-fast);
+        }
+      }
+    }
+  }
 }
 
 .inputs-grid-modal {
@@ -1449,10 +1589,11 @@
 
     .range-slider {
       width: 100%;
-      height: 6px;
+      height: 7px;
       -webkit-appearance: none;
       appearance: none;
-      background: var(--surface-container-low);
+      background: #c2c8bf;
+      border: 1px solid #adb5a9;
       border-radius: var(--radius-full);
       outline: none;
 
@@ -1464,7 +1605,7 @@
         border-radius: 50%;
         background: var(--primary-container);
         cursor: pointer;
-        box-shadow: 0 1px 4px rgba(33, 64, 26, 0.3);
+        box-shadow: 0 1px 4px rgba(33, 64, 26, 0.35);
         transition: transform var(--transition-fast);
 
         &:hover {
@@ -1472,11 +1613,34 @@
         }
       }
 
+      &::-moz-range-track {
+        background: #c2c8bf;
+        border: 1px solid #adb5a9;
+        border-radius: var(--radius-full);
+        height: 7px;
+      }
+
+      &::-moz-range-thumb {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: var(--primary-container);
+        cursor: pointer;
+        border: none;
+        box-shadow: 0 1px 4px rgba(33, 64, 26, 0.35);
+      }
+
       &.range-danger::-webkit-slider-thumb {
+        background: var(--color-danger);
+      }
+      &.range-danger::-moz-range-thumb {
         background: var(--color-danger);
       }
 
       &.range-success::-webkit-slider-thumb {
+        background: #27ae60;
+      }
+      &.range-success::-moz-range-thumb {
         background: #27ae60;
       }
     }
@@ -1867,31 +2031,107 @@
 
 /* Responsividade Mobile e Telas Menores */
 @media (max-width: 768px) {
-  .app-header .header-container {
-    padding: 10px 16px;
-    flex-direction: column;
-    align-items: flex-start;
+  .feature-hero-header {
+    padding: 18px 0 12px 0;
+
+    .feature-hero-container {
+      padding: 0 16px;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 14px;
+    }
+
+    .feature-title {
+      font-size: 1.55rem;
+    }
+
+    .feature-actions-bar {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      width: 100%;
+
+      .btn-help,
+      .btn-gear,
+      .btn-predict-main,
+      .btn-export-nav {
+        width: 100%;
+        justify-content: center;
+        padding: 9px 12px;
+        font-size: 0.8rem;
+      }
+    }
   }
 
   .main-container {
-    padding: 16px;
+    padding: 12px 14px;
   }
 
   .proof-bar-section .proof-grid {
     grid-template-columns: 1fr;
+    gap: 10px;
   }
 
   .catalog-card .catalog-toolbar {
     flex-direction: column;
     align-items: stretch;
+    gap: 12px;
 
     .search-box {
       min-width: 100%;
     }
+
+    .role-filters,
+    .brand-filter-box {
+      width: 100%;
+      overflow-x: auto;
+    }
+  }
+
+  .autonomous-mode-card {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px;
+
+    .autonomous-toggle-action {
+      width: 100%;
+      justify-content: flex-end;
+    }
+  }
+
+  .inputs-grid-modal {
+    grid-template-columns: 1fr;
   }
 
   .modal-dialog {
-    width: 95%;
-    max-height: 95vh;
+    width: 96%;
+    max-height: 94vh;
+    border-radius: var(--radius-lg);
+
+    .modal-header {
+      padding: 14px 18px;
+    }
+
+    .modal-body {
+      padding: 16px;
+    }
+
+    .modal-footer {
+      padding: 12px 16px;
+      flex-direction: column;
+      gap: 8px;
+
+      .modal-footer-actions {
+        width: 100%;
+        flex-direction: column;
+
+        .btn-modal-cancel,
+        .btn-modal-apply {
+          width: 100%;
+          justify-content: center;
+        }
+      }
+    }
   }
 }
