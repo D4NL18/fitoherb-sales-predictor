@@ -7,6 +7,7 @@ export interface PricingParams {
   anchorMaxDiscount: number;
   compMaxIncrease: number;
   stressDrop: number;
+  autonomousSkuPricing?: boolean;
 }
 
 export interface PricingSummary {
@@ -21,6 +22,12 @@ export interface PricingSummary {
   variableKRatioApplied?: boolean;
   minKRatio?: number;
   maxKRatio?: number;
+  autonomousSkuPricingApplied?: boolean;
+  avgAnchorDiscountPct?: number;
+  minAnchorDiscountPct?: number;
+  maxAnchorDiscountPct?: number;
+  avgCompIncreasePct?: number;
+  avgStressDropPct?: number;
 }
 
 export interface ProductPreview {
@@ -34,6 +41,8 @@ export interface ProductPreview {
   variacaoPct: number;
   regraComercial: string;
   travaKPercentual?: number | null;
+  elasticidade?: number | null;
+  quedaVolumeEstressePct?: number | null;
 }
 
 export interface PredictResponse {

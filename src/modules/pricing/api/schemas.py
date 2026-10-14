@@ -14,6 +14,7 @@ class PricingRequest(BaseModel):
     anchor_max_discount: float = Field(-0.05, ge=-0.30, le=-0.01, alias="anchorMaxDiscount")
     comp_max_increase: float = Field(0.06, ge=0.005, le=0.20, alias="compMaxIncrease")
     stress_drop: float = Field(0.05, ge=0.01, le=0.20, alias="stressDrop")
+    autonomous_sku_pricing: bool = Field(True, alias="autonomousSkuPricing")
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -29,6 +30,8 @@ class ProductPreview(BaseModel):
     variacaoPct: float
     regraComercial: str
     travaKPercentual: Optional[float] = None
+    elasticidade: Optional[float] = None
+    quedaVolumeEstressePct: Optional[float] = None
 
 
 class PricingSummary(BaseModel):
@@ -43,6 +46,12 @@ class PricingSummary(BaseModel):
     variableKRatioApplied: bool = True
     minKRatio: Optional[float] = None
     maxKRatio: Optional[float] = None
+    autonomousSkuPricingApplied: bool = True
+    avgAnchorDiscountPct: Optional[float] = None
+    minAnchorDiscountPct: Optional[float] = None
+    maxAnchorDiscountPct: Optional[float] = None
+    avgCompIncreasePct: Optional[float] = None
+    avgStressDropPct: Optional[float] = None
 
 
 class AutoTuneRequest(BaseModel):

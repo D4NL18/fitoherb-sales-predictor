@@ -155,22 +155,80 @@
   border: 1px solid rgba(195, 235, 182, 0.4);
 }
 
+/* Botão Hambúrguer Mobile */
+.mobile-menu-toggle {
+  display: none;
+  background: transparent;
+  border: none;
+  padding: 8px;
+  color: var(--primary, #21401a);
+  cursor: pointer;
+  border-radius: 8px;
+  transition: background var(--transition-fast, 0.2s ease);
+
+  &:hover {
+    background: rgba(33, 64, 26, 0.08);
+  }
+}
+
 @media (max-width: 768px) {
   .navbar-container {
     padding: 0 16px;
     height: 60px;
   }
 
-  .brand-subtitle {
-    display: none;
+  .mobile-menu-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
 
-  .nav-item-disabled {
+  .platform-nav {
     display: none;
-  }
+    position: absolute;
+    top: 60px;
+    left: 0;
+    width: 100%;
+    background: rgba(249, 250, 248, 0.98);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-bottom: 1px solid rgba(195, 235, 182, 0.4);
+    box-shadow: 0 10px 25px rgba(33, 64, 26, 0.08);
+    padding: 16px 20px;
 
-  .nav-link {
-    padding: 6px 12px;
-    font-size: 0.8125rem;
+    &.mobile-open {
+      display: block;
+      animation: navSlideDown 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    .nav-list {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 10px;
+      width: 100%;
+    }
+
+    .nav-item {
+      width: 100%;
+    }
+
+    .nav-link {
+      width: 100%;
+      padding: 12px 18px;
+      font-size: 0.92rem;
+      border-radius: 12px;
+      justify-content: flex-start;
+    }
+  }
+}
+
+@keyframes navSlideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }

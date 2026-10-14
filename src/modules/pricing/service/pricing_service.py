@@ -132,11 +132,19 @@ def execute_pricing_computation(req: PricingRequest) -> Tuple[pd.DataFrame, list
     volume_dict = cache["volume_dict"]
     anchor_natural_shares = cache.get("anchor_natural_shares", {})
 
-    # 1. Seleção ultra-rápida de Âncoras e Compensadores (< 20ms)
+    # 1. Seleção de Âncoras: Se modo autônomo estiver ativo, determina quantidade dinâmica (P-048)
+    if req.autonomous_sku_pricing and not anchor_scores.empty:
+        # Corte estatístico: produtos com score composto elevado (Top percentil) limitado entre 8 e 32
+        score_threshold = float(anchor_scores["score_composto"].quantile(0.85)) if len(anchor_scores) >= 10 else 0.5
+        qualifying_anchors_count = int((anchor_scores["score_composto"] >= score_threshold).sum())
+        effective_top_anchors = max(8, min(32, qualifying_anchors_count))
+    else:
+        effective_top_anchors = req.top_anchors
+
     top_anchors, anchor_compensators = select_anchors_and_compensators(
         anchor_scores,
         rules_df,
-        top_n_anchors=req.top_anchors,
+        top_n_anchors=effective_top_anchors,
         max_comp_per_anchor=DEFAULT_CONFIG.max_compensators_per_anchor
     )
 
@@ -157,7 +165,7 @@ def execute_pricing_computation(req: PricingRequest) -> Tuple[pd.DataFrame, list
         half_life_days=req.half_life_days
     )
 
-    # 3. Otimização Prescritiva HiGHS (< 30ms)
+    # 3. Otimização Prescritiva HiGHS com limites granulares por SKU (P-049 e P-050)
     opt_config = OptimizationConfig(
         anchor_min_discount=req.anchor_min_discount,
         anchor_max_discount=req.anchor_max_discount,
@@ -176,6 +184,22 @@ def execute_pricing_computation(req: PricingRequest) -> Tuple[pd.DataFrame, list
         if not comps:
             continue
 
+        # No modo autônomo, personaliza os bounds individuais para este âncora específico (P-049)
+        anchor_opt_config = opt_config
+        if req.autonomous_sku_pricing:
+            e_a = abs(elasticity_matrix.get((anchor, anchor), -1.2))
+            # Ajuste proporcional: SKU mais elástico recebe desconto ligeiramente maior, até o limite seguro
+            dyn_min_disc = max(req.anchor_min_discount, -0.05 - (0.07 * min(e_a / 1.5, 1.4)))
+            dyn_max_disc = min(req.anchor_max_discount, dyn_min_disc + 0.03)
+            anchor_opt_config = OptimizationConfig(
+                anchor_min_discount=dyn_min_disc,
+                anchor_max_discount=dyn_max_disc,
+                comp_min_increase=opt_config.comp_min_increase,
+                comp_max_increase=opt_config.comp_max_increase,
+                margin_floor_pct=opt_config.margin_floor_pct,
+                k_basket_ratio=req.k_ratio,
+            )
+
         res = optimize_basket_pricing(
             anchor_sku=anchor,
             compensators=comps,
@@ -183,7 +207,7 @@ def execute_pricing_computation(req: PricingRequest) -> Tuple[pd.DataFrame, list
             costs=cost_dict,
             volumes=volume_dict,
             own_elasticities={s: elasticity_matrix.get((s, s), -1.2) for s in [anchor] + comps},
-            config=opt_config
+            config=anchor_opt_config
         )
 
         if res.success:
@@ -195,12 +219,15 @@ def execute_pricing_computation(req: PricingRequest) -> Tuple[pd.DataFrame, list
             total_delta_margin_anchors += margin_imp_a
 
             anchor_k = anchor_locks.get(anchor, req.k_ratio)
+            e_a_val = elasticity_matrix.get((anchor, anchor), -1.2)
             pricing_recommendations[anchor] = {
                 "papel": "PRODUTO ÂNCORA",
                 "novo_preco": ancora_new_p,
                 "impacto_margem": margin_imp_a,
                 "regra": f"Válido apenas quando o item representar até {int(round(anchor_k*100))}% do valor total do pedido",
                 "trava_k": anchor_k,
+                "elasticidade": round(float(e_a_val), 2),
+                "queda_volume_estresse_pct": 0.0,
             }
 
             for comp_sku in comps:
@@ -212,11 +239,18 @@ def execute_pricing_computation(req: PricingRequest) -> Tuple[pd.DataFrame, list
                 total_delta_margin_comps += margin_imp_c
 
                 if comp_sku not in pricing_recommendations:
+                    e_c_val = elasticity_matrix.get((comp_sku, comp_sku), -1.0)
+                    delta_pct_c = delta_p_c / p0_c if p0_c > 0 else 0.0
+                    # P-051: Queda econométrica preditiva por produto
+                    sku_stress_drop = min(0.15, max(0.01, abs(e_c_val) * delta_pct_c)) if req.autonomous_sku_pricing else req.stress_drop
+
                     pricing_recommendations[comp_sku] = {
                         "papel": "COMPENSADOR",
                         "novo_preco": comp_new_p,
                         "impacto_margem": margin_imp_c,
                         "regra": f"Item compensador de parâmetros (associado ao âncora {anchor})",
+                        "elasticidade": round(float(e_c_val), 2),
+                        "queda_volume_estresse_pct": round(float(sku_stress_drop), 4),
                     }
 
     # 5. Backtest Replay 2026 e Estresse
@@ -228,10 +262,24 @@ def execute_pricing_computation(req: PricingRequest) -> Tuple[pd.DataFrame, list
         k_ratio=anchor_locks if req.variable_k_ratio else req.k_ratio
     )
 
+    # P-051: Cálculo ponderado do estresse por SKU se modo autônomo
+    comp_skus_list = [s for s, info in pricing_recommendations.items() if info["papel"] == "COMPENSADOR"]
+    if req.autonomous_sku_pricing and comp_skus_list:
+        total_comp_rev = sum(catalog_price_dict.get(s, 10.0) * volume_dict.get(s, 1.0) for s in comp_skus_list)
+        if total_comp_rev > 0:
+            weighted_stress_drop = sum(
+                (catalog_price_dict.get(s, 10.0) * volume_dict.get(s, 1.0) / total_comp_rev) * pricing_recommendations[s].get("queda_volume_estresse_pct", req.stress_drop)
+                for s in comp_skus_list
+            )
+        else:
+            weighted_stress_drop = req.stress_drop
+    else:
+        weighted_stress_drop = req.stress_drop
+
     stress_metrics = stress_test_volume_drop(
         delta_margin_anchor=total_delta_margin_anchors,
         delta_margin_comp=total_delta_margin_comps,
-        comp_volume_drop_pct=req.stress_drop
+        comp_volume_drop_pct=weighted_stress_drop
     )
 
     # 6. Tabela Consolidada
