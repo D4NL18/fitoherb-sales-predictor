@@ -5,6 +5,7 @@ export interface InventoryParams {
   serviceLevel: number;
   fornecedor?: string | null;
   budgetLimit?: number | null;
+  maxPurchaseVariationPct?: number | null;
 }
 
 export interface CurvaADistribuicao {
@@ -18,6 +19,7 @@ export interface InventoryKPIs {
   skusNecessitamReposicao: number;
   skusEstoqueSaudavel: number;
   skusEmOverstock: number;
+  skusLimitadosPorEspaco?: number;
   investimentoTotalSugerido: number;
   capitalImobilizadoOverstock: number;
   curvaADistribuicao: CurvaADistribuicao;
@@ -39,7 +41,11 @@ export interface InventoryProductItem {
   estoqueSeguranca: number;
   rop: number;
   estoqueIdeal: number;
+  estoqueIdealTeorico?: number;
   qtdSugeridaCompra: number;
+  qtdSugeridaTeorica?: number;
+  limitadoPorEspaco?: boolean;
+  tetoCompraFisica?: number | null;
   custoUnitario: number;
   precoVenda: number;
   investimentoTotalItem: number;
@@ -84,6 +90,7 @@ export interface InventoryConfigResponse {
       options: Array<{ label: string; value: number; zScore: number }>;
     };
     budgetLimit: { default: number | null; min: number; max: number; step: number };
+    maxPurchaseVariationPct?: { default: number; min: number; max: number; step: number };
   };
   meta: {
     timestamp: string;

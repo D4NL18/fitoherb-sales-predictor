@@ -5,12 +5,12 @@
    ========================================================================== */
 
 .inventory-container {
-  max-width: 1600px;
+  max-width: 100%;
   margin: 0 auto;
-  padding: 24px 28px 60px;
+  padding: 16px 20px 48px;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 20px;
 }
 
 /* Feature Hero Header */
@@ -429,17 +429,39 @@
 .inventory-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.84rem;
+  font-size: 0.8125rem;
+
+  th, td {
+    &.text-center,
+    &.col-curva,
+    &.col-estoque,
+    &.col-vmd,
+    &.col-autonomia,
+    &.col-rop,
+    &.col-ideal,
+    &.col-compra,
+    &.col-custo,
+    &.col-investimento,
+    &.col-status {
+      text-align: center !important;
+    }
+
+    &.text-left,
+    &.col-codigo,
+    &.col-descricao,
+    &.col-fornecedor {
+      text-align: left !important;
+    }
+  }
 
   th {
-    padding: 12px 16px;
+    padding: 10px 8px;
     background: var(--surface-container-low);
     color: var(--on-surface-variant);
     font-weight: 700;
     text-transform: uppercase;
-    font-size: 0.72rem;
-    letter-spacing: 0.04em;
-    text-align: left;
+    font-size: 0.69rem;
+    letter-spacing: 0.03em;
     white-space: nowrap;
     border-bottom: 1px solid var(--surface-container-high);
 
@@ -454,10 +476,12 @@
   }
 
   td {
-    padding: 12px 16px;
+    padding: 8px 8px;
     border-bottom: 1px solid var(--surface-container-low);
     color: var(--on-surface);
     vertical-align: middle;
+    font-size: 0.80rem;
+    white-space: nowrap;
   }
 
   tr:hover {
@@ -469,8 +493,19 @@
   }
 }
 
+/* Colunas calibradas harmonicamente: sem vazios exagerados e alinhamento idêntico header/row */
+.col-codigo {
+  width: 75px;
+  font-size: 0.74rem;
+}
+
+.col-descricao {
+  min-width: 260px;
+  max-width: 360px;
+}
+
 .product-name {
-  max-width: 320px;
+  max-width: 360px;
   display: flex;
   flex-direction: column;
 
@@ -479,23 +514,33 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    display: block;
   }
 
   .ean-text {
-    font-size: 0.72rem;
+    font-size: 0.68rem;
     color: var(--outline);
     font-family: var(--font-family-mono);
   }
 }
 
+.col-fornecedor {
+  min-width: 115px;
+}
+
 .supplier-badge {
-  font-size: 0.72rem;
-  padding: 2px 8px;
+  font-size: 0.70rem;
+  padding: 2px 7px;
   border-radius: var(--radius-sm, 4px);
   background: var(--surface-container-high);
   color: var(--on-surface-variant);
   font-weight: 500;
   white-space: nowrap;
+  display: inline-block;
+}
+
+.col-curva {
+  width: 60px;
 }
 
 .abc-badge {
@@ -503,39 +548,70 @@
   padding: 2px 6px;
   border-radius: 4px;
   font-weight: 800;
-  font-size: 0.72rem;
+  font-size: 0.70rem;
 
   &.abc-A { background: #dcfce7; color: #166534; }
   &.abc-B { background: #fef9c3; color: #854d0e; }
   &.abc-C { background: #f1f5f9; color: #475569; }
 }
 
-.status-tag {
-  display: inline-block;
-  padding: 4px 10px;
-  border-radius: var(--radius-full, 9999px);
-  font-size: 0.72rem;
+.col-estoque {
+  min-width: 90px;
+}
+
+.col-vmd {
+  min-width: 80px;
+}
+
+.col-autonomia {
+  min-width: 90px;
+}
+
+.col-rop {
+  min-width: 65px;
+}
+
+.col-ideal {
+  min-width: 85px;
+}
+
+.col-compra {
+  min-width: 100px;
+}
+
+.col-custo {
+  min-width: 80px;
+}
+
+.col-investimento {
+  min-width: 120px;
+}
+
+.col-status {
+  min-width: 115px;
+}
+
+/* Status em texto puro (sem badge/tag) */
+.status-text {
   font-weight: 700;
+  font-size: 0.80rem;
   white-space: nowrap;
+  letter-spacing: 0.01em;
 
   &.status-critical_stockout {
-    background: var(--color-danger-bg);
-    color: var(--color-danger);
+    color: var(--color-danger, #ba1a1a);
   }
 
   &.status-reorder_needed {
-    background: var(--color-warning-bg);
-    color: var(--color-warning);
+    color: var(--color-warning, #d97706);
   }
 
   &.status-healthy {
-    background: var(--color-success-bg);
-    color: var(--color-success);
+    color: var(--color-success, #27ae60);
   }
 
   &.status-overstock {
-    background: #dbeafe;
-    color: #1e40af;
+    color: #2563eb;
   }
 }
 
@@ -718,3 +794,119 @@
   gap: 12px;
   background: var(--surface-container-low);
 }
+
+/* Governança de Espaço Físico & Trava de Variação (P-044.4) */
+.sugestao-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+
+  .sugestao-num {
+    font-size: 0.95rem;
+  }
+}
+
+.capped-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  background: rgba(217, 119, 6, 0.12);
+  color: #b45309;
+  border: 1px solid rgba(217, 119, 6, 0.25);
+  border-radius: 4px;
+  padding: 1px 5px;
+  line-height: 1.2;
+  cursor: help;
+  white-space: nowrap;
+  transition: all 0.15s ease-in-out;
+
+  &:hover {
+    background: rgba(217, 119, 6, 0.22);
+    transform: translateY(-1px);
+  }
+}
+
+.proof-capped-chip {
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #b45309;
+  background: rgba(217, 119, 6, 0.14);
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-top: 4px;
+  white-space: nowrap;
+}
+
+.param-label-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.toggle-switch-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  .switch-text {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--on-surface-variant);
+  }
+}
+
+/* Switch Toggle Orgânico */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 32px;
+  height: 18px;
+
+  input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+
+    &:checked + .slider-round {
+      background-color: var(--primary);
+
+      &:before {
+        transform: translateX(14px);
+      }
+    }
+  }
+
+  .slider-round {
+    position: absolute;
+    cursor: pointer;
+    inset: 0;
+    background-color: var(--surface-container-high);
+    transition: 0.2s;
+    border-radius: 18px;
+
+    &:before {
+      position: absolute;
+      content: "";
+      height: 14px;
+      width: 14px;
+      left: 2px;
+      bottom: 2px;
+      background-color: white;
+      transition: 0.2s;
+      border-radius: 50%;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    }
+  }
+}
+
+.tag-disabled {
+  background: var(--surface-container-high) !important;
+  color: var(--outline) !important;
+}
+

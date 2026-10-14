@@ -138,3 +138,23 @@ def test_inventory_export_csv(client):
     content = response.text
     assert "Código;" in content or "Código" in content
     assert "EXTRATO PROPOLIS APISFLORA" in content
+
+
+def test_inventory_predict_with_variation_limit(client):
+    payload = {
+        "historyWindowDays": 60,
+        "leadTimeDays": 15,
+        "targetCoverageDays": 30,
+        "serviceLevel": 0.95,
+        "maxPurchaseVariationPct": 100.0
+    }
+    response = client.post("/api/v1/inventory/predict", json=payload)
+    assert response.status_code == 200
+    json_data = response.json()
+    data = json_data["data"]
+    assert "skusLimitadosPorEspaco" in data["kpis"]
+    # Produto 101 tem estoque 5, VMD 2, ideal 90, teórica 85. Com teto 100%, é limitado
+    p101 = next(p for p in data["produtos"] if p["codigo"] == 101)
+    assert p101["limitadoPorEspaco"] is True
+    assert p101["qtdSugeridaCompra"] < p101["qtdSugeridaTeorica"]
+

@@ -49,7 +49,8 @@ def get_inventory_config():
                 {"label": "Crítico / Sem Ruptura (98%)", "value": 0.98, "zScore": 2.05},
             ]
         },
-        "budgetLimit": {"default": None, "min": 10000.0, "max": 1000000.0, "step": 5000.0}
+        "budgetLimit": {"default": None, "min": 10000.0, "max": 1000000.0, "step": 5000.0},
+        "maxPurchaseVariationPct": {"default": 100.0, "min": 20.0, "max": 500.0, "step": 10.0}
     }
     return InventoryConfigResponse(
         data=config_data,

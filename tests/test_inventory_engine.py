@@ -170,3 +170,75 @@ def test_budget_limit_prioritization(sample_catalog_data, sample_sales_data):
     )
     
     assert res_limited["kpis"]["investimentoTotalSugerido"] <= budget_limit + 1.0
+
+
+def test_max_purchase_variation_limit_caps_unrealistic_orders(sample_catalog_data, sample_sales_data):
+    """
+    Testa se uma compra teórica desproporcional é limitada pela margem máxima de variação (P-044.4).
+    Produto 101 tem estoque 10.0, VMD 2.0 e Estoque Ideal de 90.0 (Demanda teórica = 80).
+    Com margem de +100%, a compra máxima não pode exceder 20 unidades (10 * (1 + 1.0)).
+    """
+    velocity_df = calculate_sales_velocity(sample_sales_data, window_days=60)
+    result = calculate_inventory_replenishment(
+        products_df=sample_catalog_data,
+        velocity_df=velocity_df,
+        lead_time_days=15,
+        target_coverage_days=30,
+        service_level=0.95,
+        max_purchase_variation_pct=100.0
+    )
+    
+    produtos = result["produtos"]
+    kpis = result["kpis"]
+    p101 = next(p for p in produtos if p["codigo"] == 101)
+    
+    assert p101["limitadoPorEspaco"] is True
+    assert p101["qtdSugeridaTeorica"] == 80
+    assert p101["tetoCompraFisica"] == 20
+    assert p101["qtdSugeridaCompra"] == 20
+    assert p101["investimentoTotalItem"] == 20 * p101["custoUnitario"]
+    # Estoque ideal operacional limitado (10 + 20 = 30) em vez do valor irreal (90)
+    assert p101["estoqueIdeal"] == 30
+    assert p101["estoqueIdealTeorico"] == 90
+    assert kpis["skusLimitadosPorEspaco"] >= 1
+
+
+def test_zero_stock_safeguard_operational_floor(sample_sales_data):
+    """
+    Testa se um produto com estoque zerado possui piso operacional mínimo seguro
+    para não ter sua compra travada em 0 (P-044.4).
+    """
+    catalog_zero = pd.DataFrame([
+        {
+            "Codigo": 999,
+            "Descricao": "PRODUTO ZERADO EM RUPTURA",
+            "EAN": "7890000000001",
+            "Fornecedor": "APIS FLORA",
+            "Tipo": "EXTRATOS",
+            "Estoque": 0.0,
+            "Pc.Ultimo Custo": 10.0,
+            "Pc.Venda": 20.0
+        }
+    ])
+    dates = pd.date_range(end="2026-09-30", periods=60, freq="D")
+    sales_zero = pd.DataFrame([
+        {"Data": d, "Cod Produto": 999, "Qtd Venda": 5.0, "Valor Venda": 100.0}
+        for d in dates
+    ])
+    velocity_df = calculate_sales_velocity(sales_zero, window_days=60)
+    
+    result = calculate_inventory_replenishment(
+        products_df=catalog_zero,
+        velocity_df=velocity_df,
+        lead_time_days=15,
+        target_coverage_days=30,
+        service_level=0.95,
+        max_purchase_variation_pct=100.0
+    )
+    
+    p999 = result["produtos"][0]
+    # Com estoque 0, a compra NÃO pode ser 0
+    assert p999["qtdSugeridaCompra"] > 0
+    # Base mínima para 5 un/dia * 7 dias = 35 un; com +100% teto = 70 un
+    assert p999["tetoCompraFisica"] >= 35
+
