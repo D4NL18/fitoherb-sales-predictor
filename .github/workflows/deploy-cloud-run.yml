@@ -118,7 +118,7 @@ jobs:
             --min-instances=0 \
             --max-instances=3 \
             --cpu-throttling \
-            --memory=1Gi \
+            --memory=2Gi \
             --concurrency=80 \
             --timeout=300 \
             --set-env-vars="ENV=production,ENVIRONMENT=production,AUTH_REQUIRED=${AUTH_REQUIRED},AUTH_USERNAME=${AUTH_USERNAME},AUTH_PASSWORD=${AUTH_PASSWORD},DB_HOST=${DB_HOST},DB_PORT=${DB_PORT},DB_NAME=${DB_NAME},DB_USER=${DB_USER},DB_PASSWORD=${DB_PASSWORD},DB_SCHEMA=Externo01,DB_DRIVER=ODBC Driver 17 for SQL Server"

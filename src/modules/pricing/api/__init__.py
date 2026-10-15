@@ -10,7 +10,12 @@ from src.modules.pricing.api.schemas import (
     PricingSummary,
     ProductPreview,
 )
-from src.modules.pricing.api.router import pricing_router
+def __getattr__(name: str):
+    if name == "pricing_router":
+        from src.modules.pricing.api.router import pricing_router
+        return pricing_router
+    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
+
 
 __all__ = [
     "pricing_router",
@@ -22,3 +27,4 @@ __all__ = [
     "AutoTuneData",
     "AutoTuneResponse",
 ]
+
