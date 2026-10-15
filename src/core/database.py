@@ -9,6 +9,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+import numpy as np
 import pandas as pd
 import pyodbc
 from dotenv import load_dotenv
@@ -211,4 +212,76 @@ def fetch_products_from_database(
         return df
     finally:
         conn.close()
+
+
+def fetch_sales_velocity_from_database(window_days: int = 60) -> pd.DataFrame:
+    """
+    Extrai a velocidade de vendas (VMD), desvio padrão da demanda, volume faturado e receita
+    agregados diretamente no SQL Server (P-041/P-022) para máxima performance e baixo consumo de memória.
+    Executa a query agregada em ~1s em vez de transferir centenas de milhares de linhas brutas.
+    """
+    days = max(1, min(int(window_days), 365))
+    sql = f"""
+    SELECT 
+        [Cod Produto] AS sku, 
+        SUM(DayQty) AS sum_qty, 
+        SUM(DayVal) AS total_revenue, 
+        SUM(CAST(DayQty AS FLOAT) * CAST(DayQty AS FLOAT)) AS sum_sq, 
+        COUNT(*) AS days_with_sales 
+    FROM (
+        SELECT 
+            [Cod Produto], 
+            CAST([Data] AS DATE) AS SaleDate, 
+            SUM([Qtd Venda]) AS DayQty, 
+            SUM([Valor Venda]) AS DayVal 
+        FROM Externo01.Vendas 
+        WHERE [Operação] = 'VENDA' 
+          AND [Data] >= DATEADD(day, -{days}, GETDATE()) 
+        GROUP BY [Cod Produto], CAST([Data] AS DATE)
+    ) AS DailySales 
+    GROUP BY [Cod Produto]
+    """
+    if not is_readonly_query(sql):
+        raise DatabaseSecurityError("Query de agregação de vendas inválida.")
+
+    conn_str = get_db_connection_string()
+    logger.info(f"Executando agregação de velocidade de vendas no SQL Server ({days} dias)...")
+    t0 = time.time()
+    conn = pyodbc.connect(conn_str, timeout=30)
+    try:
+        cursor = conn.cursor()
+        cursor.execute(sql)
+        rows = cursor.fetchall()
+        df = pd.DataFrame.from_records(
+            rows, 
+            columns=['sku', 'sum_qty', 'total_revenue', 'sum_sq', 'days_with_sales']
+        )
+        if df.empty:
+            return pd.DataFrame(columns=["vmd", "std_demand", "total_sold_qty", "total_revenue"])
+
+        df['sku'] = df['sku'].astype(np.int64)
+        df.set_index('sku', inplace=True)
+        
+        n_days = float(days)
+        vmd_series = df['sum_qty'] / n_days
+        if n_days > 1:
+            variance = (df['sum_sq'] - (n_days * (vmd_series ** 2))) / (n_days - 1)
+            variance = variance.clip(lower=0.0)
+            std_series = np.sqrt(variance)
+        else:
+            std_series = pd.Series(0.0, index=df.index)
+
+        result_df = pd.DataFrame({
+            "vmd": vmd_series.round(4),
+            "std_demand": std_series.round(4),
+            "total_sold_qty": df['sum_qty'].astype(float).round(2),
+            "total_revenue": df['total_revenue'].astype(float).round(2),
+        }, index=df.index)
+        result_df.index.name = "sku"
+        elapsed = time.time() - t0
+        logger.info(f"Velocidade calculada no SQL Server: {len(result_df)} SKUs ativos em {elapsed:.2f}s.")
+        return result_df
+    finally:
+        conn.close()
+
 

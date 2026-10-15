@@ -49,8 +49,15 @@ def mock_inventory_data(monkeypatch):
     sales_df = pd.DataFrame(sales_data)
 
     monkeypatch.setattr(inv_service, "get_base_inventory_data", lambda: (catalog_df, sales_df))
-    # Limpa cache de velocidade
+    monkeypatch.setattr(inv_service, "get_inventory_catalog", lambda: catalog_df)
+    monkeypatch.setattr(
+        inv_service, 
+        "get_inventory_velocity", 
+        lambda window_days: inv_service.calculate_sales_velocity(sales_df, window_days=window_days)
+    )
+    inv_service._INVENTORY_CACHE.clear()
     inv_service._VELOCITY_CACHE.clear()
+
 
 
 def test_inventory_health_check(client):
