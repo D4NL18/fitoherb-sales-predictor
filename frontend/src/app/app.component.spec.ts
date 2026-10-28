@@ -22,11 +22,13 @@ describe('AppComponent', () => {
     expect(app).toBeTruthy();
   });
 
-  it('should render platform brand title', () => {
+  it('should render platform brand logo with alt text', () => {
     const fixture = TestBed.createComponent(AppComponent);
     fixture.detectChanges();
     const compiled = fixture.nativeElement as HTMLElement;
-    expect(compiled.querySelector('.brand-title')?.textContent).toContain('Fitoherb AI Suite');
+    const logoImg = compiled.querySelector('.platform-logo') as HTMLImageElement;
+    expect(logoImg).toBeTruthy();
+    expect(logoImg.getAttribute('alt')).toBe('Fitoherb Nordeste');
   });
 
   it('should render Fitoherb logo with correct src', () => {

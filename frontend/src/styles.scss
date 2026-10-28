@@ -1,110 +1,148 @@
 /* ==========================================================================
-   Design System Oficial Fitoherb Nordeste: "The Editorial Botanist"
-   Referência Mestre: Stitch projects/1095247278277166682
-   Pesquisa de Conversão: Lazyweb Research (Hero, Proof Bar & Action Ergonomics)
+   Design System Oficial Fitoherb Nordeste: Padrão Editorial Utilitário (Papel & Tinta)
+   Referência Mestre: .agents/docs/design/design-kit.html & DESIGN_SYSTEM.md
+   Tipografia: Signika (Títulos) + Source Sans 3 (Interface) + Overpass Mono (Números Tabulares)
    ========================================================================== */
 
 :root {
-  /* Tipografia Editorial */
-  --font-family-headline: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --font-family-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --font-family-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  /* 1. TIPOGRAFIA OFICIAL (OPÇÃO 2: PAINEL FARMACÊUTICO & SUPLEMENTOS ALIMENTARES) */
+  --font-family-headline: 'Signika', 'Trebuchet MS', sans-serif;
+  --font-family-body: 'Source Sans 3', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-family-mono: 'Overpass Mono', 'Consolas', monospace;
 
-  /* Aliases legados para compatibilidade */
+  /* Aliases para compatibilidade */
   --font-family-sans: var(--font-family-body);
   --font-family-display: var(--font-family-headline);
+  --font-display: var(--font-family-headline);
+  --font-sans: var(--font-family-body);
+  --font-mono: var(--font-family-mono);
 
-  /* Paleta Oficial The Editorial Botanist (Clorofila & Vitalidade Botânica) */
-  --primary: #21401a;
-  --primary-container: #38582f;
-  --primary-hover: #1b3515;
-  --primary-light: #eaf3e7;
-  --on-primary: #ffffff;
+  /* 2. SUPERFÍCIES SÓLIDAS (PAPEL ALGODÃO & TINTA — ZERO VIDRO / ZERO GRADIENTES) */
+  --bg-canvas: #F5F2EB;
+  --bg-surface: #FFFFFF;
+  --bg-subtle: #ECE7DC;
+  --bg-muted: #E2DDD0;
+  --bg-table-header: #F0ECE1;
+  --bg-table-row-hover: #F7F5EE;
+  --bg-table-row-zebra: #FAF8F4;
+  --bg-overlay: rgba(24, 28, 24, 0.55);
 
-  --secondary: #45673d;
-  --secondary-container: #c3ebb6;
-  --on-secondary: #ffffff;
-  --on-secondary-container: #21401a;
-  --on-secondary-variant: #35532d;
+  /* Aliases de superfície */
+  --surface: var(--bg-canvas);
+  --surface-dim: #E8E3D7;
+  --surface-bright: #FAF8F3;
+  --surface-container-lowest: var(--bg-surface);
+  --surface-container-low: var(--bg-subtle);
+  --surface-container: #E3DDD0;
+  --surface-container-high: #DBD4C5;
+  --surface-container-highest: #D2CABA;
 
-  --tertiary: #592a41;
-  --tertiary-container: #734058;
-  --tertiary-fixed: #ffd8e7;
+  /* 3. TEXTO E LEITURA (CONTRASTE ALTO WCAG AA/AAA) */
+  --text-primary: #181D19;
+  --text-secondary: #434B44;
+  --text-muted: #666F67;
+  --text-on-brand: #FFFFFF;
+  --text-on-dark: #F5F2EB;
 
-  /* Superfícies Orgânicas (Tonal Layering & Living Whites) */
-  --surface: #f9faf8;
-  --surface-dim: #d9dad8;
-  --surface-bright: #f9faf8;
-  --surface-container-lowest: #ffffff;
-  --surface-container-low: #f3f4f2;
-  --surface-container: #edeeec;
-  --surface-container-high: #e7e8e6;
-  --surface-container-highest: #e1e3e1;
+  --on-surface: var(--text-primary);
+  --on-surface-variant: var(--text-secondary);
+  --color-text: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-muted: var(--text-muted);
 
-  --on-surface: #191c1b;
-  --on-surface-variant: #43483f;
-  --outline: #73796e;
-  --outline-variant: #c3c8bc;
+  /* 4. IDENTIDADE COMERCIAL FITOHERB (VERDE ERVA-MATE & TERRACOTA) */
+  --brand-primary: #1D4528;
+  --brand-primary-hover: #14321C;
+  --brand-primary-active: #0E2414;
+  --brand-primary-subtle: #E5EFE7;
+  --brand-secondary: #8A4B14;
+  --brand-secondary-hover: #6E3A0E;
+  --brand-secondary-subtle: #F9EFE5;
 
-  /* Feedback e Acentos Semânticos */
-  --color-success: #27ae60;
-  --color-success-bg: #ecfdf5;
-  --color-success-border: #a7f3d0;
+  /* Aliases de marca */
+  --primary: var(--brand-primary);
+  --primary-container: var(--brand-primary);
+  --primary-hover: var(--brand-primary-hover);
+  --primary-light: var(--brand-primary-subtle);
+  --on-primary: #FFFFFF;
 
-  --color-danger: #ba1a1a;
-  --color-danger-bg: #ffdad6;
-  --color-danger-border: #f87171;
+  --secondary: #35532D;
+  --secondary-container: var(--brand-primary-subtle);
+  --on-secondary: #FFFFFF;
+  --on-secondary-container: var(--brand-primary);
 
-  --color-warning: #d97706;
-  --color-warning-bg: #fef3c7;
-  --color-warning-border: #fcd34d;
+  --color-primary: var(--brand-primary);
+  --color-primary-hover: var(--brand-primary-hover);
+  --color-primary-dark: var(--brand-primary-active);
+  --color-primary-light: var(--brand-primary-subtle);
+  --color-primary-border: var(--brand-primary);
+  --color-primary-subtle: var(--brand-primary-subtle);
 
-  /* Variáveis de Compatibilidade */
-  --color-primary: var(--primary-container);
-  --color-primary-hover: var(--primary);
-  --color-primary-dark: var(--primary);
-  --color-primary-light: var(--primary-light);
-  --color-primary-border: var(--secondary-container);
-  --color-primary-subtle: #f0f7ee;
+  /* 5. BORDAS E DIVISÓRIAS ESTRUTURAIS (1PX SOLID) */
+  --border-subtle: #DFD9CC;
+  --border-default: #CBC3B2;
+  --border-strong: #9E9686;
+  --border-focus: #1D4528;
 
-  --green-900: var(--primary);
-  --green-800: #294c20;
-  --green-700: var(--primary-container);
-  --green-600: #46673c;
-  --green-500: var(--secondary);
-  --green-400: #628857;
-  --green-300: #8bb280;
-  --green-200: var(--secondary-container);
-  --green-100: #e2f4dc;
-  --green-50:  #f4fbf0;
+  --outline: var(--border-strong);
+  --outline-variant: var(--border-default);
+  --color-border: var(--border-default);
+  --color-border-hover: var(--border-strong);
 
-  --color-bg: var(--surface);
-  --color-card: var(--surface-container-lowest);
-  --color-border: rgba(195, 200, 188, 0.45);
-  --color-border-hover: rgba(115, 121, 110, 0.5);
+  /* 6. CORES SÓLIDAS ESCURAS PARA TAGS, BADGES E FEEDBACKS (TEXTO BRANCO #FFFFFF) */
+  --feedback-positive-bg: #185A2E;
+  --feedback-positive-border: #103F20;
+  --feedback-warning-bg: #7A4607;
+  --feedback-warning-border: #573104;
+  --feedback-critical-bg: #8F1B1B;
+  --feedback-critical-border: #661212;
+  --feedback-info-bg: #1B4B7A;
+  --feedback-info-border: #123456;
+  --feedback-neutral-bg: #3B423C;
+  --feedback-neutral-border: #282D29;
+  --feedback-code-bg: rgba(255, 255, 255, 0.16);
+  --feedback-badge-border: rgba(255, 255, 255, 0.38);
 
-  --color-text: var(--on-surface);
-  --color-text-secondary: var(--on-surface-variant);
-  --color-muted: #73796e;
+  --color-success: var(--feedback-positive-bg);
+  --color-success-bg: var(--feedback-positive-bg);
+  --color-success-border: var(--feedback-positive-border);
 
-  /* Raio de Curvatura Hierárquico */
-  --radius-xs: 4px;
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 22px;
+  --color-danger: var(--feedback-critical-bg);
+  --color-danger-bg: var(--feedback-critical-bg);
+  --color-danger-border: var(--feedback-critical-border);
+
+  --color-warning: var(--feedback-warning-bg);
+  --color-warning-bg: var(--feedback-warning-bg);
+  --color-warning-border: var(--feedback-warning-border);
+
+  /* 7. ESPAÇAMENTOS E MEDIDAS */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* 8. RAIOS DE CURVATURA HIERÁRQUICOS */
+  --radius-xs: 3px;
+  --radius-sm: 5px;
+  --radius-md: 7px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
   --radius-full: 9999px;
 
-  /* Sombras Ambientais Difusas Botânicas (The No-Line Rule) */
-  --shadow-sm: 0 1px 3px rgba(33, 64, 26, 0.04), 0 1px 2px rgba(33, 64, 26, 0.02);
-  --shadow-md: 0 4px 14px -2px rgba(33, 64, 26, 0.06), 0 2px 6px -1px rgba(33, 64, 26, 0.04);
-  --shadow-lg: 0 12px 32px -4px rgba(33, 64, 26, 0.08), 0 4px 12px -2px rgba(33, 64, 26, 0.04);
-  --shadow-modal: 0 24px 60px -8px rgba(33, 64, 26, 0.16), 0 8px 24px -4px rgba(33, 64, 26, 0.08);
+  /* 9. SOMBRAS SECAS (PAPEL SOBRE MESA, ZERO NÉVOA COLORIDA) */
+  --shadow-xs: 0 1px 2px rgba(24, 29, 25, 0.05);
+  --shadow-sm: 0 2px 4px rgba(24, 29, 25, 0.06), 0 1px 2px rgba(24, 29, 25, 0.04);
+  --shadow-md: 0 6px 14px rgba(24, 29, 25, 0.08), 0 2px 4px rgba(24, 29, 25, 0.05);
+  --shadow-lg: 0 16px 32px rgba(24, 29, 25, 0.14), 0 4px 8px rgba(24, 29, 25, 0.06);
+  --shadow-modal: 0 20px 48px rgba(24, 29, 25, 0.18), 0 6px 14px rgba(24, 29, 25, 0.08);
 
-  /* Transições Fluídas */
-  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-smooth: 350ms cubic-bezier(0.16, 1, 0.3, 1);
+  /* 10. TRANSIÇÕES */
+  --transition-fast: 140ms cubic-bezier(0.22, 1, 0.36, 1);
+  --transition-normal: 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  --transition-smooth: 300ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 *, *::before, *::after {
@@ -112,7 +150,7 @@
   margin: 0;
   padding: 0;
   scrollbar-width: thin;
-  scrollbar-color: var(--primary-container) var(--surface-container-low);
+  scrollbar-color: var(--brand-primary) var(--bg-subtle);
 }
 
 ::-webkit-scrollbar {
@@ -121,66 +159,117 @@
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--surface-container-low);
+  background: var(--bg-subtle);
 }
 
 ::-webkit-scrollbar-thumb {
-  background-color: var(--outline-variant);
-  border-radius: 4px;
-  transition: background-color var(--transition-fast);
+  background-color: var(--border-default);
+  border-radius: var(--radius-xs);
 
   &:hover {
-    background-color: var(--primary-container);
+    background-color: var(--brand-primary);
   }
 }
 
 html {
   font-size: 16px;
   scroll-behavior: smooth;
-  background-color: var(--surface);
+  background-color: var(--bg-canvas);
 }
 
 body {
   font-family: var(--font-family-body);
-  background-color: var(--surface);
-  color: var(--on-surface);
+  background-color: var(--bg-canvas);
+  color: var(--text-primary);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  overflow-x: hidden;
+  overflow-x: clip;
 }
 
 h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-family-headline);
   font-weight: 700;
-  color: var(--primary);
-  letter-spacing: -0.02em;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
 }
 
 button, input, select, textarea {
   font-family: var(--font-family-body);
 
   &:focus-visible {
-    outline: 2px solid var(--primary-container);
+    outline: 2px solid var(--border-focus);
     outline-offset: 2px;
   }
 }
 
-/* Shimmer Animation para Skeleton Loaders */
-@keyframes shimmer {
-  0% {
-    background-position: -200% 0;
-  }
-  100% {
-    background-position: 200% 0;
-  }
+/* ==========================================================================
+   CLASSES GLOBAIS DE TAGS E BADGES (FUNDO ESCURO + TEXTO BRANCO #FFFFFF)
+   ========================================================================== */
+.tag, .status-badge, .role-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-family-body);
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: var(--radius-xs);
+  border: 1px solid transparent;
+  color: var(--text-on-brand) !important;
+  white-space: nowrap;
 }
 
-.skeleton-box {
+.tag-dot, .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
+  display: inline-block;
+  background-color: var(--text-on-brand) !important;
+  flex-shrink: 0;
+}
+
+/* Variações Semânticas */
+.tag-positive, .tag-healthy, .badge-anchor, .badge-healthy, .status-healthy {
+  background-color: var(--feedback-positive-bg) !important;
+  border-color: var(--feedback-positive-border) !important;
+  color: var(--text-on-brand) !important;
+}
+
+.tag-warning, .badge-comp, .badge-warning, .status-warning {
+  background-color: var(--feedback-warning-bg) !important;
+  border-color: var(--feedback-warning-border) !important;
+  color: var(--text-on-brand) !important;
+}
+
+.tag-critical, .badge-danger, .status-critical, .status-danger {
+  background-color: var(--feedback-critical-bg) !important;
+  border-color: var(--feedback-critical-border) !important;
+  color: var(--text-on-brand) !important;
+}
+
+.tag-info, .badge-overstock, .status-overstock, .status-info {
+  background-color: var(--feedback-info-bg) !important;
+  border-color: var(--feedback-info-border) !important;
+  color: var(--text-on-brand) !important;
+}
+
+.tag-neutral, .badge-neutral, .status-neutral {
+  background-color: var(--feedback-neutral-bg) !important;
+  border-color: var(--feedback-neutral-border) !important;
+  color: var(--text-on-brand) !important;
+}
+
+/* Skeleton Loaders Shimmer Sólidos */
+@keyframes pulseSolid {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+.skeleton-box, .skeleton-line {
   display: inline-block;
   height: 1em;
-  background: linear-gradient(90deg, var(--surface-container-low) 25%, var(--surface-container-highest) 50%, var(--surface-container-low) 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.5s infinite;
-  border-radius: var(--radius-sm);
+  background-color: var(--bg-muted);
+  border-radius: var(--radius-xs);
+  animation: pulseSolid 1.5s ease-in-out infinite;
 }

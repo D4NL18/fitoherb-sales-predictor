@@ -5,15 +5,10 @@
       <div class="title-group">
         <div class="title-with-badge">
           <h2 class="hero-title">Estoque Ideal & Previsão de Compras</h2>
-          <span class="ai-badge">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-              <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
-            </svg>
-            IA Reposição Probabilística
-          </span>
+          <span class="tag tag-info"><span class="tag-dot"></span>Reposição Inteligente</span>
         </div>
         <p class="hero-subtitle">
-          Inteligência Operacional B2B • Prevenção de Rupturas, Detecção de Overstock e Sugestão de Compras por Giro Real
+          Inteligência Operacional B2B • Prevenção de Rupturas, Detecção de Excesso e Sugestão de Compras por Giro Real
         </p>
       </div>
 
@@ -193,7 +188,7 @@
           [class.active]="statusFilter() === 'CRITICAL_STOCKOUT'"
           (click)="statusFilter.set('CRITICAL_STOCKOUT'); currentPage.set(1)"
         >
-          🔴 Ruptura
+          <span class="status-dot dot-critical"></span> Ruptura
         </button>
         <button
           type="button"
@@ -201,7 +196,7 @@
           [class.active]="statusFilter() === 'REORDER_NEEDED'"
           (click)="statusFilter.set('REORDER_NEEDED'); currentPage.set(1)"
         >
-          🟡 Reposição
+          <span class="status-dot dot-warning"></span> Reposição
         </button>
         <button
           type="button"
@@ -209,7 +204,7 @@
           [class.active]="statusFilter() === 'HEALTHY'"
           (click)="statusFilter.set('HEALTHY'); currentPage.set(1)"
         >
-          🟢 Saudável
+          <span class="status-dot dot-healthy"></span> Saudável
         </button>
         <button
           type="button"
@@ -217,7 +212,7 @@
           [class.active]="statusFilter() === 'OVERSTOCK'"
           (click)="statusFilter.set('OVERSTOCK'); currentPage.set(1)"
         >
-          🔵 Overstock
+          <span class="status-dot dot-info"></span> Excesso
         </button>
       </div>
 
@@ -360,9 +355,7 @@
                 {{ prod.investimentoTotalItem > 0 ? ('R$ ' + (prod.investimentoTotalItem | number:'1.2-2')) : '-' }}
               </td>
               <td class="text-center col-status">
-                <span class="status-text status-{{ prod.status.toLowerCase() }}">
-                  {{ prod.statusLabel }}
-                </span>
+                <span class="status-text status-{{ prod.status.toLowerCase() }}"><span class="tag-dot"></span>{{ prod.statusLabel }}</span>
               </td>
             </tr>
           } @empty {
