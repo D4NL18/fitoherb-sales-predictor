@@ -3,6 +3,7 @@ Serviço de Negócio para o Módulo de Precificação (Pricing Predictor).
 Gerencia cache em memória, execução de pipeline analítico e otimização HiGHS.
 """
 from datetime import datetime, timezone
+import threading
 import json
 import logging
 from pathlib import Path
@@ -37,81 +38,108 @@ logger = logging.getLogger(__name__)
 # Cache em memória para evitar re-leitura do banco e re-mineração FP-Growth a cada requisição
 _DATA_CACHE: Dict[str, Any] = {}
 
+# Lock de voo único: no cold start do Cloud Run o pré-aquecimento (lifespan) e a primeira
+# requisição chegavam juntos com o cache vazio e cada um carregava a base inteira em paralelo,
+# dobrando o pico de memória e estourando o limite de 2Gi (OOM -> HTTP 503 em toda a instância).
+_DATA_CACHE_LOCK = threading.Lock()
+
 
 def get_cached_base_data(force_reload: bool = False) -> Dict[str, Any]:
     """
     Carrega e retém em memória o catálogo, vendas limpas, regras de associação FP-Growth
     e scores dos âncoras. Extrai os dados 100% diretamente do banco SQL Server (P-022).
     Garante respostas instantâneas (< 300ms) para simulações.
+    Thread-safe: chamadas concorrentes aguardam a carga em andamento em vez de repeti-la.
     """
-    if force_reload or "rules_df" not in _DATA_CACHE:
-        # Extração direta via Banco SQL Server da Fitoherb (P-022) com fallback seguro para templates em ambiente de CI/CD
-        logger.info("Conectando ao SQL Server da Fitoherb para carregar catálogo e vendas atualizadas...")
-        db_check = test_db_connection()
-        if db_check.get("connected"):
-            catalog_df = load_catalog_from_database()
-            raw_sales = fetch_sales_from_database()
-            data_source = "sql_server"
-            logger.info(
-                f"Dados carregados com sucesso diretamente do SQL Server: "
-                f"{len(catalog_df)} produtos e {len(raw_sales)} vendas."
-            )
-        else:
-            logger.warning(f"Banco SQL Server indisponível ({db_check.get('message')}). Utilizando templates sanitizados para simulação...")
-            template_catalog = Path("templates/lista_precos_template.csv")
-            template_sales = Path("templates/vendas_template.csv")
-            if template_catalog.exists() and template_sales.exists():
-                catalog_df = load_catalog(template_catalog, skiprows=4, encoding="utf-8")
-                raw_sales = pd.read_csv(template_sales, encoding="utf-8")
-                data_source = "templates"
-            else:
-                raise ConnectionError(db_check.get("message", "Banco SQL Server e templates indisponíveis"))
+    if not force_reload and "rules_df" in _DATA_CACHE:
+        return _DATA_CACHE
 
-        clean_sales = run_etl_pipeline(raw_sales, catalog_df, config=DEFAULT_CONFIG)
-
-
-        # Mineração de regras de cesta e cálculo de score executados uma única vez
-        valid_baskets = filter_orphan_baskets(clean_sales, min_skus=DEFAULT_CONFIG.min_basket_size)
-        basket_matrix = build_basket_matrix(valid_baskets)
-        rules_df = mine_association_rules(
-            basket_matrix,
-            min_support=DEFAULT_CONFIG.min_support,
-            min_confidence=DEFAULT_CONFIG.min_confidence,
-            min_lift=DEFAULT_CONFIG.min_lift
-        )
-        anchor_scores = calculate_anchor_score(
-            clean_sales,
-            rules_df,
-            weights=(DEFAULT_CONFIG.weight_giro, DEFAULT_CONFIG.weight_penetracao, DEFAULT_CONFIG.weight_lift)
-        )
-
-        catalog_price_dict = catalog_df.set_index("Código")["Preço"].to_dict()
-        cost_dict = catalog_df.set_index("Código")["Custo"].to_dict()
-        volume_dict = clean_sales.groupby("Cod Produto")["Qtd Venda"].sum().to_dict()
-        rules_index = build_rules_index(rules_df)
-        anchor_natural_shares = calculate_anchor_natural_shares(clean_sales)
-        sales_2026 = (
-            clean_sales[clean_sales["Data"].dt.year >= 2026].copy()
-            if "Data" in clean_sales.columns and pd.api.types.is_datetime64_any_dtype(clean_sales["Data"])
-            else clean_sales
-        )
-
-        _DATA_CACHE["catalog_df"] = catalog_df
-        _DATA_CACHE["clean_sales"] = clean_sales
-        _DATA_CACHE["rules_df"] = rules_df
-        _DATA_CACHE["anchor_scores"] = anchor_scores
-        _DATA_CACHE["catalog_price_dict"] = catalog_price_dict
-        _DATA_CACHE["cost_dict"] = cost_dict
-        _DATA_CACHE["volume_dict"] = volume_dict
-        _DATA_CACHE["rules_index"] = rules_index
-        _DATA_CACHE["sales_2026"] = sales_2026
-        _DATA_CACHE["anchor_natural_shares"] = anchor_natural_shares
-        _DATA_CACHE["data_source"] = data_source
-        _DATA_CACHE["raw_sales_count"] = len(raw_sales)
-        _DATA_CACHE["raw_products_count"] = len(catalog_df)
-        _DATA_CACHE["loaded_at"] = datetime.now(timezone.utc).isoformat()
+    with _DATA_CACHE_LOCK:
+        if not force_reload and "rules_df" in _DATA_CACHE:
+            return _DATA_CACHE
+        _load_base_data_into_cache()
 
     return _DATA_CACHE
+
+
+def _load_raw_sources() -> Tuple[pd.DataFrame, pd.DataFrame, str]:
+    """
+    Extração direta via Banco SQL Server da Fitoherb (P-022) com fallback seguro para
+    templates sanitizados em ambiente de CI/CD. Retorna (catálogo, vendas brutas, origem).
+    """
+    logger.info("Conectando ao SQL Server da Fitoherb para carregar catálogo e vendas atualizadas...")
+    db_check = test_db_connection()
+    if db_check.get("connected"):
+        catalog_df = load_catalog_from_database()
+        raw_sales = fetch_sales_from_database()
+        logger.info(
+            f"Dados carregados com sucesso diretamente do SQL Server: "
+            f"{len(catalog_df)} produtos e {len(raw_sales)} vendas."
+        )
+        return catalog_df, raw_sales, "sql_server"
+
+    logger.warning(f"Banco SQL Server indisponível ({db_check.get('message')}). Utilizando templates sanitizados para simulação...")
+    template_catalog = Path("templates/lista_precos_template.csv")
+    template_sales = Path("templates/vendas_template.csv")
+    if not (template_catalog.exists() and template_sales.exists()):
+        raise ConnectionError(db_check.get("message", "Banco SQL Server e templates indisponíveis"))
+
+    catalog_df = load_catalog(template_catalog, skiprows=4, encoding="utf-8")
+    raw_sales = pd.read_csv(template_sales, encoding="utf-8")
+    return catalog_df, raw_sales, "templates"
+
+
+def _load_base_data_into_cache() -> None:
+    """
+    Executa ETL, mineração FP-Growth e pré-cálculos analíticos e publica tudo em _DATA_CACHE.
+    Deve ser chamada apenas com _DATA_CACHE_LOCK adquirido.
+    """
+    catalog_df, raw_sales, data_source = _load_raw_sources()
+    clean_sales = run_etl_pipeline(raw_sales, catalog_df, config=DEFAULT_CONFIG)
+    raw_sales_count = len(raw_sales)
+    # Libera as vendas brutas antes da mineração para reduzir o pico de memória
+    del raw_sales
+
+    # Mineração de regras de cesta e cálculo de score executados uma única vez
+    valid_baskets = filter_orphan_baskets(clean_sales, min_skus=DEFAULT_CONFIG.min_basket_size)
+    basket_matrix = build_basket_matrix(valid_baskets)
+    rules_df = mine_association_rules(
+        basket_matrix,
+        min_support=DEFAULT_CONFIG.min_support,
+        min_confidence=DEFAULT_CONFIG.min_confidence,
+        min_lift=DEFAULT_CONFIG.min_lift
+    )
+    anchor_scores = calculate_anchor_score(
+        clean_sales,
+        rules_df,
+        weights=(DEFAULT_CONFIG.weight_giro, DEFAULT_CONFIG.weight_penetracao, DEFAULT_CONFIG.weight_lift)
+    )
+
+    catalog_price_dict = catalog_df.set_index("Código")["Preço"].to_dict()
+    cost_dict = catalog_df.set_index("Código")["Custo"].to_dict()
+    volume_dict = clean_sales.groupby("Cod Produto")["Qtd Venda"].sum().to_dict()
+    rules_index = build_rules_index(rules_df)
+    anchor_natural_shares = calculate_anchor_natural_shares(clean_sales)
+    sales_2026 = (
+        clean_sales[clean_sales["Data"].dt.year >= 2026].copy()
+        if "Data" in clean_sales.columns and pd.api.types.is_datetime64_any_dtype(clean_sales["Data"])
+        else clean_sales
+    )
+
+    _DATA_CACHE["catalog_df"] = catalog_df
+    _DATA_CACHE["clean_sales"] = clean_sales
+    _DATA_CACHE["rules_df"] = rules_df
+    _DATA_CACHE["anchor_scores"] = anchor_scores
+    _DATA_CACHE["catalog_price_dict"] = catalog_price_dict
+    _DATA_CACHE["cost_dict"] = cost_dict
+    _DATA_CACHE["volume_dict"] = volume_dict
+    _DATA_CACHE["rules_index"] = rules_index
+    _DATA_CACHE["sales_2026"] = sales_2026
+    _DATA_CACHE["anchor_natural_shares"] = anchor_natural_shares
+    _DATA_CACHE["data_source"] = data_source
+    _DATA_CACHE["raw_sales_count"] = raw_sales_count
+    _DATA_CACHE["raw_products_count"] = len(catalog_df)
+    _DATA_CACHE["loaded_at"] = datetime.now(timezone.utc).isoformat()
 
 
 def get_cached_etl_data():
