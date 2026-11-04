@@ -114,3 +114,30 @@ def test_compute_optimized_anchor_locks():
     assert fixed_locks[101] == 0.25
     assert fixed_locks[102] == 0.25
     assert fixed_locks[103] == 0.25
+
+
+def test_basket_matrix_is_sparse_and_preserves_cells(transactions_df):
+    """A matriz de cestas é esparsa (anti-OOM no Cloud Run) e marca só pares com quantidade líquida positiva."""
+    sales = transactions_df.copy()
+    # Devolução que zera o SKU 103 no pedido 1: o par não pode entrar na cesta
+    sales.loc[len(sales)] = {"Pedido": 1, "Cod Produto": 103, "Qtd Venda": -2.0, "Valor Venda": -20.0, "Data": "2026-01-01"}
+
+    matrix = build_basket_matrix(filter_orphan_baskets(sales))
+
+    assert all(isinstance(dtype, pd.SparseDtype) for dtype in matrix.dtypes)
+    assert list(matrix.index) == [1, 2, 3, 5]
+    assert list(matrix.columns) == [101, 102, 103]
+    dense = matrix.sparse.to_dense()
+    assert bool(dense.loc[1, 101]) and bool(dense.loc[1, 102])
+    assert not bool(dense.loc[1, 103])
+    assert not bool(dense.loc[5, 101])
+
+
+def test_association_rules_keep_sku_codes(transactions_df):
+    """As regras mineradas sobre a matriz esparsa referenciam os códigos reais de SKU, não posições de coluna."""
+    matrix = build_basket_matrix(filter_orphan_baskets(transactions_df))
+    rules = mine_association_rules(matrix, min_support=0.2, min_confidence=0.3)
+
+    skus_in_rules = {sku for itemset in rules["antecedents"] for sku in itemset}
+    assert skus_in_rules <= {101, 102, 103}
+    assert skus_in_rules
