@@ -10,6 +10,7 @@ from threading import Thread
 from typing import Any, Dict
 
 from fastapi import APIRouter, HTTPException, Response
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 
 from src.core.database import test_db_connection
@@ -279,7 +280,9 @@ async def auto_tune_pricing_stream(
     Executa o Algoritmo Genético transmitindo o progresso de cada geração via SSE (Server-Sent Events).
     Permite barra de progresso 100% realista no frontend, eliminando travamentos arbitrários.
     """
-    cache = get_cached_base_data()
+    # A carga do cache é síncrona e pesada (SQL + ETL + FP-Growth). Rodá-la direto nesta rota
+    # async travava o event loop e todas as outras requisições da instância durante o cold start.
+    cache = await run_in_threadpool(get_cached_base_data)
     q = Queue()
 
     def progress_cb(update_dict: Dict[str, Any]):

@@ -8,6 +8,7 @@ from typing import Dict, List, Optional, Set, Tuple
 import numpy as np
 import pandas as pd
 from mlxtend.frequent_patterns import association_rules, fpgrowth
+from scipy.sparse import csr_matrix
 
 logger = logging.getLogger(__name__)
 
@@ -30,14 +31,26 @@ def filter_orphan_baskets(sales_df: pd.DataFrame, min_skus: int = 2) -> pd.DataF
 def build_basket_matrix(sales_df: pd.DataFrame) -> pd.DataFrame:
     """
     Constrói a matriz binária booleana (Pedido x SKU) de co-ocorrência.
+
+    A matriz é esparsa (SparseDtype[bool]): só os pares pedido-SKU vendidos ocupam memória.
+    A versão densa via unstack alocava pedidos x SKUs x 8 bytes (int64) mais uma cópia
+    booleana, o que crescia com o histórico de vendas e levou o Cloud Run a estourar 2Gi.
+    O mlxtend.fpgrowth aceita DataFrames esparsos nativamente.
     """
-    basket = (
-        sales_df.groupby(["Pedido", "Cod Produto"])["Qtd Venda"]
-        .sum()
-        .unstack(fill_value=0)
+    qty_per_pair = sales_df.groupby(["Pedido", "Cod Produto"])["Qtd Venda"].sum()
+    order_ids = qty_per_pair.index.get_level_values("Pedido").unique().sort_values()
+    sku_ids = qty_per_pair.index.get_level_values("Cod Produto").unique().sort_values()
+
+    # Apenas pares com quantidade líquida positiva entram na cesta (mesma regra da versão densa)
+    sold_pairs = qty_per_pair[qty_per_pair > 0].index
+    row_positions = order_ids.get_indexer(sold_pairs.get_level_values("Pedido"))
+    col_positions = sku_ids.get_indexer(sold_pairs.get_level_values("Cod Produto"))
+
+    sparse_matrix = csr_matrix(
+        (np.ones(len(sold_pairs), dtype=bool), (row_positions, col_positions)),
+        shape=(len(order_ids), len(sku_ids)),
     )
-    # Converter para formato booleano estrito exigido pelo mlxtend
-    return basket > 0
+    return pd.DataFrame.sparse.from_spmatrix(sparse_matrix, index=order_ids, columns=sku_ids)
 
 
 def mine_association_rules(
@@ -51,12 +64,18 @@ def mine_association_rules(
     """
     logger.info(f"Executando FP-Growth com min_support={min_support} sobre {basket_matrix.shape[0]} pedidos...")
     
+    # O mlxtend recusa DataFrames esparsos com colunas inteiras que não começam em 0 (códigos de SKU).
+    # Minera por posição de coluna e depois traduz cada posição de volta para o código do SKU.
+    sku_labels = basket_matrix.columns
     frequent_itemsets = fpgrowth(
-        basket_matrix,
+        basket_matrix.set_axis(pd.RangeIndex(len(sku_labels)), axis=1),
         min_support=min_support,
-        use_colnames=True
+        use_colnames=False
     )
-    
+    frequent_itemsets["itemsets"] = frequent_itemsets["itemsets"].map(
+        lambda positions: frozenset(sku_labels[p] for p in positions)
+    )
+
     if frequent_itemsets.empty:
         logger.warning("Nenhum itemset frequente encontrado com o suporte fornecido.")
         return pd.DataFrame(columns=["antecedents", "consequents", "support", "confidence", "lift"])
