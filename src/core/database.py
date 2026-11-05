@@ -217,8 +217,8 @@ def fetch_products_from_database(
 def fetch_sales_velocity_from_database(window_days: int = 60) -> pd.DataFrame:
     """
     Extrai a velocidade de vendas (VMD), desvio padrão da demanda, volume faturado e receita
-    agregados diretamente no SQL Server (P-041/P-022) para máxima performance e baixo consumo de memória.
-    Executa a query agregada em ~1s em vez de transferir centenas de milhares de linhas brutas.
+    agregados diretamente no SQL Server (P-041/P-022/P-053.6) para máxima performance e baixo consumo de memória.
+    VMD em precisão integral (DA-02); arredondar só na exibição.
     """
     days = max(1, min(int(window_days), 365))
     sql = f"""
@@ -272,7 +272,7 @@ def fetch_sales_velocity_from_database(window_days: int = 60) -> pd.DataFrame:
             std_series = pd.Series(0.0, index=df.index)
 
         result_df = pd.DataFrame({
-            "vmd": vmd_series.round(4),
+            "vmd": vmd_series,
             "std_demand": std_series.round(4),
             "total_sold_qty": df['sum_qty'].astype(float).round(2),
             "total_revenue": df['total_revenue'].astype(float).round(2),
@@ -283,5 +283,3 @@ def fetch_sales_velocity_from_database(window_days: int = 60) -> pd.DataFrame:
         return result_df
     finally:
         conn.close()
-
-

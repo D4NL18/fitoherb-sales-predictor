@@ -1,35 +1,128 @@
-import { Component, OnInit, inject, signal, computed } from '@angular/core';
+/**
+ * Componente de página de Previsão de Estoque e Compras (`app-inventory-page`).
+ *
+ * Gerencia o estado reativo (Signals) da Política Mín/Máx por dias de cobertura (P-053 a P-056),
+ * separando a política efetivamente aplicada (`appliedPolicy`) do rascunho em edição no modal
+ * e validando o cache local v3 (CA-12, ADR-001 DA-08/DA-09).
+ */
+import { Component, ElementRef, HostListener, OnInit, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { InventoryService } from '../../services/inventory.service';
+import { HttpErrorResponse } from '@angular/common/http';
+import {
+  InventoryService,
+  extractInventoryErrorMessage,
+} from '../../services/inventory.service';
 import {
   InventoryKPIs,
   InventoryParams,
+  InventoryPolicy,
   InventoryProductItem,
-  InventoryStatus,
+  InventoryStatusCode,
   SupplierItem,
 } from '../../models/inventory.model';
+import {
+  DEFAULT_HISTORY_WINDOW_DAYS,
+  DEFAULT_LEAD_TIME_DAYS,
+  DEFAULT_MAX_COVERAGE_DAYS,
+  DEFAULT_MIN_COVERAGE_DAYS,
+  HISTORY_WINDOW_DAYS_RANGE,
+  INVENTORY_CACHE_KEY,
+  LEAD_TIME_DAYS_RANGE,
+  LEGACY_INVENTORY_CACHE_KEYS,
+  MAX_COVERAGE_DAYS_RANGE,
+  MIN_COVERAGE_DAYS_RANGE,
+} from '../../inventory.constants';
+import {
+  InventoryCachePayload,
+  InventoryPolicyIssue,
+  isInventoryCachePayload,
+  validateInventoryPolicy,
+} from '../../utils/inventory-policy.validation';
+
+/** Campos de produto suportados na ordenação de colunas da tabela. */
+export type SortableProductField = keyof InventoryProductItem;
+
+const ALL_SUPPLIERS_OPTION = 'TODOS';
+
+/** Remove acentos (marcas combinantes Unicode U+0300 a U+036F) para busca tolerante. */
+const DIACRITICS_PATTERN = /[̀-ͯ]/g;
+
+/** Normaliza texto para busca: minúsculas e sem acentos. */
+function normalizeSearchText(value: string): string {
+  return value.normalize('NFD').replace(DIACRITICS_PATTERN, '').toLowerCase().trim();
+}
+const ALL_FILTER_OPTION = 'ALL';
+const DEFAULT_PAGE_NUMBER = 1;
+const DEFAULT_PAGE_SIZE = 20;
+const SKELETON_KPI_COUNT = 5;
+const SKELETON_ROW_COUNT = 10;
+const ISO_DATE_SLICE_END = 10;
+const UNKNOWN_STATUS_RANK = 4;
+
+const STATUS_SORT_RANK: Readonly<Record<InventoryStatusCode, number>> = {
+  CRITICAL_STOCKOUT: 0,
+  REORDER_NEEDED: 1,
+  HEALTHY: 2,
+  OVERSTOCK: 3,
+};
+
+const DEFAULT_POLICY: InventoryPolicy = {
+  historyWindowDays: DEFAULT_HISTORY_WINDOW_DAYS,
+  leadTimeDays: DEFAULT_LEAD_TIME_DAYS,
+  minCoverageDays: DEFAULT_MIN_COVERAGE_DAYS,
+  maxCoverageDays: DEFAULT_MAX_COVERAGE_DAYS,
+};
 
 @Component({
   selector: 'app-inventory-page',
   standalone: true,
   imports: [CommonModule, FormsModule],
   templateUrl: './inventory-page.component.html',
-  styleUrls: ['./inventory-page.component.scss']
+  styleUrls: ['./inventory-page.component.scss'],
 })
 export class InventoryPageComponent implements OnInit {
   private readonly inventoryService = inject(InventoryService);
-  private readonly CACHE_KEY = 'fitoherb_inventory_cache_v2';
 
-  readonly historyWindowDays = signal<number>(60);
-  readonly leadTimeDays = signal<number>(15);
-  readonly targetCoverageDays = signal<number>(30);
-  readonly serviceLevel = signal<number>(0.95);
-  readonly budgetLimit = signal<number | null>(null);
-  readonly maxPurchaseVariationPct = signal<number>(100);
-  readonly enablePhysicalLimit = signal<boolean>(true);
+  /** Faixas dos controles deslizantes expostas ao template (A1, A4, A5). */
+  readonly historyWindowRange = HISTORY_WINDOW_DAYS_RANGE;
+  readonly leadTimeRange = LEAD_TIME_DAYS_RANGE;
+  readonly minCoverageRange = MIN_COVERAGE_DAYS_RANGE;
+  readonly maxCoverageRange = MAX_COVERAGE_DAYS_RANGE;
 
-  // Estados de Carregamento e Modais
+  /** Listas auxiliares para renderização de Skeleton Loaders (Design Plan §6.1). */
+  readonly skeletonKpis = Array.from({ length: SKELETON_KPI_COUNT }, (_, i) => i);
+  readonly skeletonRows = Array.from({ length: SKELETON_ROW_COUNT }, (_, i) => i);
+
+  /** Sinais de rascunho dos parâmetros editáveis no modal (P-053.2). */
+  readonly historyWindowDays = signal<number>(DEFAULT_HISTORY_WINDOW_DAYS);
+  readonly leadTimeDays = signal<number>(DEFAULT_LEAD_TIME_DAYS);
+  readonly minCoverageDays = signal<number>(DEFAULT_MIN_COVERAGE_DAYS);
+  readonly maxCoverageDays = signal<number>(DEFAULT_MAX_COVERAGE_DAYS);
+
+  /** Política efetivamente aplicada ao último cálculo concluído (ADR-001 DA-08). */
+  readonly appliedPolicy = signal<InventoryPolicy>({ ...DEFAULT_POLICY });
+
+  /** Validação cruzada em tempo real dos parâmetros em edição no modal (P-053.3, A2). */
+  readonly policyIssue = computed<InventoryPolicyIssue | null>(() =>
+    validateInventoryPolicy({
+      minCoverageDays: this.minCoverageDays(),
+      maxCoverageDays: this.maxCoverageDays(),
+      leadTimeDays: this.leadTimeDays(),
+    })
+  );
+
+  readonly isMinMaxInvalid = computed<boolean>(
+    () => this.maxCoverageDays() <= this.minCoverageDays()
+  );
+
+  readonly isLeadTimeInvalid = computed<boolean>(
+    () => this.leadTimeDays() >= this.maxCoverageDays()
+  );
+
+  readonly canApplySettings = computed<boolean>(() => this.policyIssue() === null);
+
+  /** Estados de carregamento, exportação e feedback da tela. */
   readonly isLoading = signal<boolean>(false);
   readonly isDownloading = signal<boolean>(false);
   readonly isSettingsModalOpen = signal<boolean>(false);
@@ -37,97 +130,127 @@ export class InventoryPageComponent implements OnInit {
   readonly successMessage = signal<string | null>(null);
   readonly lastCalculatedAt = signal<string | null>(null);
 
-  // Dados Retornados
+  /** Dados retornados pela API. */
   readonly kpis = signal<InventoryKPIs | null>(null);
   readonly products = signal<InventoryProductItem[]>([]);
   readonly suppliers = signal<SupplierItem[]>([]);
 
-  // Filtros, Busca, Ordenação e Paginação
+  /** Filtros, busca, ordenação e paginação local. */
   readonly searchTerm = signal<string>('');
-  readonly selectedSupplier = signal<string>('TODOS');
-  readonly statusFilter = signal<string>('ALL'); // ALL | CRITICAL_STOCKOUT | REORDER_NEEDED | HEALTHY | OVERSTOCK
-  readonly curvaAbcFilter = signal<string>('ALL'); // ALL | A | B | C
-  readonly sortColumn = signal<keyof InventoryProductItem | ''>('status');
-  readonly sortDirection = signal<'asc' | 'desc'>('asc');
-  readonly currentPage = signal<number>(1);
-  readonly pageSize = signal<number>(20);
+  readonly selectedSupplier = signal<string>(ALL_SUPPLIERS_OPTION);
 
-  // Lista Filtrada e Ordenada
-  readonly filteredProducts = computed<InventoryProductItem[]>(() => {
-    let list = this.products();
-    const search = this.searchTerm().toLowerCase().trim();
-    const sup = this.selectedSupplier();
-    const status = this.statusFilter();
-    const abc = this.curvaAbcFilter();
+  /** Combobox pesquisável de fornecedor: termo digitado, menu aberto e item destacado (teclado). */
+  readonly supplierSearch = signal<string>('');
+  readonly isSupplierMenuOpen = signal<boolean>(false);
+  readonly highlightedSupplierIndex = signal<number>(0);
+  private readonly hostElement = inject(ElementRef<HTMLElement>);
 
-    if (search) {
-      list = list.filter(p =>
-        p.descricao.toLowerCase().includes(search) ||
-        p.codigo.toString().includes(search) ||
-        p.ean.includes(search)
-      );
+  /** Fornecedores que contêm o termo digitado (sem diferenciar acentos e maiúsculas). */
+  readonly filteredSuppliers = computed<SupplierItem[]>(() => {
+    const term = normalizeSearchText(this.supplierSearch());
+    if (!term) {
+      return this.suppliers();
     }
-
-    if (sup && sup !== 'TODOS') {
-      list = list.filter(p => p.fornecedor.toUpperCase() === sup.toUpperCase());
-    }
-
-    if (status !== 'ALL') {
-      list = list.filter(p => p.status === status);
-    }
-
-    if (abc !== 'ALL') {
-      list = list.filter(p => p.curvaAbc === abc);
-    }
-
-    // Ordenação
-    const col = this.sortColumn();
-    const dir = this.sortDirection();
-    if (col) {
-      list = [...list].sort((a, b) => {
-        let valA: any = a[col];
-        let valB: any = b[col];
-
-        if (col === 'status') {
-          const rankMap: Record<string, number> = {
-            CRITICAL_STOCKOUT: 0,
-            REORDER_NEEDED: 1,
-            HEALTHY: 2,
-            OVERSTOCK: 3
-          };
-          valA = rankMap[a.status] ?? 4;
-          valB = rankMap[b.status] ?? 4;
-        }
-
-        if (valA < valB) return dir === 'asc' ? -1 : 1;
-        if (valA > valB) return dir === 'asc' ? 1 : -1;
-        return 0;
-      });
-    }
-
-    return list;
+    return this.suppliers().filter((sup) => normalizeSearchText(sup.nome).includes(term));
   });
 
-  // Paginação
+  /** Rótulo do fornecedor selecionado exibido no campo quando o usuário não está digitando. */
+  readonly selectedSupplierLabel = computed<string>(() => {
+    const selected = this.suppliers().find((sup) => sup.fornecedor === this.selectedSupplier());
+    return selected ? `${selected.nome} (${selected.totalSkus})` : 'Todos os Fornecedores';
+  });
+  readonly statusFilter = signal<string>(ALL_FILTER_OPTION);
+  readonly curvaAbcFilter = signal<string>(ALL_FILTER_OPTION);
+  readonly sortColumn = signal<SortableProductField | ''>('status');
+  readonly sortDirection = signal<'asc' | 'desc'>('asc');
+  readonly currentPage = signal<number>(DEFAULT_PAGE_NUMBER);
+  readonly pageSize = signal<number>(DEFAULT_PAGE_SIZE);
+
+  /** Produtos filtrados e ordenados segundo os controles ativos na tela. */
+  readonly filteredProducts = computed<InventoryProductItem[]>(() => {
+    const filtered = this.applyProductFilters(this.products());
+    const col = this.sortColumn();
+    if (!col) {
+      return filtered;
+    }
+    const dir = this.sortDirection();
+    return [...filtered].sort((a, b) => this.compareProductItems(a, b, col, dir));
+  });
+
   readonly totalPages = computed<number>(() => {
-    return Math.ceil(this.filteredProducts().length / this.pageSize()) || 1;
+    return Math.ceil(this.filteredProducts().length / this.pageSize()) || DEFAULT_PAGE_NUMBER;
   });
 
   readonly paginatedProducts = computed<InventoryProductItem[]>(() => {
-    const page = this.currentPage();
-    const size = this.pageSize();
-    const start = (page - 1) * size;
-    return this.filteredProducts().slice(start, start + size);
+    const start = (this.currentPage() - 1) * this.pageSize();
+    return this.filteredProducts().slice(start, start + this.pageSize());
   });
 
   ngOnInit(): void {
+    this.purgeLegacyCacheKeys();
     this.loadSuppliers();
-    this.loadCachedPrediction();
-    if (this.products().length === 0) {
+    if (!this.loadCachedPrediction()) {
       this.calculateInventory();
     }
   }
 
+  /** Abre o menu de fornecedores limpando o termo anterior para mostrar a lista completa. */
+  openSupplierMenu(): void {
+    if (this.isSupplierMenuOpen()) {
+      return;
+    }
+    this.supplierSearch.set('');
+    this.highlightedSupplierIndex.set(0);
+    this.isSupplierMenuOpen.set(true);
+  }
+
+  onSupplierSearchInput(term: string): void {
+    this.supplierSearch.set(term);
+    this.highlightedSupplierIndex.set(0);
+    this.isSupplierMenuOpen.set(true);
+  }
+
+  selectSupplier(supplier: SupplierItem): void {
+    this.selectedSupplier.set(supplier.fornecedor);
+    this.currentPage.set(DEFAULT_PAGE_NUMBER);
+    this.supplierSearch.set('');
+    this.isSupplierMenuOpen.set(false);
+  }
+
+  /** Navegação por teclado do combobox: setas, Enter para escolher e Esc para fechar. */
+  onSupplierKeydown(event: KeyboardEvent): void {
+    const options = this.filteredSuppliers();
+    if (event.key === 'Escape') {
+      this.isSupplierMenuOpen.set(false);
+      return;
+    }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      this.isSupplierMenuOpen.set(true);
+      const step = event.key === 'ArrowDown' ? 1 : -1;
+      const next = this.highlightedSupplierIndex() + step;
+      this.highlightedSupplierIndex.set(Math.min(Math.max(next, 0), Math.max(options.length - 1, 0)));
+      return;
+    }
+    if (event.key === 'Enter' && this.isSupplierMenuOpen()) {
+      event.preventDefault();
+      const highlighted = options[this.highlightedSupplierIndex()];
+      if (highlighted) {
+        this.selectSupplier(highlighted);
+      }
+    }
+  }
+
+  /** Fecha o menu de fornecedores ao clicar fora do componente. */
+  @HostListener('document:click', ['$event'])
+  closeSupplierMenuOnOutsideClick(event: Event): void {
+    const container = (this.hostElement.nativeElement as HTMLElement).querySelector('.supplier-combobox');
+    if (container && !container.contains(event.target as Node)) {
+      this.isSupplierMenuOpen.set(false);
+    }
+  }
+
+  /** Carrega a lista de fornecedores/laboratórios do catálogo (P-047.1). */
   loadSuppliers(): void {
     this.inventoryService.getSuppliers().subscribe({
       next: (res) => {
@@ -135,144 +258,272 @@ export class InventoryPageComponent implements OnInit {
           this.suppliers.set(res.data);
         }
       },
-      error: (err) => console.warn('Não foi possível carregar fornecedores:', err)
+      error: () => {
+        this.suppliers.set([]);
+      },
     });
   }
 
+  /** Executa o cálculo da Política Mín/Máx na API e sincroniza estado e cache v3. */
   calculateInventory(): void {
+    if (!this.canApplySettings()) {
+      return;
+    }
     this.isLoading.set(true);
     this.errorMessage.set(null);
     this.successMessage.set(null);
 
-    const params: InventoryParams = {
-      historyWindowDays: this.historyWindowDays(),
-      leadTimeDays: this.leadTimeDays(),
-      targetCoverageDays: this.targetCoverageDays(),
-      serviceLevel: this.serviceLevel(),
-      fornecedor: this.selectedSupplier() !== 'TODOS' ? this.selectedSupplier() : null,
-      budgetLimit: this.budgetLimit(),
-      maxPurchaseVariationPct: this.enablePhysicalLimit() ? this.maxPurchaseVariationPct() : null
-    };
-
-    this.inventoryService.predict(params).subscribe({
-      next: (res) => {
+    const requestParams = this.buildPredictParams();
+    this.inventoryService.predict(requestParams).subscribe({
+      next: (res) => this.handlePredictSuccess(res?.data, requestParams),
+      error: (err: HttpErrorResponse) => {
         this.isLoading.set(false);
-        if (res?.data) {
-          this.kpis.set(res.data.kpis);
-          this.products.set(res.data.produtos);
-          this.currentPage.set(1);
-          const now = new Date().toLocaleString('pt-BR');
-          this.lastCalculatedAt.set(now);
-          this.saveCache(res.data.kpis, res.data.produtos, now);
-          this.successMessage.set('Plano de estoque e compras calculado com sucesso!');
-        }
+        this.errorMessage.set(extractInventoryErrorMessage(err));
       },
-      error: (err) => {
-        this.isLoading.set(false);
-        this.errorMessage.set(err?.error?.detail || 'Erro ao calcular sugestão de compras e estoque.');
-      }
     });
   }
 
+  /** Exporta o CSV usando estritamente a política aplicada ao resultado visível (P-056.6). */
   downloadCsv(): void {
-    if (this.products().length === 0) return;
+    if (this.products().length === 0 || this.isLoading()) {
+      return;
+    }
     this.isDownloading.set(true);
-
-    const params: InventoryParams = {
-      historyWindowDays: this.historyWindowDays(),
-      leadTimeDays: this.leadTimeDays(),
-      targetCoverageDays: this.targetCoverageDays(),
-      serviceLevel: this.serviceLevel(),
-      fornecedor: this.selectedSupplier() !== 'TODOS' ? this.selectedSupplier() : null,
-      budgetLimit: this.budgetLimit(),
-      maxPurchaseVariationPct: this.enablePhysicalLimit() ? this.maxPurchaseVariationPct() : null
-    };
+    const params = this.buildPredictParams(this.appliedPolicy());
 
     this.inventoryService.exportCsv(params).subscribe({
       next: (blob) => {
         this.isDownloading.set(false);
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        const fornecStr = this.selectedSupplier() !== 'TODOS' ? `_${this.selectedSupplier().toLowerCase()}` : '';
-        a.download = `fitoherb_plano_compras${fornecStr}_${new Date().toISOString().slice(0, 10)}.csv`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
+        this.triggerCsvBrowserDownload(blob);
       },
-      error: (err) => {
+      error: (err: HttpErrorResponse) => {
         this.isDownloading.set(false);
-        this.errorMessage.set('Falha ao exportar arquivo CSV.');
-      }
+        this.errorMessage.set(extractInventoryErrorMessage(err));
+      },
     });
   }
 
-  toggleSort(column: keyof InventoryProductItem): void {
+  /** Alterna a coluna ou direção de ordenação da tabela. */
+  toggleSort(column: SortableProductField): void {
     if (this.sortColumn() === column) {
       this.sortDirection.set(this.sortDirection() === 'asc' ? 'desc' : 'asc');
-    } else {
-      this.sortColumn.set(column);
-      this.sortDirection.set('asc');
+      return;
     }
+    this.sortColumn.set(column);
+    this.sortDirection.set('asc');
   }
 
+  /** Atualiza a página ativa respeitando os limites de paginação. */
   setPage(page: number): void {
-    if (page >= 1 && page <= this.totalPages()) {
+    if (page >= DEFAULT_PAGE_NUMBER && page <= this.totalPages()) {
       this.currentPage.set(page);
     }
   }
 
+  /** Limpa todos os filtros locais de busca, status, curva ABC e fornecedor. */
+  resetFilters(): void {
+    this.searchTerm.set('');
+    this.statusFilter.set(ALL_FILTER_OPTION);
+    this.curvaAbcFilter.set(ALL_FILTER_OPTION);
+    this.selectedSupplier.set(ALL_SUPPLIERS_OPTION);
+    this.currentPage.set(DEFAULT_PAGE_NUMBER);
+  }
+
+  /** Abre o modal sincronizando os controles com a última política aplicada. */
   openSettingsModal(): void {
+    this.syncDraftWithPolicy(this.appliedPolicy());
     this.isSettingsModalOpen.set(true);
   }
 
-  closeSettingsModal(): void {
+  /** Descarta alterações em rascunho, restaura a política aplicada e fecha o modal. */
+  cancelSettingsModal(): void {
+    this.syncDraftWithPolicy(this.appliedPolicy());
     this.isSettingsModalOpen.set(false);
   }
 
+  /** Fecha o modal descartando qualquer edição não aplicada. */
+  closeSettingsModal(): void {
+    this.cancelSettingsModal();
+  }
+
+  /** Restaura os padrões 60 / 15 / 30 / 60 no rascunho do modal sem disparar requisição. */
+  restoreDefaultPolicy(): void {
+    this.syncDraftWithPolicy(DEFAULT_POLICY);
+  }
+
+  /** Valida a política em rascunho e dispara o recálculo se não houver violação (CA-06). */
+  applySettingsAndRecalculate(): void {
+    if (!this.canApplySettings()) {
+      return;
+    }
+    this.isSettingsModalOpen.set(false);
+    this.calculateInventory();
+  }
+
+  /** Alias para compatibilidade com chamadas de aplicação do modal. */
   applyModalSettings(): void {
-    this.closeSettingsModal();
-    this.calculateInventory();
+    this.applySettingsAndRecalculate();
   }
 
-  private saveCache(kpis: InventoryKPIs, produtos: InventoryProductItem[], savedAt: string): void {
-    try {
-      const payload = {
-        kpis,
-        produtos,
-        savedAt,
-        maxPurchaseVariationPct: this.maxPurchaseVariationPct(),
-        enablePhysicalLimit: this.enablePhysicalLimit()
-      };
-      localStorage.setItem(this.CACHE_KEY, JSON.stringify(payload));
-    } catch (e) {
-      console.warn('Erro ao salvar cache local:', e);
+  private buildPredictParams(policyOverride?: InventoryPolicy): InventoryParams {
+    const source = policyOverride ?? {
+      historyWindowDays: this.historyWindowDays(),
+      leadTimeDays: this.leadTimeDays(),
+      minCoverageDays: this.minCoverageDays(),
+      maxCoverageDays: this.maxCoverageDays(),
+    };
+    const supplier = this.selectedSupplier();
+    return {
+      historyWindowDays: source.historyWindowDays,
+      minCoverageDays: source.minCoverageDays,
+      maxCoverageDays: source.maxCoverageDays,
+      leadTimeDays: source.leadTimeDays,
+      fornecedor: supplier !== ALL_SUPPLIERS_OPTION ? supplier : null,
+    };
+  }
+
+  private handlePredictSuccess(
+    data: { politica?: InventoryPolicy; kpis: InventoryKPIs; produtos: InventoryProductItem[] } | undefined,
+    sentParams: InventoryParams
+  ): void {
+    this.isLoading.set(false);
+    if (!data) {
+      return;
     }
+    const effectivePolicy: InventoryPolicy = data.politica ?? {
+      historyWindowDays: sentParams.historyWindowDays,
+      leadTimeDays: sentParams.leadTimeDays,
+      minCoverageDays: sentParams.minCoverageDays,
+      maxCoverageDays: sentParams.maxCoverageDays,
+    };
+    const savedAt = new Date().toLocaleString('pt-BR');
+    this.appliedPolicy.set(effectivePolicy);
+    this.syncDraftWithPolicy(effectivePolicy);
+    this.kpis.set(data.kpis);
+    this.products.set(data.produtos);
+    this.currentPage.set(DEFAULT_PAGE_NUMBER);
+    this.lastCalculatedAt.set(savedAt);
+    this.saveCache({ politica: effectivePolicy, kpis: data.kpis, produtos: data.produtos, savedAt });
+    this.successMessage.set('Plano de estoque e compras calculado com sucesso!');
   }
 
-  private loadCachedPrediction(): void {
+  private syncDraftWithPolicy(policy: InventoryPolicy): void {
+    this.historyWindowDays.set(policy.historyWindowDays);
+    this.leadTimeDays.set(policy.leadTimeDays);
+    this.minCoverageDays.set(policy.minCoverageDays);
+    this.maxCoverageDays.set(policy.maxCoverageDays);
+  }
+
+  private purgeLegacyCacheKeys(): void {
     try {
-      const raw = localStorage.getItem(this.CACHE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (parsed?.kpis && parsed?.produtos) {
-          this.kpis.set(parsed.kpis);
-          this.products.set(parsed.produtos);
-          this.lastCalculatedAt.set(parsed.savedAt || null);
-          if (parsed.maxPurchaseVariationPct !== undefined) {
-            this.maxPurchaseVariationPct.set(parsed.maxPurchaseVariationPct);
-          }
-          if (parsed.enablePhysicalLimit !== undefined) {
-            this.enablePhysicalLimit.set(parsed.enablePhysicalLimit);
-          }
-          return;
-        }
+      for (const legacyKey of LEGACY_INVENTORY_CACHE_KEYS) {
+        localStorage.removeItem(legacyKey);
       }
-    } catch (e) {
-      console.warn('Erro ao recuperar cache local:', e);
+    } catch {
+      // Ignora bloqueios de acesso ao Web Storage em navegação restrita.
     }
-    // Se não houver cache, dispara o primeiro cálculo
-    this.calculateInventory();
+  }
+
+  private saveCache(payload: InventoryCachePayload): void {
+    try {
+      localStorage.setItem(INVENTORY_CACHE_KEY, JSON.stringify(payload));
+    } catch {
+      // Falha de cota ou bloqueio de storage não interrompe a jornada do comprador.
+    }
+  }
+
+  /**
+   * Restaura o cache local v3 caso passe pelo type guard `isInventoryCachePayload` (CA-12).
+   * Remove entradas corrompidas ou legadas e retorna `false` para forçar novo cálculo.
+   */
+  loadCachedPrediction(): boolean {
+    try {
+      const raw = localStorage.getItem(INVENTORY_CACHE_KEY);
+      if (!raw) {
+        return false;
+      }
+      const parsed: unknown = JSON.parse(raw);
+      if (!isInventoryCachePayload(parsed)) {
+        localStorage.removeItem(INVENTORY_CACHE_KEY);
+        return false;
+      }
+      this.appliedPolicy.set(parsed.politica);
+      this.syncDraftWithPolicy(parsed.politica);
+      this.kpis.set(parsed.kpis);
+      this.products.set(parsed.produtos);
+      this.lastCalculatedAt.set(parsed.savedAt);
+      return true;
+    } catch {
+      localStorage.removeItem(INVENTORY_CACHE_KEY);
+      return false;
+    }
+  }
+
+  private applyProductFilters(items: InventoryProductItem[]): InventoryProductItem[] {
+    const search = this.searchTerm().toLowerCase().trim();
+    const supplier = this.selectedSupplier();
+    const status = this.statusFilter();
+    const abc = this.curvaAbcFilter();
+
+    return items.filter(
+      (item) =>
+        this.matchesSearch(item, search) &&
+        this.matchesSupplier(item, supplier) &&
+        (status === ALL_FILTER_OPTION || item.status === status) &&
+        (abc === ALL_FILTER_OPTION || item.curvaAbc === abc)
+    );
+  }
+
+  private matchesSearch(item: InventoryProductItem, search: string): boolean {
+    if (!search) {
+      return true;
+    }
+    return (
+      item.descricao.toLowerCase().includes(search) ||
+      item.codigo.toString().includes(search) ||
+      item.ean.includes(search)
+    );
+  }
+
+  private matchesSupplier(item: InventoryProductItem, supplier: string): boolean {
+    if (!supplier || supplier === ALL_SUPPLIERS_OPTION) {
+      return true;
+    }
+    return item.fornecedor.toUpperCase() === supplier.toUpperCase();
+  }
+
+  private compareProductItems(
+    a: InventoryProductItem,
+    b: InventoryProductItem,
+    column: SortableProductField,
+    direction: 'asc' | 'desc'
+  ): number {
+    const multiplier = direction === 'asc' ? 1 : -1;
+    if (column === 'status') {
+      const rankA = STATUS_SORT_RANK[a.status] ?? UNKNOWN_STATUS_RANK;
+      const rankB = STATUS_SORT_RANK[b.status] ?? UNKNOWN_STATUS_RANK;
+      return (rankA - rankB) * multiplier;
+    }
+    const valA = a[column];
+    const valB = b[column];
+    if (typeof valA === 'number' && typeof valB === 'number') {
+      return (valA - valB) * multiplier;
+    }
+    return String(valA).localeCompare(String(valB), 'pt-BR') * multiplier;
+  }
+
+  private triggerCsvBrowserDownload(blob: Blob): void {
+    const url = window.URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    const supplier = this.selectedSupplier();
+    const supplierSuffix =
+      supplier !== ALL_SUPPLIERS_OPTION ? `_${supplier.toLowerCase().replace(/[^a-z0-9]+/g, '_')}` : '';
+    const dateStamp = new Date().toISOString().slice(0, ISO_DATE_SLICE_END);
+    anchor.href = url;
+    anchor.download = `fitoherb_plano_compras${supplierSuffix}_${dateStamp}.csv`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    window.URL.revokeObjectURL(url);
   }
 }

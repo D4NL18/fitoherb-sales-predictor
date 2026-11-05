@@ -1,10 +1,11 @@
 """
-Roteador RESTful FastAPI para o Módulo de Estoque e Compras (Inventory & Replenishment AI).
-Fitoherb Nordeste Distribuidora.
+Roteador RESTful FastAPI para o Módulo de Previsão de Estoque e Compras (Contrato 2.0.0).
+
+Implementa os endpoints `/api/v1/inventory/*` sob a Política de Estoque Mínimo/Máximo
+por dias de cobertura (regras P-053 a P-056 e decisões ADR-001 DA-05 a DA-11).
 """
 from datetime import datetime, timezone
 import logging
-from typing import Any, Dict
 
 from fastapi import APIRouter, HTTPException, Response
 
@@ -16,105 +17,142 @@ from src.modules.inventory.api.schemas import (
     SuppliersResponse,
 )
 from src.modules.inventory.service.inventory_service import (
+    build_csv_filename,
     execute_inventory_prediction,
     generate_inventory_csv,
+    get_inventory_parameter_config,
     get_inventory_suppliers,
 )
 
 logger = logging.getLogger(__name__)
 
+CSV_MEDIA_TYPE = "text/csv; charset=utf-8"
+
+# DA-11 / Seções 4.1, 5.3 e 6.3 do contrato 2.0.0: mensagens genéricas sem vazamento de exceções internas.
+SUPPLIERS_ERROR_DETAIL = (
+    "Não foi possível consultar o catálogo de fornecedores. Tente novamente em instantes."
+)
+PREDICT_ERROR_DETAIL = (
+    "Não foi possível calcular a previsão de estoque. Tente novamente em instantes."
+)
+EXPORT_CSV_ERROR_DETAIL = (
+    "Não foi possível gerar o arquivo CSV do plano de compras. Tente novamente em instantes."
+)
+
+VALIDATION_ERROR_RESPONSE_SPEC = {
+    "description": "Parâmetros fora de faixa, tipo inválido ou violação das regras INV-001 / INV-002.",
+}
+
 inventory_router = APIRouter(prefix="/inventory", tags=["Inventory Predictor"])
 
 
-@inventory_router.get("/health")
+@inventory_router.get(
+    "/health",
+    summary="Sonda de saúde do serviço de estoque",
+    description="Verifica a disponibilidade imediata do módulo de previsão de estoque.",
+)
 def inventory_health_check():
-    """Health check do serviço de inventário."""
+    """Retorna o status operacional da API de estoque (sonda de infraestrutura)."""
     return {"status": "healthy", "service": "fitoherb-inventory-api"}
 
 
-@inventory_router.get("/config", response_model=InventoryConfigResponse)
+@inventory_router.get(
+    "/config",
+    response_model=InventoryConfigResponse,
+    summary="Padrões e faixas dos parâmetros da Política Mín/Máx",
+    description=(
+        "Retorna os valores padrão, mínimos, máximos e passos dos quatro controles deslizantes "
+        "do modal de parâmetros da tela (Janela de Vendas, Lead Time, Dias Mínimo e Dias Máximo)."
+    ),
+)
 def get_inventory_config():
-    """
-    Retorna os parâmetros padrão e limites operacionais para calibração de estoque e compras.
-    """
-    config_data = {
-        "historyWindowDays": {"default": 60, "min": 15, "max": 180, "step": 15},
-        "leadTimeDays": {"default": 15, "min": 1, "max": 60, "step": 1},
-        "targetCoverageDays": {"default": 30, "min": 15, "max": 90, "step": 5},
-        "serviceLevel": {
-            "default": 0.95,
-            "options": [
-                {"label": "Conservador (90%)", "value": 0.90, "zScore": 1.28},
-                {"label": "Padrão Distribuidora (95%)", "value": 0.95, "zScore": 1.65},
-                {"label": "Crítico / Sem Ruptura (98%)", "value": 0.98, "zScore": 2.05},
-            ]
-        },
-        "budgetLimit": {"default": None, "min": 10000.0, "max": 1000000.0, "step": 5000.0},
-        "maxPurchaseVariationPct": {"default": 100.0, "min": 20.0, "max": 500.0, "step": 10.0}
-    }
+    """Retorna a configuração dos parâmetros da tela conforme a seção 3.1 do contrato 2.0.0."""
     return InventoryConfigResponse(
-        data=config_data,
+        data=get_inventory_parameter_config(),
         meta=ResponseMeta(
-            timestamp=datetime.now(timezone.utc).isoformat()
-        )
+            timestamp=datetime.now(timezone.utc).isoformat(),
+        ),
     )
 
 
-@inventory_router.get("/suppliers", response_model=SuppliersResponse)
+@inventory_router.get(
+    "/suppliers",
+    response_model=SuppliersResponse,
+    summary="Lista de fornecedores e contagem de SKUs ativos",
+    description="Retorna os fornecedores cadastrados no catálogo de produtos iniciando pela opção TODOS.",
+    responses={
+        500: {"description": SUPPLIERS_ERROR_DETAIL},
+    },
+)
 def get_suppliers_list():
-    """
-    Retorna a lista de fornecedores cadastrados na view Externo01.Produto com contagem de SKUs.
-    """
+    """Consulta a lista de fornecedores ativos com contagem de SKUs (seção 4 do contrato 2.0.0)."""
     try:
         suppliers = get_inventory_suppliers()
         return SuppliersResponse(
             data=suppliers,
             meta=ResponseMeta(
-                timestamp=datetime.now(timezone.utc).isoformat()
-            )
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            ),
         )
-    except Exception as e:
-        logger.error(f"Erro ao buscar fornecedores de inventário: {e}")
-        raise HTTPException(status_code=500, detail=f"Erro ao consultar catálogo de fornecedores: {str(e)}")
+    except Exception:
+        logger.error("Erro ao consultar o catálogo de fornecedores de inventário.", exc_info=True)
+        raise HTTPException(status_code=500, detail=SUPPLIERS_ERROR_DETAIL)
 
 
-@inventory_router.post("/predict", response_model=InventoryPredictResponse)
+@inventory_router.post(
+    "/predict",
+    response_model=InventoryPredictResponse,
+    summary="Cálculo de previsão de estoque e compras pela Política Mín/Máx",
+    description=(
+        "Calcula para cada SKU do catálogo a VMD, Dias de Cobertura, Estoque Mínimo, "
+        "Estoque Máximo, Quantidade Sugerida de Compra, Investimento e Status Operacional "
+        "(P-053 a P-056), além dos KPIs agregados e do eco da política aplicada."
+    ),
+    responses={
+        422: VALIDATION_ERROR_RESPONSE_SPEC,
+        500: {"description": PREDICT_ERROR_DETAIL},
+    },
+)
 def predict_inventory(request: InventoryPredictRequest):
-    """
-    Calcula a velocidade de vendas (VMD), autonomia de estoque, estoque de segurança,
-    ROP, estoque ideal e quantidade sugerida de compra para todos os SKUs da Fitoherb.
-    """
+    """Executa o cálculo da Política Mín/Máx e devolve o envelope padronizado 2.0.0."""
     try:
         result, elapsed_ms = execute_inventory_prediction(request)
         return InventoryPredictResponse(
             data=result,
             meta=ResponseMeta(
                 timestamp=datetime.now(timezone.utc).isoformat(),
-                executionTimeMs=elapsed_ms
-            )
+                executionTimeMs=elapsed_ms,
+            ),
         )
-    except Exception as e:
-        logger.error(f"Erro no cálculo de previsão de estoque: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Erro no cálculo de inventário: {str(e)}")
+    except Exception:
+        logger.error("Erro no cálculo de previsão de estoque pela Política Mín/Máx.", exc_info=True)
+        raise HTTPException(status_code=500, detail=PREDICT_ERROR_DETAIL)
 
 
-@inventory_router.post("/export-csv")
+@inventory_router.post(
+    "/export-csv",
+    summary="Exportação do plano de compras em CSV (Política Mín/Máx)",
+    description=(
+        "Gera o arquivo CSV (UTF-8 com BOM, separador ';' e decimal ',') com as 17 colunas "
+        "da Política Mín/Máx e paridade integral com os números de `/predict` (P-056.5, P-056.6)."
+    ),
+    responses={
+        422: VALIDATION_ERROR_RESPONSE_SPEC,
+        500: {"description": EXPORT_CSV_ERROR_DETAIL},
+    },
+)
 def export_inventory_csv(request: InventoryPredictRequest):
-    """
-    Gera e faz o streaming de arquivo CSV para download do plano de compras sugerido.
-    """
+    """Gera e transmite o CSV do plano de compras com nome de arquivo sanitizado (DA-11)."""
     try:
         csv_content = generate_inventory_csv(request)
-        fornec_slug = f"_{request.fornecedor.lower().replace(' ', '_')}" if request.fornecedor and request.fornecedor != "TODOS" else ""
-        filename = f"fitoherb_plano_compras{fornec_slug}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-
+        filename = build_csv_filename(request.fornecedor)
         return Response(
             content=csv_content,
-            media_type="text/csv",
+            media_type=CSV_MEDIA_TYPE,
             headers={
-                "Content-Disposition": f'attachment; filename="{filename}"'
-            }
+                "Content-Disposition": f'attachment; filename="{filename}"',
+            },
         )
-    except Exception as e:
-        logger.error(f"Erro na exportação de CSV de compras: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Erro na exportação de CSV: {str(e)}")
+    except Exception:
+        logger.error("Erro na exportação de CSV do plano de compras.", exc_info=True)
+        raise HTTPException(status_code=500, detail=EXPORT_CSV_ERROR_DETAIL)
