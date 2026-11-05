@@ -1,21 +1,25 @@
 <div class="inventory-container">
   <!-- Feature Hero Header -->
-  <section class="feature-hero">
+  <section class="feature-hero" [attr.inert]="isSettingsModalOpen() ? '' : null">
     <div class="hero-content">
       <div class="title-group">
         <div class="title-with-badge">
-          <h2 class="hero-title">Estoque Ideal & Previsão de Compras</h2>
-          <span class="tag tag-info"><span class="tag-dot"></span>Reposição Inteligente</span>
+          <h2 class="hero-title">Previsão de Estoque e Compras</h2>
+          <span class="tag tag-neutral">
+            <span aria-hidden="true">Política {{ appliedPolicy().minCoverageDays }}–{{ appliedPolicy().maxCoverageDays }} dias</span>
+            <span class="sr-only">Política de {{ appliedPolicy().minCoverageDays }} a {{ appliedPolicy().maxCoverageDays }} dias de estoque</span>
+          </span>
         </div>
         <p class="hero-subtitle">
-          Inteligência Operacional B2B • Prevenção de Rupturas, Detecção de Excesso e Sugestão de Compras por Giro Real
+          Compra quando o estoque chega ao mínimo ({{ appliedPolicy().minCoverageDays }}d) e repõe até o máximo ({{ appliedPolicy().maxCoverageDays }}d).
+          Base: venda média dos últimos {{ appliedPolicy().historyWindowDays }} dias · lead time de {{ appliedPolicy().leadTimeDays }} dias.
         </p>
       </div>
 
       <div class="hero-actions">
         @if (lastCalculatedAt()) {
           <div class="cache-badge" title="Data do último cálculo salvo em cache">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
               <circle cx="12" cy="12" r="10"></circle>
               <polyline points="12 6 12 12 16 14"></polyline>
             </svg>
@@ -27,9 +31,9 @@
           type="button"
           class="btn btn-secondary"
           (click)="openSettingsModal()"
-          title="Ajustar hiperparâmetros de reposição"
+          title="Ajustar dias mínimo e máximo, janela de vendas e lead time"
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
             <circle cx="12" cy="12" r="3"></circle>
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
           </svg>
@@ -41,13 +45,13 @@
           class="btn btn-primary"
           [disabled]="isLoading()"
           (click)="calculateInventory()"
-          title="Disparar novo cálculo analítico de reposição"
+          title="Recalcular com os parâmetros aplicados"
         >
           @if (isLoading()) {
-            <span class="spinner"></span>
+            <span class="spinner" aria-hidden="true"></span>
             <span>Calculando...</span>
           } @else {
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
               <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
             </svg>
             <span>Recalcular Estoque</span>
@@ -57,15 +61,15 @@
         <button
           type="button"
           class="btn btn-success"
-          [disabled]="isDownloading() || products().length === 0"
+          [disabled]="isDownloading() || isLoading() || products().length === 0"
           (click)="downloadCsv()"
           title="Baixar lista consolidada de compras em formato CSV"
         >
           @if (isDownloading()) {
-            <span class="spinner"></span>
+            <span class="spinner" aria-hidden="true"></span>
             <span>Gerando CSV...</span>
           } @else {
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
               <polyline points="7 10 12 15 17 10"></polyline>
               <line x1="12" y1="15" x2="12" y2="3"></line>
@@ -77,81 +81,95 @@
     </div>
 
     <!-- Proof Bar / Cards de Métricas Principais -->
-    @if (kpis(); as kpi) {
-      <div class="proof-bar">
-        <div class="kpi-card card-danger">
-          <div class="kpi-label">
-            <span class="status-dot dot-danger"></span>
-            Ruptura Iminente
+    @if (isLoading()) {
+      <div class="proof-bar" aria-busy="true">
+        @for (card of skeletonKpis; track card) {
+          <div class="kpi-card" aria-hidden="true">
+            <span class="skeleton-line skeleton-kpi-label"></span>
+            <span class="skeleton-line skeleton-kpi-value"></span>
+            <span class="skeleton-line skeleton-kpi-sub"></span>
           </div>
-          <div class="kpi-value">{{ kpi.skusEmRupturaCritica }} <span class="kpi-unit">SKUs</span></div>
-          <div class="kpi-sub">Estoque zera antes do prazo de entrega</div>
-        </div>
-
-        <div class="kpi-card card-warning">
-          <div class="kpi-label">
-            <span class="status-dot dot-warning"></span>
-            Reposição Necessária
-          </div>
-          <div class="kpi-value">{{ kpi.skusNecessitamReposicao }} <span class="kpi-unit">SKUs</span></div>
-          <div class="kpi-sub">Estoque atual abaixo do ROP</div>
-        </div>
-
-        <div class="kpi-card card-healthy">
-          <div class="kpi-label">
-            <span class="status-dot dot-healthy"></span>
-            Estoque Saudável
-          </div>
-          <div class="kpi-value">{{ kpi.skusEstoqueSaudavel }} <span class="kpi-unit">SKUs</span></div>
-          <div class="kpi-sub">Autonomia segura dentro da meta</div>
-        </div>
-
-        <div class="kpi-card card-overstock">
-          <div class="kpi-label">
-            <span class="status-dot dot-overstock"></span>
-            Excesso / Overstock
-          </div>
-          <div class="kpi-value">{{ kpi.skusEmOverstock }} <span class="kpi-unit">SKUs</span></div>
-          <div class="kpi-sub">Capital parado: R$ {{ kpi.capitalImobilizadoOverstock | number:'1.2-2' }}</div>
-        </div>
-
-        <div class="kpi-card card-financial">
-          <div class="kpi-label">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-              <line x1="12" y1="1" x2="12" y2="23"></line>
-              <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
-            </svg>
-            Investimento Sugerido
-          </div>
-          <div class="kpi-value-highlight">R$ {{ kpi.investimentoTotalSugerido | number:'1.2-2' }}</div>
-          <div class="kpi-sub">
-            Total de compra orçado a preço de custo
-            @if (kpi.skusLimitadosPorEspaco) {
-              <span class="proof-capped-chip" title="SKUs com sugestão de compra limitada pela capacidade física">
-                {{ kpi.skusLimitadosPorEspaco }} SKUs c/ trava física
-              </span>
-            }
-          </div>
-        </div>
+        }
       </div>
+    } @else {
+      @if (kpis(); as kpi) {
+        <div class="proof-bar" aria-busy="false">
+          <div class="kpi-card card-danger">
+            <div class="kpi-label">
+              <span class="status-dot dot-danger" aria-hidden="true"></span>
+              Ruptura Iminente
+            </div>
+            <div class="kpi-value">{{ kpi.skusEmRupturaCritica }} <span class="kpi-unit">SKUs</span></div>
+            <div class="kpi-sub">Estoque acaba antes de um pedido chegar ({{ appliedPolicy().leadTimeDays }} dias)</div>
+          </div>
+
+          <div class="kpi-card card-warning">
+            <div class="kpi-label">
+              <span class="status-dot dot-warning" aria-hidden="true"></span>
+              Abaixo do Mínimo
+            </div>
+            <div class="kpi-value">{{ kpi.skusNecessitamReposicao }} <span class="kpi-unit">SKUs</span></div>
+            <div class="kpi-sub">
+              Estoque ≤ Mínimo ({{ appliedPolicy().minCoverageDays }}d) · Comprar até {{ appliedPolicy().maxCoverageDays }}d
+            </div>
+          </div>
+
+          <div class="kpi-card card-healthy">
+            <div class="kpi-label">
+              <span class="status-dot dot-healthy" aria-hidden="true"></span>
+              Estoque Saudável
+            </div>
+            <div class="kpi-value">{{ kpi.skusEstoqueSaudavel }} <span class="kpi-unit">SKUs</span></div>
+            <div class="kpi-sub">
+              Entre {{ appliedPolicy().minCoverageDays }}d e {{ appliedPolicy().maxCoverageDays }}d de cobertura
+            </div>
+          </div>
+
+          <div class="kpi-card card-overstock">
+            <div class="kpi-label">
+              <span class="status-dot dot-overstock" aria-hidden="true"></span>
+              Acima do Máximo
+            </div>
+            <div class="kpi-value">{{ kpi.skusEmOverstock }} <span class="kpi-unit">SKUs</span></div>
+            <div class="kpi-sub">
+              Acima de {{ appliedPolicy().maxCoverageDays }}d · Capital Imobilizado: R$ {{ kpi.capitalImobilizadoOverstock | number:'1.2-2' }}
+            </div>
+          </div>
+
+          <div class="kpi-card card-financial">
+            <div class="kpi-label">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+                <line x1="12" y1="1" x2="12" y2="23"></line>
+                <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+              </svg>
+              Investimento Sugerido
+            </div>
+            <div class="kpi-value-highlight">R$ {{ kpi.investimentoTotalSugerido | number:'1.2-2' }}</div>
+            <div class="kpi-sub">
+              Para elevar SKUs acionados até {{ appliedPolicy().maxCoverageDays }}d
+            </div>
+          </div>
+        </div>
+      }
     }
   </section>
 
   <!-- Barra de Filtros e Busca -->
-  <section class="filters-panel">
+  <section class="filters-panel" [attr.inert]="isSettingsModalOpen() ? '' : null">
     <div class="search-box">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
         <circle cx="11" cy="11" r="8"></circle>
         <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
       </svg>
       <input
         type="text"
         placeholder="Buscar por descrição, código ou EAN..."
+        aria-label="Buscar por descrição, código ou EAN"
         [ngModel]="searchTerm()"
         (ngModelChange)="searchTerm.set($event); currentPage.set(1)"
       />
       @if (searchTerm()) {
-        <button class="clear-search" (click)="searchTerm.set(''); currentPage.set(1)">×</button>
+        <button type="button" class="clear-search" aria-label="Limpar busca" (click)="searchTerm.set(''); currentPage.set(1)">×</button>
       }
     </div>
 
@@ -173,11 +191,12 @@
       </div>
 
       <!-- Filtro por Status Operacional -->
-      <div class="pill-group">
+      <div class="pill-group" role="group" aria-label="Filtrar por status operacional">
         <button
           type="button"
           class="pill-btn"
           [class.active]="statusFilter() === 'ALL'"
+          [attr.aria-pressed]="statusFilter() === 'ALL'"
           (click)="statusFilter.set('ALL'); currentPage.set(1)"
         >
           Todos ({{ products().length }})
@@ -186,33 +205,37 @@
           type="button"
           class="pill-btn pill-danger"
           [class.active]="statusFilter() === 'CRITICAL_STOCKOUT'"
+          [attr.aria-pressed]="statusFilter() === 'CRITICAL_STOCKOUT'"
           (click)="statusFilter.set('CRITICAL_STOCKOUT'); currentPage.set(1)"
         >
-          <span class="status-dot dot-critical"></span> Ruptura
+          <span class="status-dot dot-critical" aria-hidden="true"></span> Ruptura Iminente
         </button>
         <button
           type="button"
           class="pill-btn pill-warning"
           [class.active]="statusFilter() === 'REORDER_NEEDED'"
+          [attr.aria-pressed]="statusFilter() === 'REORDER_NEEDED'"
           (click)="statusFilter.set('REORDER_NEEDED'); currentPage.set(1)"
         >
-          <span class="status-dot dot-warning"></span> Reposição
+          <span class="status-dot dot-warning" aria-hidden="true"></span> Abaixo do Mínimo
         </button>
         <button
           type="button"
           class="pill-btn pill-healthy"
           [class.active]="statusFilter() === 'HEALTHY'"
+          [attr.aria-pressed]="statusFilter() === 'HEALTHY'"
           (click)="statusFilter.set('HEALTHY'); currentPage.set(1)"
         >
-          <span class="status-dot dot-healthy"></span> Saudável
+          <span class="status-dot dot-healthy" aria-hidden="true"></span> Estoque Saudável
         </button>
         <button
           type="button"
           class="pill-btn pill-overstock"
           [class.active]="statusFilter() === 'OVERSTOCK'"
+          [attr.aria-pressed]="statusFilter() === 'OVERSTOCK'"
           (click)="statusFilter.set('OVERSTOCK'); currentPage.set(1)"
         >
-          <span class="status-dot dot-info"></span> Excesso
+          <span class="status-dot dot-info" aria-hidden="true"></span> Acima do Máximo
         </button>
       </div>
 
@@ -235,86 +258,123 @@
 
   <!-- Mensagens de Alerta -->
   @if (errorMessage()) {
-    <div class="alert alert-danger">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <div class="alert alert-danger" role="alert" [attr.inert]="isSettingsModalOpen() ? '' : null">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
         <circle cx="12" cy="12" r="10"></circle>
         <line x1="12" y1="8" x2="12" y2="12"></line>
         <line x1="12" y1="16" x2="12.01" y2="16"></line>
       </svg>
       <span>{{ errorMessage() }}</span>
-      <button class="alert-close" (click)="errorMessage.set(null)">×</button>
+      <button type="button" class="alert-close" aria-label="Fechar aviso" (click)="errorMessage.set(null)">×</button>
     </div>
   }
 
   @if (successMessage()) {
-    <div class="alert alert-success">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <div class="alert alert-success" role="status" [attr.inert]="isSettingsModalOpen() ? '' : null">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
         <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
         <polyline points="22 4 12 14.01 9 11.01"></polyline>
       </svg>
       <span>{{ successMessage() }}</span>
-      <button class="alert-close" (click)="successMessage.set(null)">×</button>
+      <button type="button" class="alert-close" aria-label="Fechar aviso" (click)="successMessage.set(null)">×</button>
     </div>
   }
 
   <!-- Tabela de Produtos e Recomendações -->
-  <section class="table-section">
-    <div class="table-header-info">
-      <span>Exibindo <strong>{{ filteredProducts().length }}</strong> de <strong>{{ products().length }}</strong> produtos</span>
+  <section class="table-section" [attr.inert]="isSettingsModalOpen() ? '' : null">
+    <div class="table-header-info" role="status">
+      @if (isLoading()) {
+        <span>Calculando a previsão…</span>
+      } @else {
+        <span>Exibindo <strong>{{ filteredProducts().length }}</strong> de <strong>{{ products().length }}</strong> produtos</span>
+      }
     </div>
 
     <div class="table-wrapper">
       <table class="inventory-table">
         <thead>
           <tr>
-            <th (click)="toggleSort('codigo')" (keydown.enter)="toggleSort('codigo')" tabindex="0" class="sortable col-codigo">
+            <th scope="col" (click)="toggleSort('codigo')" (keydown.enter)="toggleSort('codigo')" tabindex="0" class="sortable col-codigo">
               Código
               @if (sortColumn() === 'codigo') {
                 <span class="sort-indicator">{{ sortDirection() === 'asc' ? '↑' : '↓' }}</span>
               }
             </th>
-            <th (click)="toggleSort('descricao')" (keydown.enter)="toggleSort('descricao')" tabindex="0" class="sortable col-descricao">
+            <th scope="col" (click)="toggleSort('descricao')" (keydown.enter)="toggleSort('descricao')" tabindex="0" class="sortable col-descricao">
               Descrição
               @if (sortColumn() === 'descricao') {
                 <span class="sort-indicator">{{ sortDirection() === 'asc' ? '↑' : '↓' }}</span>
               }
             </th>
-            <th class="col-fornecedor">Laboratório</th>
-            <th class="text-center col-curva">Curva</th>
-            <th (click)="toggleSort('estoqueAtual')" (keydown.enter)="toggleSort('estoqueAtual')" tabindex="0" class="sortable text-center col-estoque">
+            <th scope="col" class="col-fornecedor">Laboratório</th>
+            <th scope="col" class="text-center col-curva">Curva</th>
+            <th scope="col" (click)="toggleSort('estoqueAtual')" (keydown.enter)="toggleSort('estoqueAtual')" tabindex="0" class="sortable text-center col-estoque">
               Est. Atual
               @if (sortColumn() === 'estoqueAtual') {
                 <span class="sort-indicator">{{ sortDirection() === 'asc' ? '↑' : '↓' }}</span>
               }
             </th>
-            <th (click)="toggleSort('vmd')" (keydown.enter)="toggleSort('vmd')" tabindex="0" class="sortable text-center col-vmd">
+            <th scope="col" (click)="toggleSort('vmd')" (keydown.enter)="toggleSort('vmd')" tabindex="0" class="sortable text-center col-vmd">
               Giro/Dia
               @if (sortColumn() === 'vmd') {
                 <span class="sort-indicator">{{ sortDirection() === 'asc' ? '↑' : '↓' }}</span>
               }
             </th>
-            <th (click)="toggleSort('diasCobertura')" (keydown.enter)="toggleSort('diasCobertura')" tabindex="0" class="sortable text-center col-autonomia">
+            <th
+              scope="col"
+              (click)="toggleSort('diasCobertura')"
+              (keydown.enter)="toggleSort('diasCobertura')"
+              tabindex="0"
+              class="sortable text-center col-autonomia"
+              [title]="'Dias de cobertura = estoque atual ÷ giro/dia. Política: ' + appliedPolicy().minCoverageDays + '–' + appliedPolicy().maxCoverageDays + ' dias.'"
+            >
               Autonomia
               @if (sortColumn() === 'diasCobertura') {
                 <span class="sort-indicator">{{ sortDirection() === 'asc' ? '↑' : '↓' }}</span>
               }
             </th>
-            <th class="text-center col-rop">ROP</th>
-            <th class="text-center col-ideal">Est. Ideal</th>
-            <th (click)="toggleSort('qtdSugeridaCompra')" (keydown.enter)="toggleSort('qtdSugeridaCompra')" tabindex="0" class="sortable text-center highlight-col col-compra">
+            <th
+              scope="col"
+              (click)="toggleSort('estoqueMinimo')"
+              (keydown.enter)="toggleSort('estoqueMinimo')"
+              tabindex="0"
+              class="sortable text-center col-min"
+              [title]="'Estoque mínimo: ' + appliedPolicy().minCoverageDays + ' dias de venda, em unidades'"
+            >
+              <span class="th-main">Est. Mínimo</span>
+              <span class="th-sub">{{ appliedPolicy().minCoverageDays }}d</span>
+              @if (sortColumn() === 'estoqueMinimo') {
+                <span class="sort-indicator">{{ sortDirection() === 'asc' ? '↑' : '↓' }}</span>
+              }
+            </th>
+            <th
+              scope="col"
+              (click)="toggleSort('estoqueMaximo')"
+              (keydown.enter)="toggleSort('estoqueMaximo')"
+              tabindex="0"
+              class="sortable text-center col-max"
+              [title]="'Estoque máximo: ' + appliedPolicy().maxCoverageDays + ' dias de venda, em unidades'"
+            >
+              <span class="th-main">Est. Máximo</span>
+              <span class="th-sub">{{ appliedPolicy().maxCoverageDays }}d</span>
+              @if (sortColumn() === 'estoqueMaximo') {
+                <span class="sort-indicator">{{ sortDirection() === 'asc' ? '↑' : '↓' }}</span>
+              }
+            </th>
+            <th scope="col" (click)="toggleSort('qtdSugeridaCompra')" (keydown.enter)="toggleSort('qtdSugeridaCompra')" tabindex="0" class="sortable text-center highlight-col col-compra">
               Sug. Compra
               @if (sortColumn() === 'qtdSugeridaCompra') {
                 <span class="sort-indicator">{{ sortDirection() === 'asc' ? '↑' : '↓' }}</span>
               }
             </th>
-            <th class="text-center col-custo">Custo</th>
-            <th (click)="toggleSort('investimentoTotalItem')" (keydown.enter)="toggleSort('investimentoTotalItem')" tabindex="0" class="sortable text-center highlight-col col-investimento">
+            <th scope="col" class="text-center col-custo">Custo</th>
+            <th scope="col" (click)="toggleSort('investimentoTotalItem')" (keydown.enter)="toggleSort('investimentoTotalItem')" tabindex="0" class="sortable text-center highlight-col col-investimento">
               Investimento
               @if (sortColumn() === 'investimentoTotalItem') {
                 <span class="sort-indicator">{{ sortDirection() === 'asc' ? '↑' : '↓' }}</span>
               }
             </th>
-            <th (click)="toggleSort('status')" (keydown.enter)="toggleSort('status')" tabindex="0" class="sortable text-center col-status">
+            <th scope="col" (click)="toggleSort('status')" (keydown.enter)="toggleSort('status')" tabindex="0" class="sortable text-center col-status">
               Status
               @if (sortColumn() === 'status') {
                 <span class="sort-indicator">{{ sortDirection() === 'asc' ? '↑' : '↓' }}</span>
@@ -322,54 +382,87 @@
             </th>
           </tr>
         </thead>
-        <tbody>
-          @for (prod of paginatedProducts(); track prod.codigo) {
-            <tr [class.row-alert]="prod.status === 'CRITICAL_STOCKOUT'">
-              <td class="font-mono text-muted col-codigo">{{ prod.codigo }}</td>
-              <td class="col-descricao" [title]="prod.descricao">
-                <div class="product-name">
-                  <span class="name-text">{{ prod.descricao }}</span>
-                  <span class="ean-text">EAN: {{ prod.ean || '-' }}</span>
-                </div>
-              </td>
-              <td class="col-fornecedor"><span class="supplier-badge" [title]="prod.fornecedor">{{ prod.fornecedor }}</span></td>
-              <td class="text-center col-curva"><span class="abc-badge abc-{{ prod.curvaAbc }}">{{ prod.curvaAbc }}</span></td>
-              <td class="text-center font-medium col-estoque">{{ prod.estoqueAtual | number:'1.0-0' }}</td>
-              <td class="text-center col-vmd">{{ prod.vmd | number:'1.2-2' }}</td>
-              <td class="text-center col-autonomia" [class.text-danger]="prod.diasCobertura < prod.leadTime && prod.vmd > 0">
-                {{ prod.diasCobertura === 999 ? '∞' : (prod.diasCobertura | number:'1.1-1') + 'd' }}
-              </td>
-              <td class="text-center text-muted col-rop">{{ prod.rop }}</td>
-              <td class="text-center font-medium col-ideal" [title]="prod.limitadoPorEspaco ? ('Estoque ideal ajustado ao espaço físico (Teórico: ' + prod.estoqueIdealTeorico + ')') : ''">
-                {{ prod.estoqueIdeal }}
-              </td>
-              <td
-                class="text-center highlight-col font-bold col-compra"
-                [class.text-buy]="prod.qtdSugeridaCompra > 0"
-                [title]="prod.limitadoPorEspaco ? ('Demanda teórica: ' + prod.qtdSugeridaTeorica + ' un | Limitado pela capacidade física (Teto: ' + prod.tetoCompraFisica + ' un)') : ''"
-              >
-                {{ prod.qtdSugeridaCompra > 0 ? (prod.qtdSugeridaCompra | number:'1.0-0') : '-' }}
-              </td>
-              <td class="text-center text-muted col-custo">R$ {{ prod.custoUnitario | number:'1.2-2' }}</td>
-              <td class="text-center highlight-col font-bold col-investimento">
-                {{ prod.investimentoTotalItem > 0 ? ('R$ ' + (prod.investimentoTotalItem | number:'1.2-2')) : '-' }}
-              </td>
-              <td class="text-center col-status">
-                <span class="status-text status-{{ prod.status.toLowerCase() }}"><span class="tag-dot"></span>{{ prod.statusLabel }}</span>
-              </td>
-            </tr>
-          } @empty {
-            <tr>
-              <td colspan="13" class="empty-state">
-                <div class="empty-content">
-                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                    <circle cx="11" cy="11" r="8"></circle>
-                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                  </svg>
-                  <p>Nenhum produto encontrado com os filtros selecionados.</p>
-                </div>
-              </td>
-            </tr>
+        <tbody [attr.aria-busy]="isLoading()">
+          @if (isLoading()) {
+            @for (row of skeletonRows; track row) {
+              <tr aria-hidden="true">
+                <td class="col-codigo"><span class="skeleton-line skeleton-cell-sm"></span></td>
+                <td class="col-descricao">
+                  <div class="product-name">
+                    <span class="skeleton-line skeleton-desc-main"></span>
+                    <span class="skeleton-line skeleton-desc-sub"></span>
+                  </div>
+                </td>
+                <td class="col-fornecedor"><span class="skeleton-line skeleton-badge-md"></span></td>
+                <td class="text-center col-curva"><span class="skeleton-line skeleton-badge-xs"></span></td>
+                <td class="text-center col-estoque"><span class="skeleton-line skeleton-cell-num"></span></td>
+                <td class="text-center col-vmd"><span class="skeleton-line skeleton-cell-num"></span></td>
+                <td class="text-center col-autonomia"><span class="skeleton-line skeleton-cell-num"></span></td>
+                <td class="text-center col-min"><span class="skeleton-line skeleton-cell-num"></span></td>
+                <td class="text-center col-max"><span class="skeleton-line skeleton-cell-num"></span></td>
+                <td class="text-center col-compra"><span class="skeleton-line skeleton-cell-num"></span></td>
+                <td class="text-center col-custo"><span class="skeleton-line skeleton-cell-num"></span></td>
+                <td class="text-center col-investimento"><span class="skeleton-line skeleton-cell-num"></span></td>
+                <td class="text-center col-status"><span class="skeleton-line skeleton-badge-lg"></span></td>
+              </tr>
+            }
+          } @else {
+            @for (prod of paginatedProducts(); track prod.codigo) {
+              <tr [class.row-alert]="prod.status === 'CRITICAL_STOCKOUT'">
+                <td class="font-mono text-muted col-codigo">{{ prod.codigo }}</td>
+                <td class="col-descricao" [title]="prod.descricao">
+                  <div class="product-name">
+                    <span class="name-text">{{ prod.descricao }}</span>
+                    <span class="ean-text">EAN: {{ prod.ean || '-' }}</span>
+                  </div>
+                </td>
+                <td class="col-fornecedor"><span class="supplier-badge" [title]="prod.fornecedor">{{ prod.fornecedor }}</span></td>
+                <td class="text-center col-curva"><span class="abc-badge abc-{{ prod.curvaAbc }}">{{ prod.curvaAbc }}</span></td>
+                <td class="text-center font-medium col-estoque">{{ prod.estoqueAtual | number:'1.0-0' }}</td>
+                <td class="text-center col-vmd">{{ prod.vmd | number:'1.2-2' }}</td>
+                <td class="text-center col-autonomia" [class.text-danger]="prod.diasCobertura < prod.leadTime && prod.vmd > 0">
+                  {{ prod.diasCobertura === 999 ? '∞' : (prod.diasCobertura | number:'1.1-1') + 'd' }}
+                </td>
+                <td class="text-center text-muted col-min">{{ prod.estoqueMinimo | number:'1.0-0' }}</td>
+                <td class="text-center font-medium col-max">{{ prod.estoqueMaximo | number:'1.0-0' }}</td>
+                <td
+                  class="text-center highlight-col font-bold col-compra"
+                  [class.text-buy]="prod.qtdSugeridaCompra > 0"
+                >
+                  {{ prod.qtdSugeridaCompra > 0 ? (prod.qtdSugeridaCompra | number:'1.0-0') : '-' }}
+                </td>
+                <td class="text-center text-muted col-custo">R$ {{ prod.custoUnitario | number:'1.2-2' }}</td>
+                <td class="text-center highlight-col font-bold col-investimento">
+                  {{ prod.investimentoTotalItem > 0 ? ('R$ ' + (prod.investimentoTotalItem | number:'1.2-2')) : '-' }}
+                </td>
+                <td class="text-center col-status">
+                  <span class="status-text status-{{ prod.status.toLowerCase() }}">
+                    <span class="tag-dot" aria-hidden="true"></span>{{ prod.statusLabel }}
+                  </span>
+                </td>
+              </tr>
+            } @empty {
+              <tr>
+                <td colspan="13" class="empty-state">
+                  <div class="empty-content">
+                    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                      <circle cx="11" cy="11" r="8"></circle>
+                      <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                    @if (products().length > 0) {
+                      <p>Nenhum produto com esses filtros.</p>
+                      <button type="button" class="btn btn-secondary" (click)="resetFilters()">Limpar filtros</button>
+                    } @else if (errorMessage()) {
+                      <p>Não foi possível carregar a previsão.</p>
+                      <button type="button" class="btn btn-secondary" (click)="calculateInventory()">Tentar de novo</button>
+                    } @else {
+                      <p>Nenhum produto com venda ou estoque para calcular.</p>
+                      <button type="button" class="btn btn-secondary" (click)="openSettingsModal()">Ajustar parâmetros</button>
+                    }
+                  </div>
+                </td>
+              </tr>
+            }
           }
         </tbody>
       </table>
@@ -399,161 +492,224 @@
     }
   </section>
 
-  <!-- Modal de Calibração de Parâmetros -->
+  <!-- Modal de Calibração de Parâmetros da Política Mín/Máx -->
   @if (isSettingsModalOpen()) {
-    <div class="modal-backdrop" (click)="closeSettingsModal()">
-      <div class="modal-card" (click)="$event.stopPropagation()">
+    <div class="modal-backdrop" (click)="cancelSettingsModal()">
+      <div
+        class="modal-card"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="paramsModalTitle"
+        aria-describedby="paramsModalDesc"
+        (click)="$event.stopPropagation()"
+        (keydown.escape)="cancelSettingsModal()"
+      >
         <div class="modal-header">
           <div class="modal-title-group">
-            <h3>Parâmetros de Simulação de Estoque</h3>
-            <p>Ajuste os parâmetros matemáticos do motor preditivo</p>
+            <h3 id="paramsModalTitle">Parâmetros da política de estoque</h3>
+            <p id="paramsModalDesc">Valem para todos os produtos do próximo cálculo.</p>
           </div>
-          <button class="modal-close-btn" (click)="closeSettingsModal()">×</button>
+          <button
+            type="button"
+            class="modal-close-btn"
+            aria-label="Fechar parâmetros"
+            (click)="cancelSettingsModal()"
+          >
+            ×
+          </button>
         </div>
 
         <div class="modal-body">
-          <!-- Janela de Histórico de Vendas -->
-          <div class="param-row">
-            <div class="param-label">
-              <label for="historyWindowInput">Janela de Vendas Recentes (Dias)</label>
-              <span class="param-value-tag">{{ historyWindowDays() }} dias</span>
-            </div>
-            <input
-              id="historyWindowInput"
-              type="range"
-              min="15"
-              max="180"
-              step="15"
-              [ngModel]="historyWindowDays()"
-              (ngModelChange)="historyWindowDays.set($event)"
-              aria-label="Janela de histórico de vendas recentes em dias"
-            />
-            <span class="param-desc">Período de vendas faturadas considerado para o cálculo da VMD.</span>
-          </div>
+          <fieldset class="param-group">
+            <legend>Política de Reposição</legend>
 
-          <!-- Lead Time Médio de Entrega -->
-          <div class="param-row">
-            <div class="param-label">
-              <label for="leadTimeInput">Lead Time de Ressuprimento (Dias)</label>
-              <span class="param-value-tag">{{ leadTimeDays() }} dias</span>
-            </div>
-            <input
-              id="leadTimeInput"
-              type="range"
-              min="5"
-              max="60"
-              step="1"
-              [ngModel]="leadTimeDays()"
-              (ngModelChange)="leadTimeDays.set($event)"
-              aria-label="Lead time de ressuprimento em dias"
-            />
-            <span class="param-desc">Prazo médio de entrega da fábrica até o Centro de Distribuição.</span>
-          </div>
-
-          <!-- Cobertura Alvo no Estoque Ideal -->
-          <div class="param-row">
-            <div class="param-label">
-              <label for="targetCoverageInput">Autonomia Alvo de Estoque (Dias)</label>
-              <span class="param-value-tag">{{ targetCoverageDays() }} dias</span>
-            </div>
-            <input
-              id="targetCoverageInput"
-              type="range"
-              min="15"
-              max="90"
-              step="5"
-              [ngModel]="targetCoverageDays()"
-              (ngModelChange)="targetCoverageDays.set($event)"
-              aria-label="Autonomia alvo de cobertura de estoque em dias"
-            />
-            <span class="param-desc">Meta de dias de vendas a serem cobertos pelo novo pedido.</span>
-          </div>
-
-          <!-- Nível de Serviço Probabilístico -->
-          <div class="param-row">
-            <div class="param-label">
-              <label for="serviceLevelSelect">Nível de Serviço Probabilístico (Z-Score)</label>
-              <span class="param-value-tag">{{ serviceLevel() * 100 | number:'1.0-0' }}%</span>
-            </div>
-            <select
-              id="serviceLevelSelect"
-              [ngModel]="serviceLevel()"
-              (ngModelChange)="serviceLevel.set($event)"
-              class="form-select"
-              aria-label="Nível de serviço probabilístico"
-            >
-              <option [value]="0.90">Conservador (90% de disponibilidade, Z = 1.28)</option>
-              <option [value]="0.95">Padrão Distribuidora (95% de disponibilidade, Z = 1.65)</option>
-              <option [value]="0.98">Crítico / Sem Ruptura (98% de disponibilidade, Z = 2.05)</option>
-            </select>
-            <span class="param-desc">Proteção contra picos inesperados de demanda durante o lead time.</span>
-          </div>
-
-          <!-- Teto Orçamentário de Compras -->
-          <div class="param-row">
-            <div class="param-label">
-              <label for="budgetLimitInput">Teto Orçamentário Máximo (Opcional)</label>
-              <span class="param-value-tag">
-                {{ budgetLimit() ? ('R$ ' + (budgetLimit() | number:'1.0-0')) : 'Sem Limite' }}
-              </span>
-            </div>
-            <input
-              id="budgetLimitInput"
-              type="number"
-              placeholder="Ex: 150000 (deixe em branco para sem teto)"
-              [ngModel]="budgetLimit()"
-              (ngModelChange)="budgetLimit.set($event)"
-              class="form-input"
-              aria-label="Teto orçamentário máximo em reais"
-            />
-            <span class="param-desc">Se preenchido, o motor prioriza os itens de maior risco e Curva A.</span>
-          </div>
-
-          <!-- Trava de Variação Máxima de Compra / Espaço Físico (P-044.4) -->
-          <div class="param-row">
-            <div class="param-label">
-              <div class="param-label-group">
-                <label for="maxPurchaseVariationInput">Margem Máxima de Variação de Compra (%)</label>
-                <div class="toggle-switch-wrapper">
-                  <label class="switch" for="enablePhysicalLimitToggle">
-                    <input
-                      id="enablePhysicalLimitToggle"
-                      type="checkbox"
-                      [checked]="enablePhysicalLimit()"
-                      (change)="enablePhysicalLimit.set($any($event.target).checked)"
-                      aria-label="Ativar ou desativar trava de espaço físico"
-                    />
-                    <span class="slider-round" aria-hidden="true"></span>
-                    <span class="sr-only">Ativar trava de espaço físico</span>
-                  </label>
-                  <span class="switch-text">{{ enablePhysicalLimit() ? 'Trava Físico Ativa' : 'Sem Limite' }}</span>
-                </div>
+            <!-- Dias Mínimo de Estoque -->
+            <div class="param-row" [class.param-card--invalid]="isMinMaxInvalid()">
+              <div class="param-label">
+                <label for="minCoverageInput">Dias Mínimo de Estoque</label>
+                <span class="param-value-tag" [class.is-invalid]="isMinMaxInvalid()">
+                  {{ minCoverageDays() }} dias
+                </span>
               </div>
-              <span class="param-value-tag" [class.tag-disabled]="!enablePhysicalLimit()">
-                {{ enablePhysicalLimit() ? ('+' + maxPurchaseVariationPct() + '% máx') : 'Desativado' }}
-              </span>
-            </div>
-            @if (enablePhysicalLimit()) {
               <input
-                id="maxPurchaseVariationInput"
+                id="minCoverageInput"
                 type="range"
-                min="20"
-                max="500"
-                step="10"
-                [ngModel]="maxPurchaseVariationPct()"
-                (ngModelChange)="maxPurchaseVariationPct.set($event)"
-                aria-label="Margem máxima de variação de compra em porcentagem"
+                [min]="minCoverageRange.min"
+                [max]="minCoverageRange.max"
+                [step]="minCoverageRange.step"
+                [ngModel]="minCoverageDays()"
+                (ngModelChange)="minCoverageDays.set($event)"
+                [class.range-input--invalid]="isMinMaxInvalid()"
+                [attr.aria-valuetext]="minCoverageDays() + ' dias'"
+                [attr.aria-invalid]="isMinMaxInvalid()"
+                [attr.aria-describedby]="policyIssue() ? 'policy-validation-alert minCoverageHelp' : 'minCoverageHelp'"
               />
-            }
-            <span class="param-desc">
-              Limita a sugestão de compras a um teto percentual sobre a base física de cada SKU, impedindo que o pedido exceda a capacidade do almoxarifado.
-            </span>
-          </div>
+              <div class="param-feedback">
+                <p id="minCoverageHelp" class="param-desc">
+                  Ao chegar a esse número de dias de venda, o produto entra na lista de compra.
+                </p>
+              </div>
+            </div>
+
+            <!-- Dias Máximo de Estoque -->
+            <div class="param-row" [class.param-card--invalid]="isMinMaxInvalid() || isLeadTimeInvalid()">
+              <div class="param-label">
+                <label for="maxCoverageInput">Dias Máximo de Estoque</label>
+                <span
+                  class="param-value-tag"
+                  [class.is-invalid]="isMinMaxInvalid() || isLeadTimeInvalid()"
+                >
+                  {{ maxCoverageDays() }} dias
+                </span>
+              </div>
+              <input
+                id="maxCoverageInput"
+                type="range"
+                [min]="maxCoverageRange.min"
+                [max]="maxCoverageRange.max"
+                [step]="maxCoverageRange.step"
+                [ngModel]="maxCoverageDays()"
+                (ngModelChange)="maxCoverageDays.set($event)"
+                [class.range-input--invalid]="isMinMaxInvalid() || isLeadTimeInvalid()"
+                [attr.aria-valuetext]="maxCoverageDays() + ' dias'"
+                [attr.aria-invalid]="isMinMaxInvalid() || isLeadTimeInvalid()"
+                [attr.aria-describedby]="policyIssue() ? 'policy-validation-alert maxCoverageHelp' : 'maxCoverageHelp'"
+              />
+              <div class="param-feedback">
+                <p id="maxCoverageHelp" class="param-desc">
+                  A compra sugerida leva o estoque até esse número de dias de venda.
+                </p>
+              </div>
+            </div>
+
+            <!-- Resumo visual da faixa Mín/Máx -->
+            <div class="policy-band-preview" aria-label="Resumo da faixa de cobertura">
+              <div class="policy-band-item">
+                <span class="policy-band-label">Alerta Ruptura</span>
+                <strong class="policy-band-value">&lt; {{ leadTimeDays() }}d</strong>
+              </div>
+              <div class="policy-band-item">
+                <span class="policy-band-label">Gatilho Mínimo</span>
+                <strong class="policy-band-value">≤ {{ minCoverageDays() }}d</strong>
+              </div>
+              <div class="policy-band-item">
+                <span class="policy-band-label">Alvo Máximo</span>
+                <strong class="policy-band-value">{{ maxCoverageDays() }}d</strong>
+              </div>
+              <div class="policy-band-track" aria-hidden="true">
+                <span class="policy-band-segment policy-band-segment--risk"></span>
+                <span class="policy-band-segment policy-band-segment--reorder"></span>
+                <span class="policy-band-segment policy-band-segment--healthy"></span>
+                <span class="policy-band-segment policy-band-segment--overstock"></span>
+              </div>
+              <div class="policy-band-markers" aria-hidden="true">
+                <span>0d</span>
+                <span>{{ leadTimeDays() }}d</span>
+                <span>{{ minCoverageDays() }}d</span>
+                <span>{{ maxCoverageDays() }}d+</span>
+              </div>
+            </div>
+          </fieldset>
+
+          <fieldset class="param-group">
+            <legend>Base do Cálculo</legend>
+
+            <!-- Janela de Vendas Recentes -->
+            <div class="param-row">
+              <div class="param-label">
+                <label for="historyWindowInput">Janela de Vendas Recentes</label>
+                <span class="param-value-tag">{{ historyWindowDays() }} dias</span>
+              </div>
+              <input
+                id="historyWindowInput"
+                type="range"
+                [min]="historyWindowRange.min"
+                [max]="historyWindowRange.max"
+                [step]="historyWindowRange.step"
+                [ngModel]="historyWindowDays()"
+                (ngModelChange)="historyWindowDays.set($event)"
+                [attr.aria-valuetext]="historyWindowDays() + ' dias'"
+                aria-describedby="historyWindowHelp"
+              />
+              <div class="param-feedback">
+                <p id="historyWindowHelp" class="param-desc">
+                  Período de vendas usado para calcular a venda média diária (VMD).
+                </p>
+              </div>
+            </div>
+
+            <!-- Lead Time de Ressuprimento -->
+            <div class="param-row" [class.param-card--invalid]="isLeadTimeInvalid()">
+              <div class="param-label">
+                <label for="leadTimeInput">Lead Time de Ressuprimento</label>
+                <span class="param-value-tag" [class.is-invalid]="isLeadTimeInvalid()">
+                  {{ leadTimeDays() }} dias
+                </span>
+              </div>
+              <input
+                id="leadTimeInput"
+                type="range"
+                [min]="leadTimeRange.min"
+                [max]="leadTimeRange.max"
+                [step]="leadTimeRange.step"
+                [ngModel]="leadTimeDays()"
+                (ngModelChange)="leadTimeDays.set($event)"
+                [class.range-input--invalid]="isLeadTimeInvalid()"
+                [attr.aria-valuetext]="leadTimeDays() + ' dias'"
+                [attr.aria-invalid]="isLeadTimeInvalid()"
+                [attr.aria-describedby]="policyIssue() ? 'policy-validation-alert leadTimeHelp' : 'leadTimeHelp'"
+              />
+              <div class="param-feedback">
+                <p id="leadTimeHelp" class="param-desc">
+                  Prazo médio entre o pedido e a chegada no CD. Usado só para alertar ruptura iminente; não altera mínimo, máximo nem a compra.
+                </p>
+              </div>
+            </div>
+          </fieldset>
+
+          @if (policyIssue(); as issue) {
+            <div
+              id="policy-validation-alert"
+              class="policy-alert-banner param-error"
+              role="alert"
+              aria-live="polite"
+            >
+              <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="8" x2="12" y2="12"></line>
+                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+              </svg>
+              <span>{{ issue.message }}</span>
+            </div>
+          }
         </div>
 
         <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" (click)="closeSettingsModal()">Cancelar</button>
-          <button type="button" class="btn btn-primary" (click)="applyModalSettings()">Aplicar e Recalcular</button>
+          <button
+            type="button"
+            class="btn btn-secondary btn-ghost btn-restore-defaults"
+            (click)="restoreDefaultPolicy()"
+          >
+            Restaurar padrão 30/60
+          </button>
+          <div class="modal-footer-actions">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              (click)="cancelSettingsModal()"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              class="btn btn-primary"
+              [disabled]="!canApplySettings() || isLoading()"
+              [attr.aria-describedby]="!canApplySettings() ? 'policy-validation-alert' : null"
+              (click)="applySettingsAndRecalculate()"
+            >
+              Aplicar e Recalcular
+            </button>
+          </div>
         </div>
       </div>
     </div>
