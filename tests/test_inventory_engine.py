@@ -234,8 +234,15 @@ class TestMinMaxLevels:
         assert isinstance(item["estoqueMaximo"], int)
 
     def test_ca_p053_06_no_sales_means_zero_levels_and_no_purchase(self):
-        item, _ = run_single(stock=0.0, sold_in_window=0)
+        item, _ = run_single(stock=1.0, sold_in_window=0)
         assert (item["estoqueMinimo"], item["estoqueMaximo"], item["qtdSugeridaCompra"]) == (0, 0, 0)
+
+    def test_p057_inactive_sku_is_excluded_from_list_and_kpis(self):
+        rows = [make_catalog_row(1, 0.0, 10.0, 20.0), make_catalog_row(2, 5.0, 10.0, 20.0),
+                make_catalog_row(3, 0.0, 10.0, 20.0)]
+        result = run_engine(rows, make_velocity({3: (60, 1200.0)}))
+        assert sorted(by_code(result)) == [2, 3]
+        assert result["kpis"]["totalSkusAnalisados"] == 2
 
     def test_ca_p053_07_volatility_does_not_change_levels(self, sample_sales_data):
         """101 (2 un/dia) e 102 (10 un a cada 5 dias) têm a mesma VMD 2,0 -> mesmo mínimo/máximo."""
@@ -354,11 +361,9 @@ class TestStatusClassification:
             (120.0, 120, 60.0, "HEALTHY", "Estoque Saudável", 0, 0.0),
             (150.0, 120, 75.0, "OVERSTOCK", "Acima do Máximo", 0, 450.0),
             (300.0, 0, 999.0, "OVERSTOCK", "Acima do Máximo", 0, 4500.0),
-            (0.0, 0, 0.0, "HEALTHY", "Estoque Saudável", 0, 0.0),
         ],
         ids=["P-055-S1-CA01", "P-055-S2-CA03-fronteira-lead", "P-055-S3-CA02", "P-055-S4-inclusivo",
-             "P-055-S5-CA04", "P-055-S6-inclusivo-max", "P-055-S7-CA05", "P-055-S8-sem-venda",
-             "P-055-S9-CA07"],
+             "P-055-S5-CA04", "P-055-S6-inclusivo-max", "P-055-S7-CA05", "P-055-S8-sem-venda"],
     )
     def test_p055_status_table(self, stock, sold, coverage, status, label, qty, capital):
         item, kpis = run_single(stock=stock, sold_in_window=sold, cost=15.0, price=25.0)
@@ -425,10 +430,10 @@ def mixed_scenario_result():
 class TestKpisAndContract:
     def test_ca_p055_09_status_counts_sum_to_total(self, mixed_scenario_result):
         kpis = mixed_scenario_result["kpis"]
-        assert kpis["totalSkusAnalisados"] == 9
+        assert kpis["totalSkusAnalisados"] == 8  # S9 (estoque 0, VMD 0) excluído por P-057
         assert kpis["skusEmRupturaCritica"] == 1
         assert kpis["skusNecessitamReposicao"] == 3
-        assert kpis["skusEstoqueSaudavel"] == 3
+        assert kpis["skusEstoqueSaudavel"] == 2
         assert kpis["skusEmOverstock"] == 2
         assert (kpis["skusEmRupturaCritica"] + kpis["skusNecessitamReposicao"]
                 + kpis["skusEstoqueSaudavel"] + kpis["skusEmOverstock"]) == kpis["totalSkusAnalisados"]

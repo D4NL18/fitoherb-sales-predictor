@@ -616,6 +616,14 @@ def build_kpis(evaluations: Sequence[ProductEvaluation]) -> Dict[str, Any]:
     }
 
 
+def is_inactive_sku(evaluation: ProductEvaluation) -> bool:
+    """Indica SKU inativo: sem estoque físico e sem giro (VMD=0), logo cobertura também zero.
+
+    Regra: P-057 — esses itens não geram compra nem informação útil e ficam fora da lista e dos KPIs.
+    """
+    return evaluation.estoque_atual <= ZERO_FLOAT and evaluation.vmd <= ZERO_FLOAT
+
+
 def calculate_inventory_replenishment(
     catalog_df: pd.DataFrame,
     velocity_df: pd.DataFrame,
@@ -632,6 +640,7 @@ def calculate_inventory_replenishment(
         evaluate_product(row, sales_lookup, active_policy)
         for row in normalized_catalog.itertuples(index=False)
     ]
+    evaluations = [evaluation for evaluation in evaluations if not is_inactive_sku(evaluation)]
     evaluations.sort(key=product_sort_key)
     return {
         "kpis": build_kpis(evaluations),

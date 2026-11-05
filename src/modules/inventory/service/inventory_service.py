@@ -29,6 +29,7 @@ from src.modules.inventory.domain.inventory_engine import (
     ALL_SUPPLIERS_TOKENS,
     calculate_inventory_replenishment,
     calculate_sales_velocity,
+    normalize_product_catalog,
     prepare_product_catalog,
 )
 from src.modules.inventory.domain.replenishment_policy import (
@@ -273,22 +274,28 @@ def get_cached_velocity(window_days: int) -> pd.DataFrame:
 
 
 def get_inventory_suppliers() -> List[Dict[str, Any]]:
-    """Retorna a lista de fornecedores ativos com contagem de SKUs, iniciada por `TODOS`."""
-    catalog_df = get_inventory_catalog()
-    fornec_col = "Fornec/Marca" if "Fornec/Marca" in catalog_df.columns else "Fornecedor"
+    """Retorna os fornecedores com contagem de SKUs ativos, iniciada por `TODOS`.
 
-    counts = catalog_df[fornec_col].value_counts()
+    Regra: P-057 — SKUs sem estoque e sem venda na janela padrão não entram na contagem, para
+    que o total do seletor coincida com a lista exibida na tela.
+    """
+    catalog_df = normalize_product_catalog(get_inventory_catalog())
+    velocity_df = get_inventory_velocity(UI_HISTORY_WINDOW_DAYS_DEFAULT)
+    sold_skus = set(velocity_df.index[velocity_df["vmd"] > 0]) if not velocity_df.empty else set()
+    is_active = (catalog_df["estoque"] > 0) | catalog_df["codigo"].isin(sold_skus)
+    active_df = catalog_df[is_active]
+
+    counts = active_df["fornecedor"].astype(str).str.strip().value_counts()
     suppliers: List[Dict[str, Any]] = [
         {
             "fornecedor": "TODOS",
             "nome": "Todos os Fornecedores",
-            "totalSkus": int(len(catalog_df)),
+            "totalSkus": int(len(active_df)),
         }
     ]
-    for sup, count in counts.items():
-        if pd.isna(sup) or not str(sup).strip():
+    for supplier_name, count in counts.items():
+        if not supplier_name:
             continue
-        supplier_name = str(sup).strip()
         suppliers.append(
             {
                 "fornecedor": supplier_name.upper(),
