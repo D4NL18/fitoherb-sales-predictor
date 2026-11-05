@@ -1,374 +1,639 @@
 """
-Motor Analítico de Estoque, Reposição e Previsão de Compras (Inventory Engine).
-Implementa regras de negócio P-041 a P-047 (P-012).
-Fitoherb Nordeste Distribuidora.
+Motor Analítico de Estoque e Previsão de Compras pela Política Mín/Máx (Inventory Engine).
+
+Implementa as regras de negócio:
+- P-041: Velocidade de vendas (VMD) em precisão integral na janela temporal.
+- P-047.1: Filtro opcional por fornecedor com Curva ABC global preservada.
+- P-053: Cálculo de Estoque Mínimo e Estoque Máximo por dias de cobertura (sem ROP/ES/z-score).
+- P-054: Gatilho de compra e Quantidade Sugerida até o máximo (sem travas físicas ou orçamentárias).
+- P-055: Cobertura em dias, precedência de status operacional, Capital Imobilizado, KPIs e ordenação.
+- P-056: Revogação integral de ROP, estoque de segurança, estoque ideal, trava P-044.4 e teto P-046.3.
 """
-import math
-from typing import Any, Dict, List, Optional, Union
+from collections import Counter
+from dataclasses import dataclass
+from enum import Enum
+from typing import Any, Dict, Mapping, Optional, Sequence, Tuple, Union
 
 import numpy as np
 import pandas as pd
 
+from src.modules.inventory.domain.replenishment_policy import (
+    ReplenishmentPolicy,
+    StockLevels,
+    calculate_stock_levels,
+    ceil_units,
+)
 
-def get_z_score(service_level: float) -> float:
-    """
-    Retorna o Z-score estatístico associado ao nível de serviço desejado (P-043.2).
-    Suporta interpolação ou consulta rápida para níveis típicos.
-    """
-    try:
-        from scipy.stats import norm
-        return float(norm.ppf(service_level))
-    except (ImportError, Exception):
-        # Tabela de fallback para níveis clássicos de serviço
-        if service_level <= 0.90:
-            return 1.2816
-        elif service_level <= 0.95:
-            return 1.6449
-        elif service_level <= 0.98:
-            return 2.0537
-        elif service_level <= 0.99:
-            return 2.3263
-        return 1.65
+DEFAULT_HISTORY_WINDOW_DAYS = 60  # P-041 / P-053.1: janela padrão de vendas
+MIN_WINDOW_DAYS = 1  # Evita divisão por zero na agregação de velocidade
+STD_DEMAND_DECIMALS = 4  # Mantido internamente por compatibilidade com a query SQL (DA-04)
+TOTALS_DECIMALS = 2  # Arredondamento de volume e receita agregados na janela
+
+COST_FALLBACK_PRICE_RATIO = 0.60  # P-054.5: custo estimado = 60% do preço de venda quando custo <= 0
+MONEY_DECIMALS = 2  # Valores monetários em R$ (custo, preço, investimento, capital imobilizado)
+VMD_DISPLAY_DECIMALS = 2  # Seção 1.3 do contrato: VMD arredondada a 2 casas apenas na serialização
+STOCK_DISPLAY_DECIMALS = 1  # Seção 1.3 do contrato: estoque físico exibido com 1 casa decimal
+COVERAGE_DAYS_DECIMALS = 1  # P-055.1: dias de cobertura arredondados a 1 casa decimal
+NO_SALES_COVERAGE_DAYS = 999.0  # P-055.1: sentinela de cobertura infinita ("∞") quando VMD=0 e estoque>0
+PERCENT_MULTIPLIER = 100.0  # Conversão de razão para percentual (0-100)
+PERCENT_DECIMALS = 1  # Casa decimal do percentual de itens na Curva A
+
+ZERO_FLOAT = 0.0
+ZERO_INT = 0
+MIN_SAMPLE_DAYS_FOR_VARIANCE = 2
+
+ABC_CLASS_A_MAX_PCT = 80.0  # Curva ABC: classe A até 80% da receita acumulada
+ABC_CLASS_B_MAX_PCT = 95.0  # Curva ABC: classe B até 95% da receita acumulada
+DEFAULT_ABC_CLASS = "C"  # Curva ABC: restante da receita e SKUs sem venda na janela
+
+DEFAULT_SUPPLIER_NAME = "OUTROS"
+DEFAULT_PRODUCT_TYPE = "GERAL"
+ALL_SUPPLIERS_TOKENS = frozenset({"TODOS", "ALL", ""})  # P-047.1: valores que desativam o filtro
+
+VELOCITY_COLUMNS = ("vmd", "std_demand", "total_sold_qty", "total_revenue")
+CANONICAL_CATALOG_COLUMNS = (
+    "codigo",
+    "descricao",
+    "ean",
+    "fornecedor",
+    "tipo",
+    "estoque",
+    "custo_unitario",
+    "preco_venda",
+)
+
+# Começa pelo nome canônico para garantir que normalize_product_catalog seja idempotente (B-04).
+PRODUCT_COLUMN_ALIASES: Mapping[str, Tuple[str, ...]] = {
+    "codigo": ("codigo", "Codigo", "Código"),
+    "descricao": ("descricao", "Descricao", "Descrição"),
+    "ean": ("ean", "EAN"),
+    "fornecedor": ("fornecedor", "Fornecedor", "Fornec/Marca", "Marca"),
+    "tipo": ("tipo", "Tipo", "Linha"),
+    "estoque": ("estoque", "Estoque"),
+    "custo_unitario": ("custo_unitario", "Pc.Ultimo Custo", "Custo"),
+    "preco_venda": ("preco_venda", "Pc.Venda", "Preço"),
+}
+
+SALES_COLUMN_ALIASES: Mapping[str, Tuple[str, ...]] = {
+    "sku": ("Cod Produto", "Código", "Codigo"),
+    "date": ("Data",),
+    "qty": ("Qtd Venda", "Quantidade"),
+    "revenue": ("Valor Venda", "Valor"),
+}
+
+
+class InventoryStatus(str, Enum):
+    """Códigos de status operacional do SKU segundo a Política Mín/Máx (P-055.2)."""
+
+    CRITICAL_STOCKOUT = "CRITICAL_STOCKOUT"
+    REORDER_NEEDED = "REORDER_NEEDED"
+    HEALTHY = "HEALTHY"
+    OVERSTOCK = "OVERSTOCK"
+
+
+STATUS_LABELS: Mapping[InventoryStatus, str] = {
+    InventoryStatus.CRITICAL_STOCKOUT: "Ruptura Iminente",
+    InventoryStatus.REORDER_NEEDED: "Abaixo do Mínimo",
+    InventoryStatus.HEALTHY: "Estoque Saudável",
+    InventoryStatus.OVERSTOCK: "Acima do Máximo",
+}
+
+STATUS_SORT_ORDER: Mapping[InventoryStatus, int] = {
+    InventoryStatus.CRITICAL_STOCKOUT: 0,
+    InventoryStatus.REORDER_NEEDED: 1,
+    InventoryStatus.HEALTHY: 2,
+    InventoryStatus.OVERSTOCK: 3,
+}
+
+ABC_SORT_ORDER: Mapping[str, int] = {"A": 0, "B": 1, "C": 2}
+DEFAULT_SORT_RANK = 99
+
+
+def _resolve_column(df: pd.DataFrame, aliases: Sequence[str]) -> Optional[str]:
+    """Retorna o primeiro nome de coluna existente no DataFrame dentre os aliases informados."""
+    for candidate in aliases:
+        if candidate in df.columns:
+            return candidate
+    return None
+
+
+def _normalize_sales_records(sales_df: pd.DataFrame) -> pd.DataFrame:
+    """Normaliza colunas de vendas brutas e filtra apenas registros válidos de venda positiva."""
+    sku_col = _resolve_column(sales_df, SALES_COLUMN_ALIASES["sku"]) or "Cod Produto"
+    date_col = _resolve_column(sales_df, SALES_COLUMN_ALIASES["date"]) or "Data"
+    qty_col = _resolve_column(sales_df, SALES_COLUMN_ALIASES["qty"]) or "Qtd Venda"
+    val_col = _resolve_column(sales_df, SALES_COLUMN_ALIASES["revenue"]) or "Valor Venda"
+
+    normalized = pd.DataFrame(
+        {
+            "sku": pd.to_numeric(sales_df[sku_col], errors="coerce").fillna(ZERO_INT).astype(np.int64),
+            "date": pd.to_datetime(sales_df[date_col], errors="coerce"),
+            "qty": pd.to_numeric(sales_df[qty_col], errors="coerce").fillna(ZERO_FLOAT),
+            "revenue": pd.to_numeric(sales_df[val_col], errors="coerce").fillna(ZERO_FLOAT),
+        }
+    )
+    valid_mask = (
+        (normalized["sku"] > ZERO_INT)
+        & normalized["date"].notna()
+        & (normalized["qty"] > ZERO_FLOAT)
+    )
+    return normalized[valid_mask].copy()
+
+
+def _filter_sales_window(
+    valid_sales_df: pd.DataFrame,
+    window_days: int,
+    reference_date: Optional[Union[pd.Timestamp, str]],
+) -> pd.DataFrame:
+    """Recorta os registros de vendas dentro da janela recente [ref_dt - window_days, ref_dt]."""
+    ref_dt = (
+        valid_sales_df["date"].max()
+        if reference_date is None
+        else pd.to_datetime(reference_date)
+    )
+    start_dt = ref_dt - pd.Timedelta(days=window_days)
+    return valid_sales_df[valid_sales_df["date"] >= start_dt].copy()
 
 
 def calculate_sales_velocity(
     sales_df: pd.DataFrame,
-    window_days: int = 60,
-    reference_date: Optional[Union[pd.Timestamp, str]] = None
+    window_days: int = DEFAULT_HISTORY_WINDOW_DAYS,
+    reference_date: Optional[Union[pd.Timestamp, str]] = None,
 ) -> pd.DataFrame:
-    """
-    Calcula a velocidade de vendas (VMD), volatilidade da demanda diária (std_demand),
-    volume faturado e receita por SKU na janela temporal recente (P-041).
+    """Calcula a VMD em precisão integral, volatilidade, volume e receita por SKU na janela.
+
+    Regra: P-041 e P-053.6 (ADR-001, DA-02) — a coluna `vmd` NÃO é arredondada para evitar
+    inflar o Estoque Máximo em SKUs de giro baixo (ex.: 1 un em 60 dias). Arredondar só na exibição.
+
+    Args:
+        sales_df: DataFrame de vendas brutas do ERP.
+        window_days: Dias da janela de vendas recente (padrão 60).
+        reference_date: Data final opcional de referência (usa a maior data do dataset se None).
+
+    Returns:
+        DataFrame indexado por `sku` com colunas `vmd`, `std_demand`, `total_sold_qty`, `total_revenue`.
     """
     if sales_df.empty:
-        return pd.DataFrame(columns=["vmd", "std_demand", "total_sold_qty", "total_revenue"])
+        return pd.DataFrame(columns=list(VELOCITY_COLUMNS))
 
-    df = sales_df.copy()
+    valid_df = _normalize_sales_records(sales_df)
+    if valid_df.empty:
+        return pd.DataFrame(columns=list(VELOCITY_COLUMNS))
 
-    # Normalização de nomes de colunas
-    sku_col = "Cod Produto" if "Cod Produto" in df.columns else ("Código" if "Código" in df.columns else "Codigo")
-    date_col = "Data"
-    qty_col = "Qtd Venda" if "Qtd Venda" in df.columns else "Quantidade"
-    val_col = "Valor Venda" if "Valor Venda" in df.columns else "Valor"
-
-    df[sku_col] = pd.to_numeric(df[sku_col], errors="coerce").fillna(0).astype(np.int64)
-    df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
-    df[qty_col] = pd.to_numeric(df[qty_col], errors="coerce").fillna(0.0)
-    df[val_col] = pd.to_numeric(df[val_col], errors="coerce").fillna(0.0)
-
-    # Filtrar registros válidos
-    df = df[(df[sku_col] > 0) & (df[date_col].notna()) & (df[qty_col] > 0)].copy()
-    if df.empty:
-        return pd.DataFrame(columns=["vmd", "std_demand", "total_sold_qty", "total_revenue"])
-
-    # Janela temporal
-    if reference_date is None:
-        ref_dt = df[date_col].max()
-    else:
-        ref_dt = pd.to_datetime(reference_date)
-
-    start_dt = ref_dt - pd.Timedelta(days=window_days)
-    recent_df = df[df[date_col] >= start_dt].copy()
-
+    recent_df = _filter_sales_window(valid_df, window_days, reference_date)
     if recent_df.empty:
-        return pd.DataFrame(columns=["vmd", "std_demand", "total_sold_qty", "total_revenue"])
+        return pd.DataFrame(columns=list(VELOCITY_COLUMNS))
 
-    # Agregação por (SKU, Data) para capturar a quantidade diária vendida
-    recent_df["Data_Dia"] = recent_df[date_col].dt.date
-    daily_grouped = (
-        recent_df.groupby([sku_col, "Data_Dia"])[qty_col]
-        .sum()
-        .reset_index()
-    )
-
-    # Agregação de receita total na janela
-    sku_rev = recent_df.groupby(sku_col)[val_col].sum()
-    sku_qty = recent_df.groupby(sku_col)[qty_col].sum()
-
-    # Cálculo vetorizado e exato de VMD e Desvio Padrão sobre a janela completa de window_days
-    # Para cada SKU: soma das quantidades, soma dos quadrados e dias com venda
-    stats = daily_grouped.groupby(sku_col)[qty_col].agg(
+    recent_df["sale_day"] = recent_df["date"].dt.date
+    daily_qty = recent_df.groupby(["sku", "sale_day"])["qty"].sum().reset_index()
+    stats = daily_qty.groupby("sku")["qty"].agg(
         sum_qty="sum",
-        sum_sq=lambda s: np.sum(s**2),
-        days_with_sales="count"
+        sum_sq=lambda series: np.sum(series ** 2),
     )
 
-    n_days = max(1, window_days)
+    n_days = float(max(MIN_WINDOW_DAYS, window_days))
     vmd_series = stats["sum_qty"] / n_days
-
-    # Variância amostral sobre a série com zeros para os dias sem venda:
-    # Var = (sum(x_i^2) - N * mu^2) / (N - 1)
-    if n_days > 1:
-        variance = (stats["sum_sq"] - (n_days * (vmd_series ** 2))) / (n_days - 1)
-        variance = variance.clip(lower=0.0)  # Evita imprecisão numérica negativa
+    if n_days >= MIN_SAMPLE_DAYS_FOR_VARIANCE:
+        variance = ((stats["sum_sq"] - (n_days * (vmd_series ** 2))) / (n_days - 1)).clip(lower=ZERO_FLOAT)
         std_series = np.sqrt(variance)
     else:
-        std_series = pd.Series(0.0, index=stats.index)
+        std_series = pd.Series(ZERO_FLOAT, index=stats.index)
 
-    result_df = pd.DataFrame({
-        "vmd": vmd_series.round(4),
-        "std_demand": std_series.round(4),
-        "total_sold_qty": sku_qty.round(2),
-        "total_revenue": sku_rev.round(2),
-    }, index=stats.index)
-
+    result_df = pd.DataFrame(
+        {
+            "vmd": vmd_series,
+            "std_demand": std_series.round(STD_DEMAND_DECIMALS),
+            "total_sold_qty": recent_df.groupby("sku")["qty"].sum().round(TOTALS_DECIMALS),
+            "total_revenue": recent_df.groupby("sku")["revenue"].sum().round(TOTALS_DECIMALS),
+        },
+        index=stats.index,
+    )
     result_df.index.name = "sku"
     return result_df
 
 
-def calculate_inventory_replenishment(
-    products_df: pd.DataFrame,
-    velocity_df: pd.DataFrame,
-    lead_time_days: int = 15,
-    target_coverage_days: int = 30,
-    service_level: float = 0.95,
+def _extract_numeric_series(df: pd.DataFrame, column_key: str) -> pd.Series:
+    """Extrai uma coluna numérica usando os aliases do catálogo, preenchendo ausentes com 0.0."""
+    resolved = _resolve_column(df, PRODUCT_COLUMN_ALIASES[column_key])
+    if resolved is None:
+        return pd.Series(ZERO_FLOAT, index=df.index, dtype=float)
+    return pd.to_numeric(df[resolved], errors="coerce").fillna(ZERO_FLOAT).astype(float)
+
+
+def _fill_text_column(df: pd.DataFrame, column_key: str, default: str) -> pd.Series:
+    """Extrai e higieniza uma coluna textual do catálogo, aplicando valor padrão quando vazia."""
+    resolved = _resolve_column(df, PRODUCT_COLUMN_ALIASES[column_key])
+    if resolved is None:
+        return pd.Series(default, index=df.index, dtype=str)
+    cleaned = df[resolved].fillna(default).astype(str).str.strip()
+    if default:
+        return cleaned.replace("", default)
+    return cleaned
+
+
+def _apply_unit_cost_fallback(raw_cost: pd.Series, sale_price: pd.Series) -> pd.Series:
+    """Aplica o fallback de 60% sobre o preço de venda quando o último custo é <= 0 (P-054.5)."""
+    fallback_cost = (sale_price * COST_FALLBACK_PRICE_RATIO).round(MONEY_DECIMALS)
+    resolved_cost = np.where(raw_cost > ZERO_FLOAT, raw_cost, fallback_cost)
+    return pd.Series(resolved_cost, index=sale_price.index, dtype=float)
+
+
+def normalize_product_catalog(products_df: pd.DataFrame) -> pd.DataFrame:
+    """Converte o catálogo de produtos para colunas canônicas de domínio de forma idempotente.
+
+    Regra: P-053.9 (estoque negativo do ERP vira 0) e P-054.5 (custo unitário com fallback de 60%).
+
+    Args:
+        products_df: DataFrame do catálogo vindo do ERP ou já normalizado.
+
+    Returns:
+        DataFrame com colunas canônicas `codigo`, `descricao`, `ean`, `fornecedor`,
+        `tipo`, `estoque`, `custo_unitario`, `preco_venda`.
+    """
+    if products_df.empty:
+        return pd.DataFrame(columns=list(CANONICAL_CATALOG_COLUMNS))
+
+    sale_price = _extract_numeric_series(products_df, "preco_venda")
+    raw_cost = _extract_numeric_series(products_df, "custo_unitario")
+
+    return pd.DataFrame(
+        {
+            "codigo": _extract_numeric_series(products_df, "codigo").astype(np.int64),
+            "descricao": _fill_text_column(products_df, "descricao", ""),
+            "ean": _fill_text_column(products_df, "ean", ""),
+            "fornecedor": _fill_text_column(products_df, "fornecedor", DEFAULT_SUPPLIER_NAME).str.upper(),
+            "tipo": _fill_text_column(products_df, "tipo", DEFAULT_PRODUCT_TYPE),
+            "estoque": _extract_numeric_series(products_df, "estoque").clip(lower=ZERO_FLOAT),
+            "custo_unitario": _apply_unit_cost_fallback(raw_cost, sale_price),
+            "preco_venda": sale_price,
+        },
+        index=products_df.index,
+    )
+
+
+def filter_products_by_supplier(
+    catalog_df: pd.DataFrame,
     supplier_filter: Optional[str] = None,
-    budget_limit: Optional[float] = None,
-    max_purchase_variation_pct: Optional[float] = 100.0
-) -> Dict[str, Any]:
+) -> pd.DataFrame:
+    """Filtra o catálogo normalizado pelo fornecedor quando informado (P-047.1).
+
+    Regra: P-047.1 — `None`, string vazia, `TODOS` e `ALL` preservam todos os produtos;
+    a comparação ignora espaços nas pontas e diferenças de maiúsculas/minúsculas.
     """
-    Executa o motor prescritivo de estoque ideal e recomendação de compras (P-042 a P-047).
-    Inclui trava física de variação máxima de compra (P-044.4).
+    if catalog_df.empty or supplier_filter is None:
+        return catalog_df.copy()
+
+    normalized_supplier = supplier_filter.strip().upper()
+    if normalized_supplier in ALL_SUPPLIERS_TOKENS:
+        return catalog_df.copy()
+
+    return catalog_df[catalog_df["fornecedor"] == normalized_supplier].copy()
+
+
+def prepare_product_catalog(
+    products_df: pd.DataFrame,
+    supplier_filter: Optional[str] = None,
+) -> pd.DataFrame:
+    """Normaliza as colunas do catálogo de produtos e aplica o filtro opcional por fornecedor.
+
+    Regra: P-047.1, P-053.9, P-054.5 (ADR-001, DA-10).
     """
-    df_prod = products_df.copy()
+    normalized_df = normalize_product_catalog(products_df)
+    return filter_products_by_supplier(normalized_df, supplier_filter)
 
-    # Normalização de colunas de produto
-    col_sku = "Codigo" if "Codigo" in df_prod.columns else "Código"
-    col_desc = "Descricao" if "Descricao" in df_prod.columns else "Descrição"
-    col_fornec = "Fornecedor" if "Fornecedor" in df_prod.columns else ("Fornec/Marca" if "Fornec/Marca" in df_prod.columns else "Marca")
-    col_tipo = "Tipo" if "Tipo" in df_prod.columns else "Linha"
-    col_ean = "EAN" if "EAN" in df_prod.columns else "ean"
-    col_est = "Estoque" if "Estoque" in df_prod.columns else "estoque"
-    col_custo = "Pc.Ultimo Custo" if "Pc.Ultimo Custo" in df_prod.columns else "Custo"
-    col_preco = "Pc.Venda" if "Pc.Venda" in df_prod.columns else "Preço"
 
-    df_prod[col_sku] = pd.to_numeric(df_prod[col_sku], errors="coerce").fillna(0).astype(np.int64)
-    df_prod[col_est] = pd.to_numeric(df_prod.get(col_est, 0.0), errors="coerce").fillna(0.0).clip(lower=0.0)
-    df_prod[col_preco] = pd.to_numeric(df_prod.get(col_preco, 0.0), errors="coerce").fillna(0.0)
+def classify_abc_curve(revenue_by_sku: Mapping[int, float]) -> Dict[int, str]:
+    """Classifica cada SKU na Curva ABC global pela participação acumulada na receita total.
 
-    # Custo com fallback seguro de 60%
-    if col_custo in df_prod.columns:
-        custo_num = pd.to_numeric(df_prod[col_custo], errors="coerce").fillna(0.0)
-        df_prod["Custo_Calc"] = np.where(custo_num > 0, custo_num, np.round(df_prod[col_preco] * 0.60, 2))
-    else:
-        df_prod["Custo_Calc"] = np.round(df_prod[col_preco] * 0.60, 2)
+    Regra: Curva ABC global (seção 4 das regras de negócio) — A <= 80%, B <= 95%, C restante.
+    Calculada antes de qualquer filtro de fornecedor para que a classe do SKU não mude (CA-10).
+    """
+    if not revenue_by_sku:
+        return {}
 
-    if col_fornec not in df_prod.columns:
-        df_prod[col_fornec] = "OUTROS"
-    df_prod[col_fornec] = df_prod[col_fornec].astype(str).str.strip().str.upper()
+    total_revenue = sum(revenue_by_sku.values())
+    if total_revenue <= ZERO_FLOAT:
+        return {int(sku): DEFAULT_ABC_CLASS for sku in revenue_by_sku}
 
-    if col_tipo not in df_prod.columns:
-        df_prod[col_tipo] = "GERAL"
-    df_prod[col_tipo] = df_prod[col_tipo].astype(str).str.strip()
+    sorted_items = sorted(revenue_by_sku.items(), key=lambda item: item[1], reverse=True)
+    cumulative_revenue = ZERO_FLOAT
+    abc_by_sku: Dict[int, str] = {}
 
-    if col_desc not in df_prod.columns:
-        df_prod[col_desc] = ""
-    df_prod[col_desc] = df_prod[col_desc].astype(str).str.strip()
-
-    if col_ean not in df_prod.columns:
-        df_prod[col_ean] = ""
-    df_prod[col_ean] = df_prod[col_ean].astype(str).str.strip()
-
-    # Filtro opcional por Fornecedor (P-047.1)
-    if supplier_filter and supplier_filter.strip().upper() not in ["TODOS", "ALL", ""]:
-        sup_clean = supplier_filter.strip().upper()
-        df_prod = df_prod[df_prod[col_fornec] == sup_clean].copy()
-
-    # Z-Score para nível de serviço
-    z_val = get_z_score(service_level)
-    lt_sqrt = math.sqrt(max(1, lead_time_days))
-
-    # Mapeamento de métricas de velocidade
-    vmd_map = velocity_df["vmd"].to_dict() if not velocity_df.empty else {}
-    std_map = velocity_df["std_demand"].to_dict() if not velocity_df.empty else {}
-    rev_map = velocity_df["total_revenue"].to_dict() if not velocity_df.empty else {}
-
-    # Curva ABC global de receita
-    total_rev_all = sum(rev_map.values()) or 1.0
-    sorted_rev = sorted(rev_map.items(), key=lambda x: x[1], reverse=True)
-    cum_rev = 0.0
-    abc_map = {}
-    for sku, rev in sorted_rev:
-        cum_rev += rev
-        pct = (cum_rev / total_rev_all) * 100
-        if pct <= 80.0:
-            abc_map[sku] = "A"
-        elif pct <= 95.0:
-            abc_map[sku] = "B"
+    for sku, revenue in sorted_items:
+        cumulative_revenue += revenue
+        cumulative_pct = (cumulative_revenue / total_revenue) * PERCENT_MULTIPLIER
+        if cumulative_pct <= ABC_CLASS_A_MAX_PCT:
+            abc_by_sku[int(sku)] = "A"
+        elif cumulative_pct <= ABC_CLASS_B_MAX_PCT:
+            abc_by_sku[int(sku)] = "B"
         else:
-            abc_map[sku] = "C"
+            abc_by_sku[int(sku)] = DEFAULT_ABC_CLASS
 
-    items: List[Dict[str, Any]] = []
-    capital_overstock = 0.0
+    return abc_by_sku
 
-    for _, row in df_prod.iterrows():
-        sku = int(row[col_sku])
-        desc = row[col_desc]
-        ean = row[col_ean]
-        fornec = row[col_fornec]
-        tipo = row[col_tipo]
-        estoque_atual = float(row[col_est])
-        custo = float(row["Custo_Calc"])
-        preco = float(row[col_preco])
 
-        vmd = float(vmd_map.get(sku, 0.0))
-        std_d = float(std_map.get(sku, 0.0))
-        curva_abc = abc_map.get(sku, "C")
+@dataclass(frozen=True)
+class SalesLookup:
+    """Consulta encapsulada de VMD e Curva ABC por SKU (Lei de Demeter — DA-10)."""
 
-        # Dias de cobertura
-        if vmd > 0:
-            dias_cobertura = round(estoque_atual / vmd, 1)
-        else:
-            dias_cobertura = 999.0 if estoque_atual > 0 else 0.0
+    vmd_by_sku: Mapping[int, float]
+    abc_by_sku: Mapping[int, str]
 
-        # Estoque de Segurança e ROP
-        if vmd > 0:
-            estoque_seguranca = int(math.ceil(z_val * std_d * lt_sqrt))
-            rop = int(math.ceil((vmd * lead_time_days) + estoque_seguranca))
-            estoque_ideal_teorico = int(math.ceil((vmd * (lead_time_days + target_coverage_days)) + estoque_seguranca))
-        else:
-            estoque_seguranca = 0
-            rop = 0
-            estoque_ideal_teorico = 0
+    def vmd_for(self, sku: int) -> float:
+        """Retorna a VMD em precisão integral do SKU, ou 0.0 quando sem vendas."""
+        return float(self.vmd_by_sku.get(sku, ZERO_FLOAT))
 
-        # Quantidade Sugerida de Compra Teórica (P-044.3)
-        if vmd > 0 and (estoque_atual <= rop or dias_cobertura <= (lead_time_days + 5)):
-            qtd_sugerida_teorica = max(0, int(math.ceil(estoque_ideal_teorico - estoque_atual)))
-        else:
-            qtd_sugerida_teorica = 0
+    def abc_class_for(self, sku: int) -> str:
+        """Retorna a classe ABC global do SKU, ou 'C' quando sem vendas na janela."""
+        return self.abc_by_sku.get(sku, DEFAULT_ABC_CLASS)
 
-        # Trava de Variação Máxima de Compra / Governança de Espaço Físico (P-044.4)
-        limitado_por_espaco = False
-        teto_compra_fisica = None
-        if max_purchase_variation_pct is not None and max_purchase_variation_pct > 0 and qtd_sugerida_teorica > 0:
-            # Base física de referência: estoque atual quando existente, ou piso operacional mínimo para itens zerados
-            if estoque_atual > 0:
-                base_fisica = estoque_atual
-            else:
-                base_fisica = float(max(math.ceil(vmd * min(lead_time_days, 7)), 10))
 
-            teto_compra_fisica = int(math.ceil(base_fisica * (1.0 + (max_purchase_variation_pct / 100.0))))
+def build_sales_lookup(velocity_df: pd.DataFrame) -> SalesLookup:
+    """Constrói o objeto SalesLookup com VMD e Curva ABC global a partir do DataFrame de velocidade."""
+    if velocity_df is None or velocity_df.empty:
+        return SalesLookup(vmd_by_sku={}, abc_by_sku={})
 
-            if qtd_sugerida_teorica > teto_compra_fisica:
-                qtd_sugerida = max(0, teto_compra_fisica)
-                limitado_por_espaco = True
-                # Limita o Estoque Ideal operacional para não ter números absurdos (P-044.4)
-                estoque_ideal = int(math.ceil(estoque_atual + qtd_sugerida))
-            else:
-                qtd_sugerida = qtd_sugerida_teorica
-                estoque_ideal = estoque_ideal_teorico
-        else:
-            qtd_sugerida = qtd_sugerida_teorica
-            estoque_ideal = estoque_ideal_teorico
-
-        # Status Operacional (P-045)
-        if vmd > 0 and dias_cobertura < lead_time_days:
-            status = "CRITICAL_STOCKOUT"
-            status_label = "Ruptura Iminente"
-        elif estoque_atual <= rop and qtd_sugerida > 0:
-            status = "REORDER_NEEDED"
-            status_label = "Reposição Necessária"
-        elif dias_cobertura > ((target_coverage_days + lead_time_days) * 1.5) or dias_cobertura > 75.0:
-            status = "OVERSTOCK"
-            status_label = "Excesso / Overstock"
-            # Capital parado excedente
-            excesso_un = max(0.0, estoque_atual - estoque_ideal)
-            capital_overstock += excesso_un * custo
-        else:
-            status = "HEALTHY"
-            status_label = "Estoque Saudável"
-
-        investimento_item = round(qtd_sugerida * custo, 2)
-
-        items.append({
-            "codigo": sku,
-            "descricao": desc,
-            "ean": ean,
-            "fornecedor": fornec,
-            "tipo": tipo,
-            "estoqueAtual": round(estoque_atual, 1),
-            "vmd": round(vmd, 2),
-            "desvioPadraoDemanda": round(std_d, 2),
-            "diasCobertura": dias_cobertura,
-            "leadTime": lead_time_days,
-            "estoqueSeguranca": estoque_seguranca,
-            "rop": rop,
-            "estoqueIdeal": estoque_ideal,
-            "estoqueIdealTeorico": estoque_ideal_teorico,
-            "qtdSugeridaCompra": qtd_sugerida,
-            "qtdSugeridaTeorica": qtd_sugerida_teorica,
-            "limitadoPorEspaco": limitado_por_espaco,
-            "tetoCompraFisica": teto_compra_fisica,
-            "custoUnitario": round(custo, 2),
-            "precoVenda": round(preco, 2),
-            "investimentoTotalItem": investimento_item,
-            "status": status,
-            "statusLabel": status_label,
-            "curvaAbc": curva_abc,
-        })
-
-    # Otimização por Teto Orçamentário (P-046.3)
-    investimento_total = sum(item["investimentoTotalItem"] for item in items)
-    if budget_limit is not None and budget_limit > 0 and investimento_total > budget_limit:
-        # Priorização: 1. Ruptura A, 2. Ruptura B/C, 3. Reposição A, 4. Reposição B/C
-        def sort_priority(item):
-            status_rank = 0 if item["status"] == "CRITICAL_STOCKOUT" else (1 if item["status"] == "REORDER_NEEDED" else 2)
-            abc_rank = 0 if item["curvaAbc"] == "A" else (1 if item["curvaAbc"] == "B" else 2)
-            # Maior VMD primeiro
-            return (status_rank, abc_rank, -item["vmd"])
-
-        items.sort(key=sort_priority)
-        current_budget = 0.0
-        for item in items:
-            item_cost = item["investimentoTotalItem"]
-            if current_budget + item_cost <= budget_limit:
-                current_budget += item_cost
-            else:
-                # Corta ou reduz para o orçamento restante
-                rem_budget = max(0.0, budget_limit - current_budget)
-                if item["custoUnitario"] > 0:
-                    max_units = int(rem_budget // item["custoUnitario"])
-                    item["qtdSugeridaCompra"] = max_units
-                    item["investimentoTotalItem"] = round(max_units * item["custoUnitario"], 2)
-                    current_budget += item["investimentoTotalItem"]
-                else:
-                    item["qtdSugeridaCompra"] = 0
-                    item["investimentoTotalItem"] = 0.0
-
-    # Ordenação padrão: Ruptura Iminente primeiro, depois Reposição, depois por Curva ABC
-    def final_sort(x):
-        st_order = {"CRITICAL_STOCKOUT": 0, "REORDER_NEEDED": 1, "HEALTHY": 2, "OVERSTOCK": 3}
-        return (st_order.get(x["status"], 4), 0 if x["curvaAbc"] == "A" else (1 if x["curvaAbc"] == "B" else 2), -x["vmd"])
-
-    items.sort(key=final_sort)
-
-    # Cálculo dos KPIs Agregados
-    total_skus = len(items)
-    ruptura_cnt = sum(1 for x in items if x["status"] == "CRITICAL_STOCKOUT")
-    reposicao_cnt = sum(1 for x in items if x["status"] == "REORDER_NEEDED")
-    saudavel_cnt = sum(1 for x in items if x["status"] == "HEALTHY")
-    overstock_cnt = sum(1 for x in items if x["status"] == "OVERSTOCK")
-    invest_final = sum(x["investimentoTotalItem"] for x in items)
-
-    curva_a_items = sum(1 for x in items if x["curvaAbc"] == "A")
-    curva_a_pct = round((curva_a_items / max(1, total_skus)) * 100, 1)
-
-    kpis = {
-        "totalSkusAnalisados": total_skus,
-        "skusEmRupturaCritica": ruptura_cnt,
-        "skusNecessitamReposicao": reposicao_cnt,
-        "skusEstoqueSaudavel": saudavel_cnt,
-        "skusEmOverstock": overstock_cnt,
-        "skusLimitadosPorEspaco": sum(1 for x in items if x.get("limitadoPorEspaco", False)),
-        "investimentoTotalSugerido": round(invest_final, 2),
-        "capitalImobilizadoOverstock": round(capital_overstock, 2),
-        "curvaADistribuicao": {
-            "qtdItens": curva_a_items,
-            "percentualItens": curva_a_pct
-        }
+    vmd_by_sku = {int(sku): float(vmd) for sku, vmd in velocity_df["vmd"].to_dict().items()}
+    revenue_by_sku = {
+        int(sku): float(rev) for sku, rev in velocity_df["total_revenue"].to_dict().items()
     }
+    return SalesLookup(
+        vmd_by_sku=vmd_by_sku,
+        abc_by_sku=classify_abc_curve(revenue_by_sku),
+    )
+
+
+def calculate_coverage_days(current_stock: float, vmd: float) -> float:
+    """Calcula quantos dias o estoque físico atual dura no ritmo atual de vendas (VMD).
+
+    Regra: P-055.1 — `estoque / VMD` arredondado a 1 casa quando VMD > 0;
+    999.0 (sentinela de "∞") quando VMD <= 0 e estoque > 0; 0.0 quando ambos são 0.
+    """
+    if vmd <= ZERO_FLOAT:
+        return NO_SALES_COVERAGE_DAYS if current_stock > ZERO_FLOAT else ZERO_FLOAT
+    return round(current_stock / vmd, COVERAGE_DAYS_DECIMALS)
+
+
+@dataclass(frozen=True)
+class StockPosition:
+    """Posição consolidada de estoque, velocidade, cobertura e níveis Mín/Máx de um SKU."""
+
+    current_stock: float
+    vmd: float
+    coverage_days: float
+    levels: StockLevels
+
+
+def build_stock_position(
+    current_stock: float,
+    vmd: float,
+    policy: ReplenishmentPolicy,
+) -> StockPosition:
+    """Monta a posição do SKU frente à política Mín/Máx garantindo estoque não-negativo (P-053.9)."""
+    sanitized_stock = max(ZERO_FLOAT, float(current_stock))
+    return StockPosition(
+        current_stock=sanitized_stock,
+        vmd=vmd,
+        coverage_days=calculate_coverage_days(sanitized_stock, vmd),
+        levels=calculate_stock_levels(vmd, policy),
+    )
+
+
+def is_stockout_imminent(position: StockPosition, lead_time_days: int) -> bool:
+    """Indica se o estoque atual do produto com venda acabará antes da chegada do pedido.
+
+    Regra: P-055.2 (ordem 1) e CA-P055-03 — compara `coverage_days` (já arredondado a 1 casa,
+    como exibido na tela) estritamente menor que `lead_time_days`.
+    """
+    return position.vmd > ZERO_FLOAT and position.coverage_days < lead_time_days
+
+
+def is_purchase_triggered(position: StockPosition, lead_time_days: int) -> bool:
+    """Verifica se o gatilho de compra da política Mín/Máx foi acionado para o SKU.
+
+    Regra: P-054.1 e P-054.3 — só há compra para produto com venda (VMD > 0) quando o estoque
+    atingiu o Estoque Mínimo (limite inclusivo) ou está em Ruptura Iminente.
+    """
+    if position.vmd <= ZERO_FLOAT:
+        return False
+    return (
+        position.current_stock <= position.levels.minimum
+        or is_stockout_imminent(position, lead_time_days)
+    )
+
+
+def calculate_suggested_purchase(position: StockPosition, lead_time_days: int) -> int:
+    """Calcula a quantidade inteira sugerida de compra para recompor o estoque até o máximo.
+
+    Regra: P-054.2, P-054.3, P-054.4 e P-056.1 — sem gatilho retorna 0; com gatilho retorna
+    `max(0, ceil_units(Estoque Máximo - estoque atual))`, sem trava física nem teto orçamentário.
+    """
+    if not is_purchase_triggered(position, lead_time_days):
+        return ZERO_INT
+    return max(ZERO_INT, ceil_units(position.levels.maximum - position.current_stock))
+
+
+def classify_stock_status(
+    position: StockPosition,
+    suggested_qty: int,
+    lead_time_days: int,
+) -> InventoryStatus:
+    """Classifica o status operacional do SKU seguindo a precedência estrita de P-055.2.
+
+    Regra: P-055.2 — 1º Ruptura Iminente; 2º Abaixo do Mínimo (exige suggested_qty > 0 para que
+    o caso de borda mínimo == máximo com estoque == mínimo caia em Estoque Saudável, CA-P055-08);
+    3º Acima do Máximo (estoque > máximo, incluindo VMD=0 com estoque>0); 4º Estoque Saudável.
+    """
+    if is_stockout_imminent(position, lead_time_days):
+        return InventoryStatus.CRITICAL_STOCKOUT
+
+    if (
+        position.vmd > ZERO_FLOAT
+        and position.current_stock <= position.levels.minimum
+        and suggested_qty > ZERO_INT
+    ):
+        return InventoryStatus.REORDER_NEEDED
+
+    if position.current_stock > position.levels.maximum:
+        return InventoryStatus.OVERSTOCK
+
+    return InventoryStatus.HEALTHY
+
+
+def calculate_overstock_capital(
+    position: StockPosition,
+    unit_cost: float,
+    status: InventoryStatus,
+) -> float:
+    """Calcula o capital imobilizado sobre as unidades que excedem o Estoque Máximo.
+
+    Regra: P-055.4 — calculado apenas quando o status é OVERSTOCK; para SKU sem venda
+    (Estoque Máximo = 0), todo o estoque físico é contabilizado como excedente.
+    """
+    if status != InventoryStatus.OVERSTOCK:
+        return ZERO_FLOAT
+    excess_units = max(ZERO_FLOAT, position.current_stock - position.levels.maximum)
+    return excess_units * unit_cost
+
+
+@dataclass(frozen=True)
+class ProductEvaluation:
+    """Resultado tipado da avaliação de um SKU pela Política Mín/Máx (DA-10)."""
+
+    codigo: int
+    descricao: str
+    ean: str
+    fornecedor: str
+    tipo: str
+    estoque_atual: float
+    vmd: float
+    dias_cobertura: float
+    lead_time: int
+    estoque_minimo: int
+    estoque_maximo: int
+    qtd_sugerida_compra: int
+    custo_unitario: float
+    preco_venda: float
+    investimento_total_item: float
+    status: InventoryStatus
+    status_label: str
+    curva_abc: str
+    overstock_capital: float
+
+    def to_response_item(self) -> Dict[str, Any]:
+        """Serializa o item em camelCase conforme a seção 5.2 do contrato 2.0.0."""
+        return {
+            "codigo": self.codigo,
+            "descricao": self.descricao,
+            "ean": self.ean,
+            "fornecedor": self.fornecedor,
+            "tipo": self.tipo,
+            "estoqueAtual": round(self.estoque_atual, STOCK_DISPLAY_DECIMALS),
+            "vmd": round(self.vmd, VMD_DISPLAY_DECIMALS),
+            "diasCobertura": self.dias_cobertura,
+            "leadTime": self.lead_time,
+            "estoqueMinimo": self.estoque_minimo,
+            "estoqueMaximo": self.estoque_maximo,
+            "qtdSugeridaCompra": self.qtd_sugerida_compra,
+            "custoUnitario": round(self.custo_unitario, MONEY_DECIMALS),
+            "precoVenda": round(self.preco_venda, MONEY_DECIMALS),
+            "investimentoTotalItem": self.investimento_total_item,
+            "status": self.status.value,
+            "statusLabel": self.status_label,
+            "curvaAbc": self.curva_abc,
+        }
+
+
+def evaluate_product(
+    product_row: Any,
+    sales_lookup: SalesLookup,
+    policy: ReplenishmentPolicy,
+) -> ProductEvaluation:
+    """Avalia um único produto do catálogo normalizado contra a política Mín/Máx.
+
+    Regra: P-053, P-054.5, P-055 (ADR-001, DA-10).
+    """
+    sku = int(product_row.codigo)
+    current_stock = float(product_row.estoque)
+    unit_cost = float(product_row.custo_unitario)
+    sale_price = float(product_row.preco_venda)
+    vmd = sales_lookup.vmd_for(sku)
+
+    position = build_stock_position(current_stock, vmd, policy)
+    suggested_qty = calculate_suggested_purchase(position, policy.lead_time_days)
+    status = classify_stock_status(position, suggested_qty, policy.lead_time_days)
+    investment = round(suggested_qty * unit_cost, MONEY_DECIMALS)
+    overstock_capital = calculate_overstock_capital(position, unit_cost, status)
+
+    return ProductEvaluation(
+        codigo=sku,
+        descricao=str(product_row.descricao),
+        ean=str(product_row.ean),
+        fornecedor=str(product_row.fornecedor),
+        tipo=str(product_row.tipo),
+        estoque_atual=position.current_stock,
+        vmd=vmd,
+        dias_cobertura=position.coverage_days,
+        lead_time=policy.lead_time_days,
+        estoque_minimo=position.levels.minimum,
+        estoque_maximo=position.levels.maximum,
+        qtd_sugerida_compra=suggested_qty,
+        custo_unitario=unit_cost,
+        preco_venda=sale_price,
+        investimento_total_item=investment,
+        status=status,
+        status_label=STATUS_LABELS[status],
+        curva_abc=sales_lookup.abc_class_for(sku),
+        overstock_capital=overstock_capital,
+    )
+
+
+def product_sort_key(evaluation: ProductEvaluation) -> Tuple[int, int, float]:
+    """Chave de ordenação padrão: Status (Ruptura -> Acima) -> Curva ABC (A -> C) -> VMD decrescente.
+
+    Regra: P-055.6.
+    """
+    return (
+        STATUS_SORT_ORDER.get(evaluation.status, DEFAULT_SORT_RANK),
+        ABC_SORT_ORDER.get(evaluation.curva_abc, DEFAULT_SORT_RANK),
+        -evaluation.vmd,
+    )
+
+
+def build_kpis(evaluations: Sequence[ProductEvaluation]) -> Dict[str, Any]:
+    """Agrega os indicadores (KPIs) do conjunto de produtos avaliados sem tetos nem travas.
+
+    Regra: P-054.6, P-055.4, P-055.5 e P-056.1.
+    """
+    status_counts = Counter(evaluation.status for evaluation in evaluations)
+    total_skus = len(evaluations)
+    total_investment = round(
+        sum(evaluation.investimento_total_item for evaluation in evaluations),
+        MONEY_DECIMALS,
+    )
+    total_overstock_capital = round(
+        sum(evaluation.overstock_capital for evaluation in evaluations),
+        MONEY_DECIMALS,
+    )
+    class_a_count = sum(1 for evaluation in evaluations if evaluation.curva_abc == "A")
+    class_a_pct = round(
+        (class_a_count / max(1, total_skus)) * PERCENT_MULTIPLIER,
+        PERCENT_DECIMALS,
+    )
 
     return {
-        "kpis": kpis,
-        "produtos": items
+        "totalSkusAnalisados": total_skus,
+        "skusEmRupturaCritica": status_counts[InventoryStatus.CRITICAL_STOCKOUT],
+        "skusNecessitamReposicao": status_counts[InventoryStatus.REORDER_NEEDED],
+        "skusEstoqueSaudavel": status_counts[InventoryStatus.HEALTHY],
+        "skusEmOverstock": status_counts[InventoryStatus.OVERSTOCK],
+        "investimentoTotalSugerido": total_investment,
+        "capitalImobilizadoOverstock": total_overstock_capital,
+        "curvaADistribuicao": {
+            "qtdItens": class_a_count,
+            "percentualItens": class_a_pct,
+        },
+    }
+
+
+def calculate_inventory_replenishment(
+    catalog_df: pd.DataFrame,
+    velocity_df: pd.DataFrame,
+    policy: Optional[ReplenishmentPolicy] = None,
+) -> Dict[str, Any]:
+    """Orquestra o cálculo da Política Mín/Máx para o catálogo de produtos e retorna KPIs + itens.
+
+    Regra: P-053 a P-056 (ADR-001, DA-01 e DA-10).
+    """
+    active_policy = policy or ReplenishmentPolicy()
+    normalized_catalog = normalize_product_catalog(catalog_df)
+    sales_lookup = build_sales_lookup(velocity_df)
+    evaluations = [
+        evaluate_product(row, sales_lookup, active_policy)
+        for row in normalized_catalog.itertuples(index=False)
+    ]
+    evaluations.sort(key=product_sort_key)
+    return {
+        "kpis": build_kpis(evaluations),
+        "produtos": [evaluation.to_response_item() for evaluation in evaluations],
     }
