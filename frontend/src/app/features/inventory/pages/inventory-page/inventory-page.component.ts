@@ -5,7 +5,7 @@
  * separando a política efetivamente aplicada (`appliedPolicy`) do rascunho em edição no modal
  * e validando o cache local v3 (CA-12, ADR-001 DA-08/DA-09).
  */
-import { Component, OnInit, inject, signal, computed } from '@angular/core';
+import { Component, ElementRef, HostListener, OnInit, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpErrorResponse } from '@angular/common/http';
@@ -44,6 +44,14 @@ import {
 export type SortableProductField = keyof InventoryProductItem;
 
 const ALL_SUPPLIERS_OPTION = 'TODOS';
+
+/** Remove acentos (marcas combinantes Unicode U+0300 a U+036F) para busca tolerante. */
+const DIACRITICS_PATTERN = /[̀-ͯ]/g;
+
+/** Normaliza texto para busca: minúsculas e sem acentos. */
+function normalizeSearchText(value: string): string {
+  return value.normalize('NFD').replace(DIACRITICS_PATTERN, '').toLowerCase().trim();
+}
 const ALL_FILTER_OPTION = 'ALL';
 const DEFAULT_PAGE_NUMBER = 1;
 const DEFAULT_PAGE_SIZE = 20;
@@ -130,6 +138,27 @@ export class InventoryPageComponent implements OnInit {
   /** Filtros, busca, ordenação e paginação local. */
   readonly searchTerm = signal<string>('');
   readonly selectedSupplier = signal<string>(ALL_SUPPLIERS_OPTION);
+
+  /** Combobox pesquisável de fornecedor: termo digitado, menu aberto e item destacado (teclado). */
+  readonly supplierSearch = signal<string>('');
+  readonly isSupplierMenuOpen = signal<boolean>(false);
+  readonly highlightedSupplierIndex = signal<number>(0);
+  private readonly hostElement = inject(ElementRef<HTMLElement>);
+
+  /** Fornecedores que contêm o termo digitado (sem diferenciar acentos e maiúsculas). */
+  readonly filteredSuppliers = computed<SupplierItem[]>(() => {
+    const term = normalizeSearchText(this.supplierSearch());
+    if (!term) {
+      return this.suppliers();
+    }
+    return this.suppliers().filter((sup) => normalizeSearchText(sup.nome).includes(term));
+  });
+
+  /** Rótulo do fornecedor selecionado exibido no campo quando o usuário não está digitando. */
+  readonly selectedSupplierLabel = computed<string>(() => {
+    const selected = this.suppliers().find((sup) => sup.fornecedor === this.selectedSupplier());
+    return selected ? `${selected.nome} (${selected.totalSkus})` : 'Todos os Fornecedores';
+  });
   readonly statusFilter = signal<string>(ALL_FILTER_OPTION);
   readonly curvaAbcFilter = signal<string>(ALL_FILTER_OPTION);
   readonly sortColumn = signal<SortableProductField | ''>('status');
@@ -162,6 +191,62 @@ export class InventoryPageComponent implements OnInit {
     this.loadSuppliers();
     if (!this.loadCachedPrediction()) {
       this.calculateInventory();
+    }
+  }
+
+  /** Abre o menu de fornecedores limpando o termo anterior para mostrar a lista completa. */
+  openSupplierMenu(): void {
+    if (this.isSupplierMenuOpen()) {
+      return;
+    }
+    this.supplierSearch.set('');
+    this.highlightedSupplierIndex.set(0);
+    this.isSupplierMenuOpen.set(true);
+  }
+
+  onSupplierSearchInput(term: string): void {
+    this.supplierSearch.set(term);
+    this.highlightedSupplierIndex.set(0);
+    this.isSupplierMenuOpen.set(true);
+  }
+
+  selectSupplier(supplier: SupplierItem): void {
+    this.selectedSupplier.set(supplier.fornecedor);
+    this.currentPage.set(DEFAULT_PAGE_NUMBER);
+    this.supplierSearch.set('');
+    this.isSupplierMenuOpen.set(false);
+  }
+
+  /** Navegação por teclado do combobox: setas, Enter para escolher e Esc para fechar. */
+  onSupplierKeydown(event: KeyboardEvent): void {
+    const options = this.filteredSuppliers();
+    if (event.key === 'Escape') {
+      this.isSupplierMenuOpen.set(false);
+      return;
+    }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      this.isSupplierMenuOpen.set(true);
+      const step = event.key === 'ArrowDown' ? 1 : -1;
+      const next = this.highlightedSupplierIndex() + step;
+      this.highlightedSupplierIndex.set(Math.min(Math.max(next, 0), Math.max(options.length - 1, 0)));
+      return;
+    }
+    if (event.key === 'Enter' && this.isSupplierMenuOpen()) {
+      event.preventDefault();
+      const highlighted = options[this.highlightedSupplierIndex()];
+      if (highlighted) {
+        this.selectSupplier(highlighted);
+      }
+    }
+  }
+
+  /** Fecha o menu de fornecedores ao clicar fora do componente. */
+  @HostListener('document:click', ['$event'])
+  closeSupplierMenuOnOutsideClick(event: Event): void {
+    const container = (this.hostElement.nativeElement as HTMLElement).querySelector('.supplier-combobox');
+    if (container && !container.contains(event.target as Node)) {
+      this.isSupplierMenuOpen.set(false);
     }
   }
 

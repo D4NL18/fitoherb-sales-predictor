@@ -177,17 +177,41 @@
       <!-- Seletor de Fornecedor / Fabricante -->
       <div class="select-group">
         <label for="supFilter">Laboratório / Fornecedor:</label>
-        <select
-          id="supFilter"
-          [ngModel]="selectedSupplier()"
-          (ngModelChange)="selectedSupplier.set($event); currentPage.set(1)"
-        >
-          @for (sup of suppliers(); track sup.fornecedor) {
-            <option [value]="sup.fornecedor">
-              {{ sup.nome }} ({{ sup.totalSkus }})
-            </option>
+        <div class="supplier-combobox">
+          <input
+            id="supFilter"
+            type="text"
+            role="combobox"
+            autocomplete="off"
+            aria-autocomplete="list"
+            aria-controls="supplierListbox"
+            [attr.aria-expanded]="isSupplierMenuOpen()"
+            placeholder="Buscar fornecedor..."
+            [value]="isSupplierMenuOpen() ? supplierSearch() : selectedSupplierLabel()"
+            (focus)="openSupplierMenu()"
+            (click)="openSupplierMenu()"
+            (input)="onSupplierSearchInput($any($event.target).value)"
+            (keydown)="onSupplierKeydown($event)"
+          />
+          @if (isSupplierMenuOpen()) {
+            <ul id="supplierListbox" class="supplier-menu" role="listbox">
+              @for (sup of filteredSuppliers(); track sup.fornecedor; let i = $index) {
+                <li
+                  role="option"
+                  [class.selected]="sup.fornecedor === selectedSupplier()"
+                  [class.highlighted]="i === highlightedSupplierIndex()"
+                  [attr.aria-selected]="sup.fornecedor === selectedSupplier()"
+                  (click)="selectSupplier(sup)"
+                  (mouseenter)="highlightedSupplierIndex.set(i)"
+                >
+                  {{ sup.nome }} ({{ sup.totalSkus }})
+                </li>
+              } @empty {
+                <li class="supplier-menu-empty">Nenhum fornecedor encontrado</li>
+              }
+            </ul>
           }
-        </select>
+        </div>
       </div>
 
       <!-- Filtro por Status Operacional -->
