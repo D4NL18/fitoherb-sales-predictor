@@ -6,6 +6,13 @@ export const routes: Routes = [
   { path: '', redirectTo: 'pricing', pathMatch: 'full' },
   { path: 'pricing', component: PricingPageComponent },
   { path: 'inventory', component: InventoryPageComponent },
+  {
+    path: 'tendencia-vendas',
+    loadComponent: () =>
+      import('./features/sales-trend/pages/sales-trend-page/sales-trend-page.component').then(
+        (m) => m.SalesTrendPageComponent
+      ),
+  },
   { path: '**', redirectTo: 'pricing' }
 ];
 
