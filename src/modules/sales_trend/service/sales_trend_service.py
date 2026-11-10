@@ -3,7 +3,7 @@ Casos de uso e orquestração de serviços para a Tendência de Vendas (P-082.1,
 """
 from dataclasses import dataclass
 from datetime import date
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 from src.modules.sales_trend.domain.month_windows import (
     format_year_month,

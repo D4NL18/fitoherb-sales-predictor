@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 from src.core.auth import HTTPBasicAuthASGIMiddleware
 from src.modules.inventory.api.router import inventory_router
 from src.modules.pricing.api.router import pricing_router
+from src.modules.sales_trend.api.router import sales_trend_router
 from src.modules.pricing.api.schemas import (
     AutoTuneData,
     AutoTuneRequest,
@@ -80,6 +81,7 @@ app.add_middleware(
 # Registro Modular de Roteadores (DDD)
 app.include_router(pricing_router, prefix="/api/v1")
 app.include_router(inventory_router, prefix="/api/v1")
+app.include_router(sales_trend_router, prefix="/api/v1")
 
 
 # Montagem do Frontend Angular compilado para Produção (P-033)
