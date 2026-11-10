@@ -136,6 +136,7 @@ def test_sem_base_when_coverage_under_50_percent():
 def test_base_month_validation():
     """Valida validação pura do Mês-Base (futuro -> TND-001, anterior -> TND-002, 0000-01 sem crash)."""
     from src.modules.sales_trend.domain.month_windows import (
+        month_index,
         parse_base_month,
         validate_base_month,
     )
