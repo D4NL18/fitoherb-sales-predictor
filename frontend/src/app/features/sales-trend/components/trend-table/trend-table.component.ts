@@ -9,16 +9,19 @@ import {
   TrendMetric,
   TrendParameters,
   TrendProductRow,
+  TrendSortBy,
   TrendSortDir,
   TrendSortWindow,
   TrendSupplierRow,
   TrendTotalRow,
   TrendWindowMeta,
 } from '../../models/sales-trend.model';
+import { SupplierDetailState } from '../../services/sales-trend.store';
 import { TrendColumnHeaderComponent } from '../trend-column-header/trend-column-header.component';
 import { TrendRowComponent } from '../trend-row/trend-row.component';
 import { TrendCellComponent } from '../trend-cell/trend-cell.component';
 import { TrendRowValuesComponent } from '../trend-row-values/trend-row-values.component';
+import { TrendSupplierGroupComponent } from '../trend-supplier-group/trend-supplier-group.component';
 
 @Component({
   selector: 'app-trend-table',
@@ -29,6 +32,7 @@ import { TrendRowValuesComponent } from '../trend-row-values/trend-row-values.co
     TrendRowComponent,
     TrendCellComponent,
     TrendRowValuesComponent,
+    TrendSupplierGroupComponent,
   ],
   template: `
     <div class="trend-table-wrapper">
@@ -104,37 +108,22 @@ import { TrendRowValuesComponent } from '../trend-row-values/trend-row-values.co
                 </tr>
               }
             } @else {
-              <!-- Linha de Fornecedor -->
-              <tr class="supplier-parent-row" [class.is-expanded]="isExpanded(getItemKey(item))">
-                <td class="col-expand">
-                  <button
-                    type="button"
-                    class="expand-chevron-btn"
-                    [class.is-expanded]="isExpanded(getItemKey(item))"
-                    (click)="toggleRow.emit(getItemKey(item))"
-                    [attr.aria-expanded]="isExpanded(getItemKey(item))"
-                    [attr.aria-label]="'Expandir produtos de ' + asSupplierRow(item).fornecedor"
-                  >
-                    <span class="chevron-icon" aria-hidden="true">›</span>
-                  </button>
-                </td>
-                <td class="col-entity">
-                  <div class="supplier-main">
-                    <strong class="supplier-name">{{ asSupplierRow(item).fornecedor }}</strong>
-                    <span class="supplier-count">{{ asSupplierRow(item).qtdProdutos }} produtos ativos</span>
-                  </div>
-                </td>
-                @for (cell of item.janelas; track cell.meses) {
-                  <td class="col-window" [class.sorted-col]="cell.meses === sortWindow()">
-                    <app-trend-cell
-                      [cell]="cell"
-                      [metric]="metric()"
-                      [params]="params()"
-                      [isSortedColumn]="cell.meses === sortWindow()"
-                    />
-                  </td>
-                }
-              </tr>
+              <!-- Grupo de Fornecedor -->
+              <app-trend-supplier-group
+                style="display: contents"
+                [supplier]="asSupplierRow(item)"
+                [detailState]="getSupplierDetail(asSupplierRow(item).fornecedorChave)"
+                [metric]="metric()"
+                [sortWindow]="sortWindow()"
+                [sortDir]="sortDir()"
+                [params]="params()"
+                [windowMetas]="columns()"
+                [isExpanded]="isExpanded(asSupplierRow(item).fornecedorChave)"
+                (toggle)="toggleRow.emit(asSupplierRow(item).fornecedorChave)"
+                (sortChange)="detailSortChange.emit({ supplierKey: asSupplierRow(item).fornecedorChave, sortBy: $event })"
+                (pageChange)="detailPageChange.emit({ supplierKey: asSupplierRow(item).fornecedorChave, page: $event })"
+                (retry)="detailRetry.emit(asSupplierRow(item).fornecedorChave)"
+              />
             }
           }
         </tbody>
@@ -207,36 +196,6 @@ import { TrendRowValuesComponent } from '../trend-row-values/trend-row-values.co
       color: var(--text-muted);
     }
 
-    .supplier-parent-row {
-      cursor: pointer;
-      border-bottom: 1px solid var(--border-subtle);
-      transition: background-color var(--transition-fast);
-
-      &:hover {
-        background-color: var(--bg-table-row-hover);
-      }
-
-      &.is-expanded {
-        background-color: var(--brand-primary-subtle);
-      }
-    }
-
-    .supplier-main {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-    }
-
-    .supplier-name {
-      font-size: 0.875rem;
-      color: var(--text-primary);
-    }
-
-    .supplier-count {
-      font-size: 0.75rem;
-      color: var(--text-secondary);
-    }
-
     .col-expand {
       width: 40px;
       text-align: center;
@@ -253,26 +212,6 @@ import { TrendRowValuesComponent } from '../trend-row-values/trend-row-values.co
 
     .col-window.sorted-col {
       background-color: rgba(29, 69, 40, 0.04);
-    }
-
-    .expand-chevron-btn {
-      width: 36px;
-      height: 36px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      background: transparent;
-      border: none;
-      cursor: pointer;
-      color: var(--text-secondary);
-      font-size: 1.25rem;
-      border-radius: var(--radius-xs);
-      transition: transform var(--transition-fast);
-
-      &.is-expanded {
-        transform: rotate(90deg);
-        color: var(--brand-primary);
-      }
     }
 
     .sr-only {
@@ -296,10 +235,14 @@ export class TrendTableComponent {
   readonly sortDir = input.required<TrendSortDir>();
   readonly params = input<TrendParameters | undefined>(undefined);
   readonly expandedKeys = input<Set<string | number>>(new Set());
+  readonly details = input<Map<string, SupplierDetailState>>(new Map());
   readonly totalRow = input<TrendTotalRow | null>(null);
 
   readonly sort = output<TrendSortWindow>();
   readonly toggleRow = output<string | number>();
+  readonly detailSortChange = output<{ supplierKey: string; sortBy: TrendSortBy }>();
+  readonly detailPageChange = output<{ supplierKey: string; page: number }>();
+  readonly detailRetry = output<string>();
 
   getItemKey(item: TrendProductRow | TrendSupplierRow): string | number {
     return (item as TrendSupplierRow).fornecedorChave ?? (item as TrendProductRow).codigo;
@@ -307,6 +250,10 @@ export class TrendTableComponent {
 
   isExpanded(key: string | number): boolean {
     return this.expandedKeys().has(key);
+  }
+
+  getSupplierDetail(key: string): SupplierDetailState | null {
+    return this.details().get(key) ?? null;
   }
 
   asProductRow(item: any): TrendProductRow {
