@@ -116,6 +116,7 @@
   --color-warning-border: var(--feedback-warning-border);
 
   /* 7. ESPAÇAMENTOS E MEDIDAS */
+  --navbar-height: 64px;
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -272,4 +273,10 @@ button, input, select, textarea {
   background-color: var(--bg-muted);
   border-radius: var(--radius-xs);
   animation: pulseSolid 1.5s ease-in-out infinite;
+}
+
+@media (max-width: 768px) {
+  :root {
+    --navbar-height: 58px;
+  }
 }
