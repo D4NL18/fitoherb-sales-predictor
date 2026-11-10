@@ -4,6 +4,7 @@ Trabalha com índice inteiro de mês (ano * 12 + mês - 1) para prevenir erros d
 """
 import calendar
 import datetime
+from functools import lru_cache
 import re
 from typing import List, Optional, Sequence, Tuple
 
@@ -66,6 +67,7 @@ def window_pair(base_month_index: int, size: int) -> Tuple[List[int], List[int]]
     return curr, prev
 
 
+@lru_cache(maxsize=128)
 def days_in_month(month_idx: int) -> int:
     """Retorna a quantidade de dias no mês (respeitando anos bissextos)."""
     year, month = index_to_year_month(month_idx)
@@ -74,7 +76,12 @@ def days_in_month(month_idx: int) -> int:
 
 def days_in_span(span: Sequence[int]) -> int:
     """Soma a quantidade total de dias de calendário em uma sequência de meses."""
-    return sum(days_in_month(m) for m in span)
+    return _days_in_span_cached(tuple(span))
+
+
+@lru_cache(maxsize=128)
+def _days_in_span_cached(span_tuple: Tuple[int, ...]) -> int:
+    return sum(days_in_month(m) for m in span_tuple)
 
 
 def covered_days(
@@ -85,8 +92,17 @@ def covered_days(
     """
     Calcula a quantidade de dias cobertos na janela delimitada por [first_sale_date, last_covered_day].
     """
+    return _covered_days_cached(tuple(span), first_sale_date, last_covered_day)
+
+
+@lru_cache(maxsize=128)
+def _covered_days_cached(
+    span_tuple: Tuple[int, ...],
+    first_sale_date: datetime.date,
+    last_covered_day: datetime.date,
+) -> int:
     total_covered = 0
-    for m in span:
+    for m in span_tuple:
         year, month = index_to_year_month(m)
         m_start = datetime.date(year, month, 1)
         m_end = datetime.date(year, month, days_in_month(m))

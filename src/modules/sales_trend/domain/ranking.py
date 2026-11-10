@@ -5,7 +5,7 @@ Aplica grupos de status, desempate por perda absoluta e código, e contagem de t
 from dataclasses import dataclass
 import datetime
 from fractions import Fraction
-from typing import Dict, List, Mapping, Optional, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from src.modules.sales_trend.domain.sales_trend import (
     MonthlySales,
@@ -25,6 +25,82 @@ class TotaisPorVisao:
     rising: int
     falling: int
     new: int
+
+
+class LazyJanelas(dict):
+    """
+    Dicionário sob demanda para as células das janelas (ADR-003 DA-06).
+    Na Fase A (ranqueamento de todo o universo), armazena apenas a sort_window.
+    Na Fase B (apenas para os itens da página), calcula as demais janelas sob demanda.
+    """
+    def __init__(
+        self,
+        sort_window: int,
+        initial_cell: TrendCell,
+        series: Any,
+        base_month_index: int,
+        metric: str,
+        monthly_sales: MonthlySales,
+        last_covered_day: datetime.date,
+    ):
+        super().__init__()
+        self[sort_window] = initial_cell
+        self._series = series
+        self._base_month_index = base_month_index
+        self._metric = metric
+        self._monthly_sales = monthly_sales
+        self._last_covered_day = last_covered_day
+
+    def _ensure_window(self, w: int) -> TrendCell:
+        cell = compute_cell(
+            series=self._series,
+            base_month_index=self._base_month_index,
+            size=w,
+            metric=self._metric,
+            monthly_sales=self._monthly_sales,
+            last_covered_day=self._last_covered_day,
+        )
+        self[w] = cell
+        return cell
+
+    def _ensure_all(self) -> None:
+        for w in WINDOW_SIZES_MONTHS:
+            if w not in self:
+                self._ensure_window(w)
+
+    def __getitem__(self, key: int) -> TrendCell:
+        if key in WINDOW_SIZES_MONTHS and key not in self:
+            return self._ensure_window(key)
+        return super().__getitem__(key)
+
+    def get(self, key: int, default=None):
+        if key in WINDOW_SIZES_MONTHS and key not in self:
+            return self._ensure_window(key)
+        return super().get(key, default)
+
+    def __contains__(self, key: object) -> bool:
+        if key in WINDOW_SIZES_MONTHS:
+            return True
+        return super().__contains__(key)
+
+    def items(self):
+        self._ensure_all()
+        return super().items()
+
+    def values(self):
+        self._ensure_all()
+        return super().values()
+
+    def keys(self):
+        self._ensure_all()
+        return super().keys()
+
+    def __iter__(self):
+        self._ensure_all()
+        return super().__iter__()
+
+    def __len__(self) -> int:
+        return len(WINDOW_SIZES_MONTHS)
 
 
 @dataclass(frozen=True)
@@ -84,17 +160,25 @@ def filter_and_rank_products(
         if not has_movement:
             continue
 
-        # Calcula as 4 janelas
-        cells: Dict[int, TrendCell] = {}
-        for w in WINDOW_SIZES_MONTHS:
-            cells[w] = compute_cell(
-                series=series,
-                base_month_index=base_month_index,
-                size=w,
-                metric=metric,
-                monthly_sales=monthly_sales,
-                last_covered_day=last_covered_day,
-            )
+        # DA-06 Fase A: calcula apenas a sort_window para todo o universo
+        cell_sw = compute_cell(
+            series=series,
+            base_month_index=base_month_index,
+            size=sort_window,
+            metric=metric,
+            monthly_sales=monthly_sales,
+            last_covered_day=last_covered_day,
+        )
+
+        cells = LazyJanelas(
+            sort_window=sort_window,
+            initial_cell=cell_sw,
+            series=series,
+            base_month_index=base_month_index,
+            metric=metric,
+            monthly_sales=monthly_sales,
+            last_covered_day=last_covered_day,
+        )
 
         rows_universe.append(
             ProductTrendRow(
