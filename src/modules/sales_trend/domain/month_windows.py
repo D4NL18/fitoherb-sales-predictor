@@ -6,7 +6,7 @@ import calendar
 import datetime
 from functools import lru_cache
 import re
-from typing import List, Optional, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple, Union
 
 from src.modules.sales_trend.domain.exceptions import (
     BaseMonthWithoutSalesError,
@@ -86,12 +86,17 @@ def _days_in_span_cached(span_tuple: Tuple[int, ...]) -> int:
 
 def covered_days(
     span: Sequence[int],
-    first_sale_date: datetime.date,
-    last_covered_day: datetime.date,
+    first_sale_date: Union[datetime.date, datetime.datetime],
+    last_covered_day: Union[datetime.date, datetime.datetime],
 ) -> int:
     """
     Calcula a quantidade de dias cobertos na janela delimitada por [first_sale_date, last_covered_day].
+    Converte datetime.datetime para datetime.date se necessário para evitar TypeError.
     """
+    if isinstance(first_sale_date, datetime.datetime):
+        first_sale_date = first_sale_date.date()
+    if isinstance(last_covered_day, datetime.datetime):
+        last_covered_day = last_covered_day.date()
     return _covered_days_cached(tuple(span), first_sale_date, last_covered_day)
 
 

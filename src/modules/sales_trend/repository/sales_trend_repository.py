@@ -113,10 +113,12 @@ def fetch_monthly_net_sales(
 
                         # Atualiza first_sale_date global sobre TODAS as linhas lidas (AR-12)
                         if row_first_date:
-                            if isinstance(row_first_date, date):
+                            if hasattr(row_first_date, "date") and callable(getattr(row_first_date, "date")):
+                                f_date = row_first_date.date()
+                            elif isinstance(row_first_date, date):
                                 f_date = row_first_date
                             else:
-                                f_date = row_first_date.date() if hasattr(row_first_date, "date") else None
+                                f_date = None
                             if f_date:
                                 if global_min_sale_date is None or f_date < global_min_sale_date:
                                     global_min_sale_date = f_date
