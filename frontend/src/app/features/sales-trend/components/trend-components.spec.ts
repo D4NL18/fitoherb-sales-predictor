@@ -1,7 +1,7 @@
 /**
  * Testes unitários para componentes base e controles da Tendência de Vendas (T-18).
  */
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { TrendPagerComponent } from './trend-pager/trend-pager.component';
 import { TrendErrorBannerComponent } from './trend-error-banner/trend-error-banner.component';
 import { TrendEmptyStateComponent } from './trend-empty-state/trend-empty-state.component';
@@ -9,6 +9,7 @@ import { SegmentedControlComponent } from './segmented-control/segmented-control
 import { InlineNoticeComponent } from './inline-notice/inline-notice.component';
 import { BaseMonthPickerComponent } from './base-month-picker/base-month-picker.component';
 import { TrendSearchFieldComponent } from './trend-search-field/trend-search-field.component';
+import { TrendToolbarComponent } from './trend-toolbar/trend-toolbar.component';
 import { TrendCellComponent } from './trend-cell/trend-cell.component';
 import { TrendCell } from '../models/sales-trend.model';
 
@@ -205,6 +206,87 @@ describe('Sales Trend Components (T-18)', () => {
       const el = fixture.nativeElement;
       expect(el.querySelector('.direction-arrow').textContent).toContain('▲');
       expect(el.querySelector('.variation-value').textContent).toContain('+50,0%');
+    });
+  });
+
+  describe('TrendSearchFieldComponent', () => {
+    let fixture: ComponentFixture<TrendSearchFieldComponent>;
+    let component: TrendSearchFieldComponent;
+
+    beforeEach(async () => {
+      await TestBed.configureTestingModule({
+        imports: [TrendSearchFieldComponent],
+      }).compileComponents();
+
+      fixture = TestBed.createComponent(TrendSearchFieldComponent);
+      component = fixture.componentInstance;
+      fixture.detectChanges();
+    });
+
+    it('mantém digitação contínua com debounce sem perder rascunho nem espaço final', fakeAsync(() => {
+      const emitted: string[] = [];
+      component.searchChange.subscribe((v) => emitted.push(v));
+
+      const input = fixture.nativeElement.querySelector('input.search-input') as HTMLInputElement;
+
+      input.value = 'c';
+      input.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+      tick(250);
+      expect(emitted).toEqual([]);
+      expect(input.value).toBe('c');
+
+      input.value = 'cha ';
+      input.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+      tick(250);
+      expect(emitted).toEqual(['cha ']);
+
+      // Simula retorno do parent com valor trimado (?q=cha): não deve apagar o espaço em digitação
+      fixture.componentRef.setInput('value', 'cha');
+      fixture.detectChanges();
+      expect(input.value).toBe('cha ');
+    }));
+
+    it('emite imediatamente no Enter e limpa ao resetar valor externo', fakeAsync(() => {
+      const emitted: string[] = [];
+      component.searchChange.subscribe((v) => emitted.push(v));
+
+      const input = fixture.nativeElement.querySelector('input.search-input') as HTMLInputElement;
+      input.value = '57';
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+      fixture.detectChanges();
+
+      expect(emitted).toEqual(['57']);
+
+      fixture.componentRef.setInput('value', '57');
+      fixture.detectChanges();
+      fixture.componentRef.setInput('value', undefined);
+      fixture.detectChanges();
+      expect(input.value).toBe('');
+      tick(300);
+    }));
+  });
+
+  describe('TrendToolbarComponent', () => {
+    let fixture: ComponentFixture<TrendToolbarComponent>;
+
+    beforeEach(async () => {
+      await TestBed.configureTestingModule({
+        imports: [TrendToolbarComponent],
+      }).compileComponents();
+
+      fixture = TestBed.createComponent(TrendToolbarComponent);
+    });
+
+    it('nunca desabilita o campo de busca enquanto loading é true', () => {
+      fixture.componentRef.setInput('query', { groupBy: 'product', metric: 'revenue' });
+      fixture.componentRef.setInput('loading', true);
+      fixture.detectChanges();
+
+      const searchInput = fixture.nativeElement.querySelector('input.search-input') as HTMLInputElement;
+      expect(searchInput).toBeTruthy();
+      expect(searchInput.disabled).toBeFalse();
     });
   });
 });

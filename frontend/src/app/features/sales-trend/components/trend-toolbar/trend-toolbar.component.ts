@@ -77,7 +77,6 @@ import { TrendSearchFieldComponent } from '../trend-search-field/trend-search-fi
           <app-trend-search-field
             [placeholder]="searchPlaceholder()"
             [value]="query().q"
-            [disabled]="loading()"
             (searchChange)="searchChange.emit($event)"
           />
         </div>

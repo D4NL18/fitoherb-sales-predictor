@@ -1,8 +1,10 @@
 /**
  * Campo de busca estilizado com botão de limpeza e ícone de lupa (Design Plan §5.3).
  */
-import { Component, input, output } from '@angular/core';
+import { Component, DestroyRef, effect, inject, input, output, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
+
+const SEARCH_DEBOUNCE_MS = 250;
 
 @Component({
   selector: 'app-trend-search-field',
@@ -20,13 +22,13 @@ import { CommonModule } from '@angular/common';
         class="search-input"
         [placeholder]="placeholder()"
         [attr.aria-label]="label()"
-        [value]="value() || ''"
+        [value]="draftValue()"
         [disabled]="disabled()"
         (input)="onInput($event)"
         (keydown.enter)="onEnter($event)"
       />
 
-      @if (value() && value()!.trim().length > 0) {
+      @if (draftValue().trim().length > 0) {
         <button
           type="button"
           class="clear-btn"
@@ -98,6 +100,8 @@ import { CommonModule } from '@angular/common';
   `],
 })
 export class TrendSearchFieldComponent {
+  private readonly destroyRef = inject(DestroyRef);
+
   readonly label = input<string>('Buscar');
   readonly placeholder = input<string>('Código ou descrição do produto');
   readonly value = input<string | undefined>(undefined);
@@ -105,35 +109,73 @@ export class TrendSearchFieldComponent {
 
   readonly searchChange = output<string>();
 
+  readonly draftValue = signal<string>('');
+
+  private debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastEmittedNormalized: string | null = null;
+
+  constructor() {
+    effect(
+      () => {
+        const external = this.value() ?? '';
+        const externalNormalized = external.trim();
+        if (this.lastEmittedNormalized === null || externalNormalized !== this.lastEmittedNormalized) {
+          this.draftValue.set(external);
+          this.lastEmittedNormalized = externalNormalized;
+        }
+      },
+      { allowSignalWrites: true },
+    );
+
+    this.destroyRef.onDestroy(() => this.clearDebounceTimer());
+  }
+
   onInput(event: Event): void {
     const target = event.target as HTMLInputElement;
-    const val = target.value.trim();
-    if (!val) {
-      this.searchChange.emit('');
+    const raw = target.value;
+    this.draftValue.set(raw);
+    this.clearDebounceTimer();
+
+    const val = raw.trim();
+    if (val && !/^\d+$/.test(val) && val.length < 2) {
       return;
     }
-    // Aguarda pelo menos 2 caracteres se for busca textual (P-081.1)
-    if (!/^\d+$/.test(val) && val.length < 2) {
-      return;
-    }
-    this.searchChange.emit(target.value);
+
+    this.debounceTimer = setTimeout(() => {
+      this.debounceTimer = null;
+      this.emitSearch(raw);
+    }, SEARCH_DEBOUNCE_MS);
   }
 
   onEnter(event: Event): void {
     event.preventDefault();
+    this.clearDebounceTimer();
     const target = event.target as HTMLInputElement;
-    const val = target.value.trim();
-    if (!val) {
-      this.searchChange.emit('');
+    const raw = target.value;
+    this.draftValue.set(raw);
+
+    const val = raw.trim();
+    if (val && !/^\d+$/.test(val) && val.length < 2) {
       return;
     }
-    if (!/^\d+$/.test(val) && val.length < 2) {
-      return;
-    }
-    this.searchChange.emit(target.value);
+    this.emitSearch(raw);
   }
 
   clear(): void {
-    this.searchChange.emit('');
+    this.clearDebounceTimer();
+    this.draftValue.set('');
+    this.emitSearch('');
+  }
+
+  private emitSearch(raw: string): void {
+    this.lastEmittedNormalized = raw.trim();
+    this.searchChange.emit(raw);
+  }
+
+  private clearDebounceTimer(): void {
+    if (this.debounceTimer !== null) {
+      clearTimeout(this.debounceTimer);
+      this.debounceTimer = null;
+    }
   }
 }
