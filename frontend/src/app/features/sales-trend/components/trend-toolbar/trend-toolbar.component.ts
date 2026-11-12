@@ -1,6 +1,6 @@
 /**
  * Painel completo de controles da Tendência de Vendas (Design Plan §5.3).
- * Organizado em 3 faixas estruturais com grade assimétrica e chips de visualização.
+ * Organizado em 2 faixas estruturais: medição (agrupamento, métrica e mês-base) e filtro (busca e volume mínimo).
  */
 import { Component, computed, input, output } from '@angular/core';
 import { CommonModule } from '@angular/common';
@@ -9,7 +9,6 @@ import {
   TrendListMeta,
   TrendMetric,
   TrendQueryParams,
-  TrendView,
 } from '../../models/sales-trend.model';
 import {
   SegmentedControlComponent,
@@ -62,7 +61,7 @@ import { TrendSearchFieldComponent } from '../trend-search-field/trend-search-fi
         </div>
       </div>
 
-      <!-- Faixa 2: Quais itens -->
+      <!-- Faixa 2: Filtros de itens -->
       <div class="toolbar-row row-filter">
         <div class="search-wrapper">
           <app-trend-search-field
@@ -89,19 +88,6 @@ import { TrendSearchFieldComponent } from '../trend-search-field/trend-search-fi
             />
             <span class="volume-unit">{{ metricUnit() }}</span>
           </div>
-        </div>
-      </div>
-
-      <!-- Faixa 3: Atalhos de visualização -->
-      <div class="toolbar-row row-views">
-        <div class="views-group">
-          <span class="control-caption">Mostrar:</span>
-          <app-segmented-control
-            appearance="chips"
-            [options]="viewOptions()"
-            [value]="query().view || 'all'"
-            (valueChange)="viewChange.emit($event)"
-          />
         </div>
 
         @if (hasActiveFilters()) {
@@ -198,17 +184,6 @@ import { TrendSearchFieldComponent } from '../trend-search-field/trend-search-fi
       margin-left: 4px;
     }
 
-    .row-views {
-      justify-content: space-between;
-    }
-
-    .views-group {
-      display: flex;
-      align-items: center;
-      gap: var(--space-3, 12px);
-      flex-wrap: wrap;
-    }
-
     .clear-filters-btn {
       background: none;
       border: none;
@@ -217,6 +192,7 @@ import { TrendSearchFieldComponent } from '../trend-search-field/trend-search-fi
       font-size: 0.875rem;
       cursor: pointer;
       text-decoration: underline;
+      white-space: nowrap;
 
       &:hover {
         color: var(--brand-primary-hover);
@@ -232,7 +208,6 @@ export class TrendToolbarComponent {
   readonly groupByChange = output<TrendGroupBy>();
   readonly metricChange = output<TrendMetric>();
   readonly baseMonthChange = output<string>();
-  readonly viewChange = output<TrendView>();
   readonly searchChange = output<string>();
   readonly minVolumeChange = output<number>();
   readonly clearFilters = output<void>();
@@ -259,19 +234,8 @@ export class TrendToolbarComponent {
     const q = this.query();
     return Boolean(
       (q.q && q.q.trim().length > 0) ||
-      (typeof q.minVolume === 'number' && q.minVolume > 0) ||
-      (q.view && q.view !== 'all')
+      (typeof q.minVolume === 'number' && q.minVolume > 0)
     );
-  });
-
-  readonly viewOptions = computed<SegmentOption<TrendView>[]>(() => {
-    const counts = this.meta()?.totaisPorVisao;
-    return [
-      { value: 'all', label: 'Todos', count: counts?.todos },
-      { value: 'rising', label: 'Maiores altas', count: counts?.maioresAltas },
-      { value: 'falling', label: 'Maiores quedas', count: counts?.maioresQuedas },
-      { value: 'new', label: 'Novos', count: counts?.novos },
-    ];
   });
 
   onVolumeChange(event: Event): void {

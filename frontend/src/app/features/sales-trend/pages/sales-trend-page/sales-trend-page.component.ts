@@ -74,7 +74,6 @@ import { getDisplayErrorMessage } from '../../utils/trend-error';
           (groupByChange)="store.setGroupBy($event)"
           (metricChange)="store.setMetric($event)"
           (baseMonthChange)="store.setBaseMonth($event)"
-          (viewChange)="store.setView($event)"
           (searchChange)="store.setSearch($event)"
           (minVolumeChange)="store.setMinVolume($event)"
           (clearFilters)="onClearFilters()"
