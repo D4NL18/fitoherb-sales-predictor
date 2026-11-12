@@ -133,3 +133,72 @@ def fetch_catalog() -> pd.DataFrame:
     with _execute_readonly(_CATALOG_SQL) as cursor:
         rows = [tuple(row) for row in cursor.fetchall()]
     return pd.DataFrame(rows, columns=CATALOG_COLUMNS)
+
+
+# ---------------------------------------------------------------------------
+# F3: Churn de Clientes (P-117 a P-127; ADR-006 DA-02)
+# ---------------------------------------------------------------------------
+
+_CUSTOMER_ORDERS_SQL = f"""
+SELECT
+    [Cod Cliente] AS customer_code,
+    CAST([Data] AS date) AS order_date
+FROM Externo01.Vendas
+WHERE [Operação] = '{SALE_OPERATION}'
+  AND [Data] < ?
+GROUP BY [Cod Cliente], CAST([Data] AS date)
+ORDER BY [Cod Cliente], order_date
+""".strip()
+
+_CUSTOMER_MONTHLY_REVENUE_SQL = f"""
+SELECT
+    [Cod Cliente] AS customer_code,
+    YEAR([Data])  AS [year],
+    MONTH([Data]) AS [month],
+    SUM([Valor Venda]) AS net_revenue,
+    COUNT(DISTINCT [Pedido]) AS order_count
+FROM Externo01.Vendas
+WHERE ([Operação] = '{SALE_OPERATION}' OR [Operação] LIKE '{RETURN_OPERATION_PATTERN}')
+  AND [Data] < ?
+GROUP BY [Cod Cliente], YEAR([Data]), MONTH([Data])
+""".strip()
+
+_CUSTOMER_TOP_PRODUCTS_SQL = f"""
+SELECT
+    [Cod Cliente] AS customer_code,
+    [Cod Produto] AS sku,
+    MAX(CAST([Data] AS date)) AS last_date,
+    SUM([Valor Venda]) AS revenue
+FROM Externo01.Vendas
+WHERE ([Operação] = '{SALE_OPERATION}' OR [Operação] LIKE '{RETURN_OPERATION_PATTERN}')
+  AND [Data] < ?
+GROUP BY [Cod Cliente], [Cod Produto]
+HAVING SUM([Valor Venda]) > 0
+""".strip()
+
+
+def fetch_customer_orders(cutoff: date) -> pd.DataFrame:
+    """
+    Agregado customer_orders: datas de pedidos de VENDA por cliente (P-117, P-118).
+    """
+    with _execute_readonly(_CUSTOMER_ORDERS_SQL, (cutoff,)) as cursor:
+        rows = cursor.fetchall()
+    return pd.DataFrame(rows, columns=["customer_code", "order_date"])
+
+
+def fetch_customer_monthly_revenue(cutoff: date) -> pd.DataFrame:
+    """
+    Agregado customer_monthly_revenue: faturamento líquido de devoluções agrupado por mês (P-121).
+    """
+    with _execute_readonly(_CUSTOMER_MONTHLY_REVENUE_SQL, (cutoff,)) as cursor:
+        rows = cursor.fetchall()
+    return pd.DataFrame(rows, columns=["customer_code", "year", "month", "net_revenue", "order_count"])
+
+
+def fetch_customer_top_products(cutoff: date) -> pd.DataFrame:
+    """
+    Agregado de produtos comprados por cliente para identificação de produtos perdidos (P-126.3).
+    """
+    with _execute_readonly(_CUSTOMER_TOP_PRODUCTS_SQL, (cutoff,)) as cursor:
+        rows = cursor.fetchall()
+    return pd.DataFrame(rows, columns=["customer_code", "sku", "last_date", "revenue"])

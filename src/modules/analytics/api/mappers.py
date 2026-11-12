@@ -187,3 +187,114 @@ def to_search_response(page: PageResult, context: PageContext) -> ProductSearchR
     items: Sequence[CatalogEntry] = page.items
     return ProductSearchResponse(data=[to_consulted_product(entry) for entry in items],
                                  meta=PagedMeta(**_paged_fields(page, context)))
+
+
+# ---------------------------------------------------------------------------
+# F3: Churn de Clientes — Mappers (P-117 a P-127; ADR-006 DA-05)
+# ---------------------------------------------------------------------------
+from src.modules.analytics.api.schemas import (
+    ChurnCustomerItem,
+    ChurnCustomersData,
+    ChurnCustomersResponse,
+    ChurnSummaryKpi,
+    CustomerChurnDetailData,
+    CustomerChurnDetailResponse,
+    InactiveCustomerItem,
+    InactiveChurnData,
+    InactiveChurnResponse,
+    LostProductItem,
+    MonthlyHistoryItem,
+)
+from src.modules.analytics.domain.churn import ChurnCustomerSummary
+
+
+def to_churn_customers_response(page: PageResult, summary_kpi: dict, context: PageContext) -> ChurnCustomersResponse:
+    items = [
+        ChurnCustomerItem(
+            customer_code=c.customer_code,
+            status=c.status,
+            dias_sem_comprar=c.dias_sem_comprar,
+            gap_tipico=c.gap_tipico,
+            dias_referencia=c.dias_referencia,
+            fator_tempo=c.fator_tempo,
+            faturamento_medio_mensal=c.faturamento_medio_mensal,
+            score_prioridade=c.score_prioridade,
+            historico_curto=c.historico_curto,
+        )
+        for c in page.items
+    ]
+    resumo = ChurnSummaryKpi(
+        total_em_risco=summary_kpi.get("totalEmRisco", 0),
+        total_alerta=summary_kpi.get("totalAlerta", 0),
+        total_saudavel=summary_kpi.get("totalSaudavel", 0),
+        total_inativos=summary_kpi.get("totalInativos", 0),
+        receita_mensal_em_risco=summary_kpi.get("receitaMensalEmRisco", 0.0),
+    )
+    paged_meta_dict = _paged_fields(page, context)
+    return ChurnCustomersResponse(
+        data=ChurnCustomersData(resumo=resumo, items=items),
+        meta=PagedMeta(**paged_meta_dict),
+    )
+
+
+def to_customer_churn_detail_response(summary: ChurnCustomerSummary, reference_date: str) -> CustomerChurnDetailResponse:
+    hist_mensal = [
+        MonthlyHistoryItem(
+            ano_mes=f"{p.year:04d}-{p.month:02d}",
+            faturamento_liquido=p.net_revenue,
+            qtd_pedidos=p.order_count,
+        )
+        for p in summary.historico_mensal
+    ]
+    prod_perdidos = [
+        LostProductItem(
+            sku=p["sku"],
+            descricao=p["descricao"],
+            fornecedor=p["fornecedor"],
+            faturamento_historico=p["faturamentoHistorico"],
+            data_ultima_compra=p["dataUltimaCompra"],
+        )
+        for p in summary.produtos_perdidos
+    ]
+    data = CustomerChurnDetailData(
+        customer_code=summary.customer_code,
+        status=summary.status,
+        dias_sem_comprar=summary.dias_sem_comprar,
+        data_ultimo_pedido=summary.data_ultimo_pedido.isoformat() if summary.data_ultimo_pedido else None,
+        gap_tipico=summary.gap_tipico,
+        dias_referencia=summary.dias_referencia,
+        fator_tempo=summary.fator_tempo,
+        faturamento_medio_mensal=summary.faturamento_medio_mensal,
+        score_prioridade=summary.score_prioridade,
+        historico_curto=summary.historico_curto,
+        variacao_receita_trimestral_pct=summary.variacao_trimestral_pct,
+        historico_mensal=hist_mensal,
+        produtos_perdidos=prod_perdidos,
+    )
+    return CustomerChurnDetailResponse(
+        data=data,
+        meta=AnalyticsMeta(
+            timestamp=utc_timestamp(),
+            version="1.0.0",
+            data_referencia=reference_date,
+        ),
+    )
+
+
+def to_inactive_churn_response(page: PageResult, context: PageContext) -> InactiveChurnResponse:
+    items = [
+        InactiveCustomerItem(
+            customer_code=c.customer_code,
+            status=c.status,
+            dias_sem_comprar=c.dias_sem_comprar,
+            data_ultimo_pedido=c.data_ultimo_pedido.isoformat() if c.data_ultimo_pedido else None,
+            faturamento_medio_mensal=c.faturamento_medio_mensal,
+            historico_curto=c.historico_curto,
+        )
+        for c in page.items
+    ]
+    paged_meta_dict = _paged_fields(page, context)
+    return InactiveChurnResponse(
+        data=InactiveChurnData(total_inativos=page.total_items, items=items),
+        meta=PagedMeta(**paged_meta_dict),
+    )

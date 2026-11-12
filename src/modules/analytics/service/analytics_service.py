@@ -81,3 +81,45 @@ def search_products(query: str, page_request: PageRequest) -> ProductSearchRespo
     matches = search_catalog(catalog.search_index, query)
     context = mappers.PageContext(page_request, catalog.reference_date.isoformat())
     return mappers.to_search_response(paginate(matches, page_request), context)
+
+
+# ---------------------------------------------------------------------------
+# F3: Churn de Clientes — Casos de Uso (P-117 a P-127; ADR-006 DA-01)
+# ---------------------------------------------------------------------------
+from src.modules.analytics.api.schemas import (
+    ChurnCustomersResponse,
+    CustomerChurnDetailResponse,
+    InactiveChurnResponse,
+)
+from src.modules.analytics.domain.exceptions import CustomerChurnNotFoundError
+
+
+def get_churn_customers(status: Optional[str], page_request: PageRequest) -> ChurnCustomersResponse:
+    """Listagem paginada de clientes classificados por churn (P-123, P-124)."""
+    customers = analytics_cache.get_churn_customers_list(status)
+    summary_kpi = analytics_cache.get_churn_summary_stats()
+    page = paginate(customers, page_request)
+    now = analytics_cache._utc_now()
+    ref_date = analytics_cache.business_date(now)
+    context = mappers.PageContext(page_request, ref_date.isoformat())
+    return mappers.to_churn_customers_response(page, summary_kpi, context)
+
+
+def get_customer_churn_detail(customer_code: int) -> CustomerChurnDetailResponse:
+    """Detalhamento explicativo e diagnóstico do cliente (P-126)."""
+    summary = analytics_cache.get_customer_churn_detail(customer_code)
+    if summary is None:
+        raise CustomerChurnNotFoundError()
+    now = analytics_cache._utc_now()
+    ref_date = analytics_cache.business_date(now)
+    return mappers.to_customer_churn_detail_response(summary, ref_date.isoformat())
+
+
+def get_inactive_churn(page_request: PageRequest) -> InactiveChurnResponse:
+    """Fila especializada de reativação de clientes inativos antigos (P-125)."""
+    inactives = analytics_cache.get_inactive_churn_list()
+    page = paginate(inactives, page_request)
+    now = analytics_cache._utc_now()
+    ref_date = analytics_cache.business_date(now)
+    context = mappers.PageContext(page_request, ref_date.isoformat())
+    return mappers.to_inactive_churn_response(page, context)

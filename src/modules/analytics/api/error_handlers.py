@@ -33,6 +33,9 @@ ERROR_STATUS_BY_CODE: Dict[str, int] = {
     "XSL-004": 400,
     "ANL-001": 503,
     "ANL-002": 429,
+    "CHU-001": 404,
+    "CHU-002": 422,
+    "CHU-003": 400,
 }
 
 

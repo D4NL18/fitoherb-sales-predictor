@@ -9,7 +9,7 @@ Autenticação: middleware HTTP Basic global em produção (P-033, LGPD-10).
 """
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Optional, Annotated
 
 from fastapi import APIRouter, Path, Query
 from pydantic import AfterValidator
@@ -101,3 +101,50 @@ def get_customer_cross_sell(customer_code: CustomerCodePath, limit: LimitQuery =
 def search_products(q: SearchQuery, limit: SearchLimitQuery = DEFAULT_SEARCH_LIMIT,
                     offset: OffsetQuery = MIN_OFFSET) -> ProductSearchResponse:
     return analytics_service.search_products(q, PageRequest(limit=limit, offset=offset))
+
+
+# ---------------------------------------------------------------------------
+# F3: Churn de Clientes (P-117 a P-127; ADR-006 DA-05)
+# ---------------------------------------------------------------------------
+from src.modules.analytics.api.schemas import (
+    ChurnCustomersResponse,
+    CustomerChurnDetailResponse,
+    InactiveChurnResponse,
+)
+
+_CHURN_ERRORS = {
+    400: {**_ERROR, "description": "CHU-003: parâmetros de churn inválidos."},
+    404: {**_ERROR, "description": "CHU-001: cliente não encontrado ou sem compras de venda."},
+    422: {**_ERROR, "description": "CHU-002: base insuficiente para apuração de churn."},
+    503: {**_ERROR, "description": "ANL-001: base de vendas indisponível."},
+}
+
+
+@analytics_router.get("/churn/customers", response_model=ChurnCustomersResponse,
+                      summary="Listagem priorizada de clientes por score de churn",
+                      description="Clientes em risco ou alerta ordenados por scorePrioridade decrescente (P-123).",
+                      responses=_CHURN_ERRORS)
+def get_churn_customers(status: Optional[str] = Query(default="EM_RISCO", description="Filtro de status (EM_RISCO, ALERTA, SAUDAVEL, TODOS)."),
+                        limit: LimitQuery = DEFAULT_PAGE_LIMIT,
+                        offset: OffsetQuery = MIN_OFFSET) -> ChurnCustomersResponse:
+    if status is not None and status not in ("EM_RISCO", "ALERTA", "SAUDAVEL", "TODOS"):
+        from src.modules.analytics.domain.exceptions import ChurnInvalidParametersError
+        raise ChurnInvalidParametersError(fields=["status"])
+    return analytics_service.get_churn_customers(status, PageRequest(limit=limit, offset=offset))
+
+
+@analytics_router.get("/churn/customers/{customerCode}", response_model=CustomerChurnDetailResponse,
+                      summary="Detalhamento explicativo do cliente em churn",
+                      description="Decomposição do score, tendência trimestral e produtos perdidos (P-126).",
+                      responses=_CHURN_ERRORS)
+def get_customer_churn_detail(customer_code: CustomerCodePath) -> CustomerChurnDetailResponse:
+    return analytics_service.get_customer_churn_detail(customer_code)
+
+
+@analytics_router.get("/churn/inactive", response_model=InactiveChurnResponse,
+                      summary="Fila especializada de clientes inativos antigos (> 180 dias)",
+                      description="Inativos antigos ordenados por faturamento histórico para reativação (P-125).",
+                      responses=_CHURN_ERRORS)
+def get_inactive_churn(limit: LimitQuery = DEFAULT_PAGE_LIMIT,
+                       offset: OffsetQuery = MIN_OFFSET) -> InactiveChurnResponse:
+    return analytics_service.get_inactive_churn(PageRequest(limit=limit, offset=offset))

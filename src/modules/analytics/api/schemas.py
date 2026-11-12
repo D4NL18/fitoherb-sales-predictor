@@ -288,3 +288,105 @@ class ProductSearchResponse(CamelModel):
 
 
 ProductSearchItem = ConsultedProduct  # nome do contrato §3.6 / checklist B-20
+
+
+# ---------------------------------------------------------------------------
+# F3: Churn de Clientes (P-117 a P-127; ADR-006 DA-05)
+# ---------------------------------------------------------------------------
+
+ChurnStatusFilterLiteral = Literal["EM_RISCO", "ALERTA", "SAUDAVEL", "TODOS"]
+
+
+class ChurnSummaryKpi(CamelModel):
+    """Métricas consolidadas de impacto de churn da carteira."""
+    total_em_risco: int = Field(description="Total de clientes em risco.")
+    total_alerta: int = Field(description="Total de clientes em alerta.")
+    total_saudavel: int = Field(description="Total de clientes saudáveis.")
+    total_inativos: int = Field(description="Total de clientes inativos antigos (> 180 dias).")
+    receita_mensal_em_risco: float = Field(description="Soma do faturamento médio mensal dos clientes em risco (R$).")
+
+
+class ChurnCustomerItem(CamelModel):
+    """Item resumido do cliente na tabela priorizada de churn."""
+    customer_code: int = Field(description="Código do cliente no ERP.")
+    status: str = Field(description="Status operacional: EM_RISCO, ALERTA, SAUDAVEL.")
+    dias_sem_comprar: int = Field(description="Dias corridos desde o último pedido de VENDA.")
+    gap_tipico: Optional[float] = Field(default=None, description="Mediana dos intervalos entre compras (dias).")
+    dias_referencia: int = Field(description="Régua de referência de compra do cliente (dias).")
+    fator_tempo: float = Field(description="Urgência temporal adimensional (saturada em 2.0).")
+    faturamento_medio_mensal: float = Field(description="Faturamento médio mensal líquido de devoluções (R$).")
+    score_prioridade: float = Field(description="Score ponderado em R$: faturamentoMedioMensal x fatorTempo.")
+    historico_curto: bool = Field(description="True se o cliente possui menos de 3 pedidos no histórico.")
+
+
+class ChurnCustomersData(CamelModel):
+    """Corpo 'data' da listagem priorizada de churn."""
+    resumo: ChurnSummaryKpi = Field(description="KPIs de impacto financeiro e contagens.")
+    items: List[ChurnCustomerItem] = Field(description="Clientes ordenados por score de retenção decrescente.")
+
+
+class ChurnCustomersResponse(CamelModel):
+    """Resposta de GET /analytics/churn/customers."""
+    data: ChurnCustomersData = Field(description="Dados de clientes e resumo.")
+    meta: PagedMeta = Field(description="Metadados de paginação.")
+
+
+class MonthlyHistoryItem(CamelModel):
+    """Ponto de histórico mensal de compras do cliente."""
+    ano_mes: str = Field(description="Ano e mês no formato AAAA-MM.")
+    faturamento_liquido: float = Field(description="Faturamento líquido do mês em R$.")
+    qtd_pedidos: int = Field(description="Quantidade de pedidos no mês.")
+
+
+class LostProductItem(CamelModel):
+    """Produto relevante adquirido no passado e ausente nos últimos 60 dias."""
+    sku: int = Field(description="Código do produto.")
+    descricao: str = Field(description="Descrição comercial.")
+    fornecedor: str = Field(description="Laboratório / Fabricante.")
+    faturamento_historico: float = Field(description="Total comprado nos últimos 12 meses (R$).")
+    data_ultima_compra: str = Field(description="Data da última compra do produto (AAAA-MM-DD).")
+
+
+class CustomerChurnDetailData(CamelModel):
+    """Corpo 'data' do detalhamento do cliente."""
+    customer_code: int = Field(description="Código do cliente.")
+    status: str = Field(description="Status: EM_RISCO, ALERTA, SAUDAVEL, INATIVO_RECUPERACAO.")
+    dias_sem_comprar: int = Field(description="Dias desde a última compra.")
+    data_ultimo_pedido: Optional[str] = Field(default=None, description="Data do último pedido (AAAA-MM-DD).")
+    gap_tipico: Optional[float] = Field(default=None, description="Intervalo habitual entre compras.")
+    dias_referencia: int = Field(description="Régua de expectativa de compra.")
+    fator_tempo: float = Field(description="Fator de urgência temporal.")
+    faturamento_medio_mensal: float = Field(description="Média mensal líquida de devoluções (R$).")
+    score_prioridade: float = Field(description="Score de Prioridade de Retenção (R$).")
+    historico_curto: bool = Field(description="Flag de histórico curto (< 3 pedidos).")
+    variacao_receita_trimestral_pct: Optional[float] = Field(default=None, description="Variação % últimos 3m vs 3m anteriores.")
+    historico_mensal: List[MonthlyHistoryItem] = Field(default_factory=list, description="Série mensal histórica.")
+    produtos_perdidos: List[LostProductItem] = Field(default_factory=list, description="Top SKUs perdidos.")
+
+
+class CustomerChurnDetailResponse(CamelModel):
+    """Resposta de GET /analytics/churn/customers/{customerCode}."""
+    data: CustomerChurnDetailData = Field(description="Detalhamento e diagnóstico do cliente.")
+    meta: AnalyticsMeta = Field(description="Metadados de resposta.")
+
+
+class InactiveCustomerItem(CamelModel):
+    """Item resumido de cliente inativo de longa data (> 180 dias)."""
+    customer_code: int = Field(description="Código do cliente.")
+    status: str = Field(default="INATIVO_RECUPERACAO", description="Status fixo.")
+    dias_sem_comprar: int = Field(description="Dias sem comprar (> 180).")
+    data_ultimo_pedido: Optional[str] = Field(default=None, description="Data da última compra.")
+    faturamento_medio_mensal: float = Field(description="Faturamento histórico médio mensal (R$).")
+    historico_curto: bool = Field(description="Flag de histórico curto.")
+
+
+class InactiveChurnData(CamelModel):
+    """Corpo 'data' da fila de clientes inativos antigos."""
+    total_inativos: int = Field(description="Total de clientes na fila de inativos.")
+    items: List[InactiveCustomerItem] = Field(description="Clientes inativos ordenados por faturamento decrescente.")
+
+
+class InactiveChurnResponse(CamelModel):
+    """Resposta de GET /analytics/churn/inactive."""
+    data: InactiveChurnData = Field(description="Fila de inativos antigos.")
+    meta: PagedMeta = Field(description="Metadados de paginação.")
