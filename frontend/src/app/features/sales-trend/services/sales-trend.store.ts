@@ -216,6 +216,9 @@ export class SalesTrendStore {
 
   setSearch(q: string | undefined): void {
     const cleanQ = q && q.trim().length > 0 ? q.trim() : undefined;
+    if (cleanQ && !/^\d+$/.test(cleanQ) && cleanQ.length < 2) {
+      return;
+    }
     if (this.query().q === cleanQ) {
       return;
     }

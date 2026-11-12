@@ -107,12 +107,29 @@ export class TrendSearchFieldComponent {
 
   onInput(event: Event): void {
     const target = event.target as HTMLInputElement;
+    const val = target.value.trim();
+    if (!val) {
+      this.searchChange.emit('');
+      return;
+    }
+    // Aguarda pelo menos 2 caracteres se for busca textual (P-081.1)
+    if (!/^\d+$/.test(val) && val.length < 2) {
+      return;
+    }
     this.searchChange.emit(target.value);
   }
 
   onEnter(event: Event): void {
     event.preventDefault();
     const target = event.target as HTMLInputElement;
+    const val = target.value.trim();
+    if (!val) {
+      this.searchChange.emit('');
+      return;
+    }
+    if (!/^\d+$/.test(val) && val.length < 2) {
+      return;
+    }
     this.searchChange.emit(target.value);
   }
 
