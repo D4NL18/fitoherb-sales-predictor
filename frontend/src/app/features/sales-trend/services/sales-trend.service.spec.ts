@@ -49,6 +49,7 @@ describe('SalesTrendService (T-14)', () => {
       .getTrend({
         baseMonth: '2026-10',
         metric: 'quantity',
+        comparisonMode: 'average',
         groupBy: 'supplier',
         sortWindow: 1,
         sortDir: 'asc',
@@ -64,6 +65,7 @@ describe('SalesTrendService (T-14)', () => {
     expect(req.request.method).toBe('GET');
     expect(req.request.params.get('baseMonth')).toBe('2026-10');
     expect(req.request.params.get('metric')).toBe('quantity');
+    expect(req.request.params.get('comparisonMode')).toBe('average');
     expect(req.request.params.get('groupBy')).toBe('supplier');
     expect(req.request.params.get('sortWindow')).toBe('1');
     expect(req.request.params.get('sortDir')).toBe('asc');

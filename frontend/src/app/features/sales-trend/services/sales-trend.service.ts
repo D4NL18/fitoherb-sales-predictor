@@ -70,6 +70,9 @@ export class SalesTrendService {
     if (params.metric && params.metric !== 'revenue') {
       httpParams = httpParams.set('metric', params.metric);
     }
+    if (params.comparisonMode) {
+      httpParams = httpParams.set('comparisonMode', params.comparisonMode);
+    }
     if (params.groupBy && params.groupBy !== 'product') {
       httpParams = httpParams.set('groupBy', params.groupBy);
     }
@@ -106,6 +109,9 @@ export class SalesTrendService {
     }
     if (params.metric && params.metric !== 'revenue') {
       httpParams = httpParams.set('metric', params.metric);
+    }
+    if (params.comparisonMode) {
+      httpParams = httpParams.set('comparisonMode', params.comparisonMode);
     }
     if (params.sortBy && params.sortBy !== 'contribution') {
       httpParams = httpParams.set('sortBy', params.sortBy);
