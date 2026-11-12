@@ -161,14 +161,15 @@ Expor os endpoints `GET /analytics/cannibalization/{sku}` e `GET /analytics/subs
 ### Tarefa 7: Design Plan e Interface do Usuário (Frontend Angular)
 
 **Descritivo Detalhado:**
-Especificar o Design Plan completo da feature para o módulo Angular, incluindo:
-1. Linha do tempo interativa destacando o evento ($T_0$) e as janelas pré e pós.
-2. Tabela de produtos afetados com badges visuais de classificação (`CANIBALIZACAO`, `COMPLEMENTO`, `SEM_EFEITO`), $\Delta$ unidades, $\Delta$ margem e nível de confiança estatística.
-3. Card executivo de efeito líquido (Volume líquido, Receita líquida, Margem líquida e Veredito Comercial).
-4. Cobertura rigorosa dos 8 estados visuais obrigatórios (Default, Hover/Focus, Loading Shimmer, Empty State, Erro de API, Sem Eventos Elegíveis, Controle Insuficiente e Parâmetro Inválido).
+Especificar e implementar a UI da feature reutilizando a casca e os componentes compartilhados de `frontend/src/app/features/analytics/` (`AnalyticsShellComponent`, `CodeSearchFormComponent`, `ModeSwitchComponent`, `QueryContextHeaderComponent`, `ErrorBannerComponent`, `ResultStateComponent`, `ListPagerComponent`, `analytics-error.ts`, `pt-br-format`), incluindo:
+1. Alternância entre **Impacto de evento (DiD)** (`/cannibalization/{sku}`, com `eventType`, `eventDate` opcional, `windowWeeks` e `includeNonSignificant`) e **Mapa de substitutos** (`/substitution/{sku}`, com `minJaccard` e `limit`).
+2. Card executivo de efeito líquido (`NetImpactCardComponent`: Volume líquido, Receita líquida, Margem líquida e Veredito Comercial) e avisos contextuais para controle expandido (`isExpandedControl`), fallback de custo (`costFallbackUsed`) e degradação graciosa da Fase F5 (`elasticityIntegration.status === "NAO_INTEGRADO"`).
+3. Linha do tempo SVG baseada em `timelineSeries[]` destacando o evento ($T_0$) e as janelas pré/pós com distinção por cor + traço + marcador, navegação por teclado nos pontos semanais e `<table>` acessível completa.
+4. Lista de produtos afetados com classificação acessível por cor + símbolo + rótulo (`CANIBALIZACAO`, `COMPLEMENTO`, `MIGRACAO_POSITIVA`, `SEM_EFEITO`), cards responsivos em `< 640px` sem scroll horizontal, alvos tocáveis `>= 40px` e drawer de detalhe (`role="dialog" aria-modal="true"`, trap de foco com `inert` e restauração de foco no `Esc`).
+5. Cobertura dos 8 estados interativos (`default`, `hover`, `focus-visible`, `active`, `disabled`, `loading` solid-pulse + aviso 4s, `empty` e `error` `CAN-001..005` + `ANL-001`), `ChangeDetectionStrategy.OnPush`, `switchMap` + `takeUntilDestroyed` e sincronização sanitizada de query params na URL.
 
 **Critérios de Aceite:**
 - [ ] Design Plan formalizado em `.agents/docs/design/plans/analytics-canibalizacao.md`.
-- [ ] Aderência estrita aos tokens do `DESIGN_SYSTEM.md` (Papel & Tinta).
-- [ ] Zero spinners solitários: especificação de Skeleton Loaders Shimmer.
-- [ ] Zero gradientes genéricos ("AI Purple") e copywriting humano direto ao ponto.
+- [ ] Aderência estrita aos tokens reais Papel & Tinta de `frontend/src/styles.scss` e `styles/_analytics-ui.scss` (contraste AA nos badges `.tag-*` com texto branco e banners `--bg-surface` com borda esquerda `3px`, sem `--text-muted` sobre fundos sutis).
+- [ ] Reaproveitamento efetivo dos componentes compartilhados do módulo `analytics` e conversão segura de escala percentual (`points` vs `ratio`) sem `any`.
+- [ ] Zero spinners solitários e zero gradientes ("AI Purple"): Skeletons solid-pulse (`.skeleton-box` / `.skeleton-line`) + aviso de 4s para cold cache, com copywriting direto ao ponto.

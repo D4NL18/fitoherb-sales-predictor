@@ -19,13 +19,15 @@
 
 ## 2. Padrão de Envelope de Resposta
 
-Conforme `.agents/rules/backend-api-contract-rules.md`, nenhuma resposta HTTP 2xx deve retornar dados soltos na raiz. O envelope `{ "data": ..., "meta": ... }` é obrigatório.
+Conforme `.agents/rules/backend-api-contract-rules.md`, nenhuma resposta HTTP 2xx deve retornar dados soltos na raiz. O envelope `{ "data": ..., "meta": ... }` é obrigatório e estende `AnalyticsMeta` (`timestamp`, `version`, `dataReferencia`) definido em `frontend/src/app/features/analytics/models/analytics.model.ts`.
 
 ```json
 {
   "data": {},
   "meta": {
     "timestamp": "2026-11-12T14:30:00Z",
+    "version": "1.0.0",
+    "dataReferencia": "2026-11-12",
     "sku": "100234",
     "eventType": "promo",
     "windowWeeks": 4
@@ -45,7 +47,7 @@ Conforme `.agents/rules/backend-api-contract-rules.md`, nenhuma resposta HTTP 2x
 #### Parâmetros de Rota (Path Parameters)
 | Parâmetro | Tipo | Obrigatório? | Descrição |
 | :--- | :--- | :--- | :--- |
-| `sku` | `string` | Sim | Código do produto alvo analisado (ex: `"100234"`). Validação: numérico ou alfanumérico não-vazio. |
+| `sku` | `string` | Sim | Código inteiro positivo do produto alvo analisado no catálogo (`Externo01.Produto.Codigo`, ex: `"100234"`). Validação: dígitos `^[1-9]\d*$`. |
 
 #### Parâmetros de Consulta (Query Parameters)
 | Parâmetro | Tipo | Obrigatório? | Default | Validação / Limites | Descrição |
@@ -66,6 +68,9 @@ Conforme `.agents/rules/backend-api-contract-rules.md`, nenhuma resposta HTTP 2x
       "category": "EXTRATOS",
       "eventType": "promo",
       "eventDate": "2026-09-01",
+      "priceDirection": "PRICE_DROP",
+      "avgPriceChangePct": -22.86,
+      "costFallbackUsed": false,
       "prePeriod": {
         "startDate": "2026-08-04",
         "endDate": "2026-08-31",
@@ -92,8 +97,27 @@ Conforme `.agents/rules/backend-api-contract-rules.md`, nenhuma resposta HTTP 2x
       "sampleSize": 14,
       "growthFactor": 1.05,
       "controlStrategy": "CATEGORIAL",
+      "isExpandedControl": false,
       "description": "14 produtos estáveis da categoria EXTRATOS sem promoções ou alterações de preço no período."
     },
+    "timelineSeries": [
+      {
+        "weekOffset": -4,
+        "startDate": "2026-08-04",
+        "endDate": "2026-08-10",
+        "period": "PRE",
+        "targetVolume": 102.0,
+        "controlTotalVolume": 410.0
+      },
+      {
+        "weekOffset": 1,
+        "startDate": "2026-09-01",
+        "endDate": "2026-09-07",
+        "period": "POST",
+        "targetVolume": 265.0,
+        "controlTotalVolume": 430.0
+      }
+    ],
     "affectedProducts": [
       {
         "sku": "100235",
@@ -108,6 +132,7 @@ Conforme `.agents/rules/backend-api-contract-rules.md`, nenhuma resposta HTTP 2x
         "deltaVolumePct": -49.31,
         "unitPrice": 22.00,
         "unitMargin": 9.50,
+        "costFallbackUsed": false,
         "deltaRevenue": -3531.00,
         "deltaMargin": -1524.75,
         "classification": "CANIBALIZACAO",
@@ -130,6 +155,7 @@ Conforme `.agents/rules/backend-api-contract-rules.md`, nenhuma resposta HTTP 2x
         "deltaVolumePct": -41.80,
         "unitPrice": 28.00,
         "unitMargin": 12.00,
+        "costFallbackUsed": false,
         "deltaRevenue": -2212.00,
         "deltaMargin": -948.00,
         "classification": "CANIBALIZACAO",
@@ -152,6 +178,7 @@ Conforme `.agents/rules/backend-api-contract-rules.md`, nenhuma resposta HTTP 2x
         "deltaVolumePct": 45.36,
         "unitPrice": 16.50,
         "unitMargin": 6.80,
+        "costFallbackUsed": false,
         "deltaRevenue": 746.63,
         "deltaMargin": 307.70,
         "classification": "COMPLEMENTO",
@@ -182,6 +209,8 @@ Conforme `.agents/rules/backend-api-contract-rules.md`, nenhuma resposta HTTP 2x
   },
   "meta": {
     "timestamp": "2026-11-12T14:30:00Z",
+    "version": "1.0.0",
+    "dataReferencia": "2026-11-12",
     "sku": "100234",
     "eventType": "promo",
     "windowWeeks": 4,
@@ -189,6 +218,15 @@ Conforme `.agents/rules/backend-api-contract-rules.md`, nenhuma resposta HTTP 2x
   }
 }
 ```
+
+#### Enums e Estruturas Complementares do Payload (`3.1`)
+- **`targetProduct.priceDirection` (`P-129.2`):** `"PRICE_DROP"` | `"PRICE_HIKE"` | `"NONE"`.
+- **`controlGroup.controlStrategy` (`P-131.4`):** `"CATEGORIAL"` | `"FORNECEDOR"` | `"GLOBAL"`. Quando diferente de `"CATEGORIAL"`, `isExpandedControl` é `true` (tag de domínio `CONTROLE_EXPANDIDO`).
+- **`timelineSeries[]` (`P-130`):** Vetor ordenado cronologicamente com as $2W$ semanas simétricas (`weekOffset` de `-W` a `-1` para `"PRE"` e `1` a `W` para `"POST"`), permitindo ao frontend plotar a linha do tempo real sem cálculos heurísticos. Contém apenas somas agregadas por semana (zero `Cod Cliente`).
+- **`affectedProducts[].classification` (`P-134`):** `"CANIBALIZACAO"` | `"COMPLEMENTO"` | `"MIGRACAO_POSITIVA"` | `"SEM_EFEITO"`.
+- **`netImpact.commercialVerdict` (`P-135.5`):** `"VALEU_A_PENA"` | `"ILUSAO_DE_VOLUME"` | `"PREJUIZO_TOTAL"`.
+- **`elasticityIntegration.status` (`P-136.3`):** `"NAO_INTEGRADO"` | `"INTEGRADO"` | `"PARCIAL"`.
+- **`affectedProducts[].elasticityDecomposition` (`P-136.2`):** `null` quando `NAO_INTEGRADO`; quando `INTEGRADO` (e aplicável ao item), retorna `{ "crossElasticity": number, "priceExplainedDeltaVolume": number, "residualDeltaVolume": number, "priceExplainedShare": number }`.
 
 ---
 
@@ -200,7 +238,7 @@ Conforme `.agents/rules/backend-api-contract-rules.md`, nenhuma resposta HTTP 2x
 #### Parâmetros de Rota (Path Parameters)
 | Parâmetro | Tipo | Obrigatório? | Descrição |
 | :--- | :--- | :--- | :--- |
-| `sku` | `string` | Sim | Código do produto alvo (ex: `"100234"`). |
+| `sku` | `string` | Sim | Código inteiro positivo do produto alvo (`Externo01.Produto.Codigo`, ex: `"100234"`). Validação: dígitos `^[1-9]\d*$`. |
 
 #### Parâmetros de Consulta (Query Parameters)
 | Parâmetro | Tipo | Obrigatório? | Default | Validação / Limites | Descrição |
@@ -250,6 +288,8 @@ Conforme `.agents/rules/backend-api-contract-rules.md`, nenhuma resposta HTTP 2x
   },
   "meta": {
     "timestamp": "2026-11-12T14:30:00Z",
+    "version": "1.0.0",
+    "dataReferencia": "2026-11-12",
     "targetSku": "100234",
     "totalFound": 3,
     "executionTimeMs": 28
@@ -261,29 +301,35 @@ Conforme `.agents/rules/backend-api-contract-rules.md`, nenhuma resposta HTTP 2x
 
 ## 4. Matriz de Erros HTTP e Payloads de Falha
 
-| Código HTTP | Código Interno | Causa Raiz | Exemplo de Mensagem Amigável |
-| :--- | :--- | :--- | :--- |
-| **`400 Bad Request`** | `CAN-004` | Parâmetro de query inválido (ex: `eventType=invalido`, `windowWeeks=20`, `eventDate` malformada). | `"O parâmetro windowWeeks deve estar entre 2 e 12 semanas."` |
-| **`404 Not Found`** | `CAN-001` | SKU alvo não existe no catálogo ativo da Fitoherb. | `"Produto de código 999999 não localizado no catálogo ativo."` |
-| **`422 Unprocessable`**| `CAN-002` | Evento especificado não localizado no histórico transacional do produto. | `"Nenhum evento promocional recente registrado para o produto informado."` |
-| **`422 Unprocessable`**| `CAN-003` | Histórico de vendas insuficiente para formar janelas pré/pós ou tamanho de controle inválido. | `"Histórico transacional insuficiente para compor as janelas pré e pós de 4 semanas."` |
-| **`500 Internal Error`**| `CAN-005` | Falha de conectividade com o SQL Server ou erro interno não tratado. | `"Não foi possível processar a análise de canibalização no momento. Tente novamente mais tarde."` |
+| Código HTTP | Código Interno | Causa Raiz | `fields` | Exemplo de Mensagem Amigável |
+| :--- | :--- | :--- | :--- | :--- |
+| **`400 Bad Request`** | `CAN-004` | Parâmetro de rota ou query inválido (ex: `sku` não numérico, `eventType=invalido`, `windowWeeks=20`, `eventDate` malformada ou futura). | Nomes dos parâmetros inválidos (ex: `["windowWeeks"]`, `["eventDate"]`) | `"Parâmetros inválidos: windowWeeks."` |
+| **`404 Not Found`** | `CAN-001` | SKU alvo não existe no catálogo ativo da Fitoherb. | `[]` | `"Produto não encontrado no catálogo ativo."` |
+| **`422 Unprocessable`**| `CAN-002` | Evento especificado não localizado no histórico transacional do produto. | `[]` | `"Nenhum evento promocional recente registrado para o produto informado."` |
+| **`422 Unprocessable`**| `CAN-003` | Histórico de vendas insuficiente para formar janelas pré/pós ou tamanho de controle inválido. | `[]` | `"Histórico transacional insuficiente para compor as janelas pré e pós de 4 semanas."` |
+| **`500 Internal Error`**| `CAN-005` | Erro interno inesperado no processamento estatístico da análise. | `[]` | `"Não foi possível processar a análise de canibalização no momento. Tente novamente mais tarde."` |
+| **`503 Service Unavailable`**| `ANL-001` | Indisponibilidade ou timeout do SQL Server (handler compartilhado do módulo `analytics`). | `[]` | `"Base de vendas indisponível no momento. Tente novamente em instantes."` |
 
 ### Formato de Erro Padronizado (HTTP 4xx / 5xx)
+
+Compatível com `src/modules/analytics/api/error_handlers.py` e `frontend/src/app/features/analytics/utils/analytics-error.ts` (`error.fields` sempre presente como array de strings, além de `meta` padrão e `details` opcional `null` para aderência estrita a `P-138.3`):
 
 ```json
 {
   "error": {
     "code": "CAN-002",
     "message": "Nenhum evento promocional recente registrado para o produto informado.",
-    "details": {
-      "sku": "100234",
-      "eventType": "promo",
-      "suggestion": "Tente informar eventType=price para analisar variações de preço regulares ou informe uma data explícita via eventDate."
-    }
+    "fields": [],
+    "details": null
+  },
+  "meta": {
+    "timestamp": "2026-11-12T14:30:00Z",
+    "version": "1.0.0"
   }
 }
 ```
+
+> **Diretriz de Segurança (LGPD-CAN-06):** Nunca ecoar o valor inválido recebido em `message` ou `details` (ex.: nunca incluir o input bruto de `sku` ou `eventDate`). No erro `400 CAN-004`, o frontend identifica o campo afetado exclusivamente por `error.fields[]`, e mapeia a mensagem de tela pelo `error.code`.
 
 ---
 
