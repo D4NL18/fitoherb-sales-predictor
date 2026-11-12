@@ -16,6 +16,11 @@ export const ANALYTICS_ROUTES: Routes = [
         loadComponent: () =>
           import('./pages/cross-sell-page/cross-sell-page.component').then((m) => m.CrossSellPageComponent),
       },
+      {
+        path: 'elasticity',
+        loadComponent: () =>
+          import('./pages/elasticity-page/elasticity-page.component').then((m) => m.ElasticityPageComponent),
+      },
     ],
   },
 ];

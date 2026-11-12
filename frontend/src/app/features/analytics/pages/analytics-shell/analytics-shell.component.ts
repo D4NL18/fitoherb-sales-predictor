@@ -20,6 +20,11 @@ export const ANALYTICS_SECTIONS: readonly AnalyticsSection[] = [
     path: '/analytics/cross-sell',
     description: 'O que oferecer junto com um produto ou a um cliente',
   },
+  {
+    label: 'Elasticidade',
+    path: '/analytics/elasticity',
+    description: 'Sensibilidade de preço por produto e cliente com simulador de reajustes',
+  },
 ];
 
 @Component({

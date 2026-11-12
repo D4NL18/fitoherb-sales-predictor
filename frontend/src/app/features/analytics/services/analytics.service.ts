@@ -8,6 +8,12 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { AnalyticsHealthResponse, PageRequest } from '../models/analytics.model';
 import {
+  CustomerElasticityResponse,
+  ElasticitySimulationRequest,
+  ElasticitySimulationResponse,
+  ProductElasticityResponse,
+} from '../models/elasticity.models';
+import {
   CustomerCrossSellResponse,
   ProductCrossSellResponse,
   ProductSearchResponse,
@@ -42,6 +48,23 @@ export class AnalyticsService {
     return this.http.get<ProductSearchResponse>(`${this.baseUrl}/products/search`, {
       params: toPageParams(page).set('q', query),
     });
+  }
+
+  /** Elasticidade do produto e clientes (P-096, P-103). */
+  getProductElasticity(sku: number, page: PageRequest): Observable<ProductElasticityResponse> {
+    return this.http.get<ProductElasticityResponse>(`${this.baseUrl}/elasticity/product/${sku}`, {
+      params: toPageParams(page),
+    });
+  }
+
+  /** Elasticidade do par produto x cliente via shrinkage (P-097). */
+  getCustomerElasticity(sku: number, customerCode: number): Observable<CustomerElasticityResponse> {
+    return this.http.get<CustomerElasticityResponse>(`${this.baseUrl}/elasticity/product/${sku}/customer/${customerCode}`);
+  }
+
+  /** Simulação de impacto de reajuste de preço (P-101). */
+  simulatePriceChange(request: ElasticitySimulationRequest): Observable<ElasticitySimulationResponse> {
+    return this.http.post<ElasticitySimulationResponse>(`${this.baseUrl}/elasticity/simulate`, request);
   }
 }
 

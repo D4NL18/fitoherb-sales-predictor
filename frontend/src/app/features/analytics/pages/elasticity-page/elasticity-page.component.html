@@ -1,0 +1,360 @@
+<div class="elasticity-container">
+  <!-- 1. Barra de Busca e Controle de Produto -->
+  <section class="search-section" aria-label="Busca de Produto para Elasticidade">
+    <div class="search-bar-card">
+      <div class="search-input-group">
+        <label for="sku-input" class="search-label">Código do Produto (SKU)</label>
+        <div class="input-with-button">
+          <input
+            id="sku-input"
+            type="number"
+            class="sku-input"
+            [(ngModel)]="searchSku"
+            (keyup.enter)="loadProductElasticity()"
+            placeholder="Ex: 1001"
+            min="1"
+            aria-describedby="sku-hint"
+          />
+          <button
+            type="button"
+            class="btn-search"
+            (click)="loadProductElasticity()"
+            [disabled]="status() === 'loading'"
+          >
+            @if (status() === 'loading') {
+              <span class="spinner" aria-hidden="true"></span>
+              Consultando...
+            } @else {
+              Analisar Elasticidade
+            }
+          </button>
+        </div>
+        <span id="sku-hint" class="search-hint">
+          Informe o código do produto cadastrado para calcular a sensibilidade de demanda e simular reajustes.
+        </span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2. Estado Loading: Skeleton Loaders -->
+  @if (status() === 'loading') {
+    <div class="skeleton-wrapper" aria-busy="true" aria-label="Carregando dados de elasticidade">
+      <div class="skeleton-card skeleton-header"></div>
+      <div class="skeleton-grid">
+        <div class="skeleton-card skeleton-metric"></div>
+        <div class="skeleton-card skeleton-metric"></div>
+        <div class="skeleton-card skeleton-metric"></div>
+      </div>
+      <div class="skeleton-card skeleton-simulator"></div>
+      <div class="skeleton-card skeleton-table"></div>
+    </div>
+  }
+
+  <!-- 3. Estado Error -->
+  @if (status() === 'error') {
+    <div class="error-banner" role="alert">
+      <div class="error-icon" aria-hidden="true">⚠️</div>
+      <div class="error-content">
+        <h3 class="error-title">Não foi possível consultar a elasticidade</h3>
+        <p class="error-message">{{ errorMessage() }}</p>
+        @if (errorCode()) {
+          <span class="error-code-badge">Código: {{ errorCode() }}</span>
+        }
+      </div>
+      <button type="button" class="btn-retry" (click)="loadProductElasticity()">
+        Tentar Novamente
+      </button>
+    </div>
+  }
+
+  <!-- 4. Estado Success: Conteúdo Analítico Completo -->
+  @if (status() === 'success' && productData(); as data) {
+    <!-- Diagnóstico do Produto -->
+    <section class="product-diagnostic-card" aria-labelledby="product-title">
+      <div class="product-header-row">
+        <div class="product-info">
+          <span class="product-sku-badge">SKU #{{ data.product.code }}</span>
+          <h2 id="product-title" class="product-description">{{ data.product.description }}</h2>
+          <span class="product-supplier">Fornecedor: {{ data.product.supplier }}</span>
+        </div>
+        <div class="product-badges">
+          <span
+            class="badge-elasticity"
+            [ngClass]="data.elasticity.classification === 'ELASTICO' ? 'badge-elastic' : 'badge-inelastic'"
+          >
+            {{ data.elasticity.classification === 'ELASTICO' ? 'Demanda Elástica' : 'Demanda Inelástica' }}
+          </span>
+          <span
+            class="badge-confidence"
+            [ngClass]="{
+              'confidence-high': data.elasticity.confidenceLevel === 'ALTA',
+              'confidence-medium': data.elasticity.confidenceLevel === 'MEDIA',
+              'confidence-low': data.elasticity.confidenceLevel === 'BAIXA'
+            }"
+          >
+            Confiança {{ data.elasticity.confidenceLevel }}
+          </span>
+        </div>
+      </div>
+
+      <!-- Banner Informativo de Baixa Variação / Fallback se aplicável -->
+      @if (data.elasticity.fallbackApplied) {
+        <div class="low-confidence-notice" role="note">
+          <span class="notice-icon">ℹ️</span>
+          <span class="notice-text">
+            <strong>Estimador Canônico Defensivo (-1.2):</strong> O histórico apresentou preço constante ou dispersão insuficiente para regressão estatística formal. O valor adotado segue o padrão de segurança B2B.
+          </span>
+        </div>
+      }
+
+      <!-- Grid de Métricas Econométricas -->
+      <div class="metrics-grid">
+        <div class="metric-card">
+          <span class="metric-label">Coeficiente Beta (Elasticidade)</span>
+          <span class="metric-value">{{ data.elasticity.coefficient | number:'1.2-2' }}</span>
+          <span class="metric-sub">Variação % volume por 1% no preço</span>
+        </div>
+        <div class="metric-card">
+          <span class="metric-label">Intervalo de Confiança 95%</span>
+          <span class="metric-value">
+            [{{ data.elasticity.confidenceInterval[0] | number:'1.2-2' }} ; {{ data.elasticity.confidenceInterval[1] | number:'1.2-2' }}]
+          </span>
+          <span class="metric-sub">Erro padrão: ±{{ data.elasticity.standardError | number:'1.2-2' }}</span>
+        </div>
+        <div class="metric-card">
+          <span class="metric-label">Aderência (R²) e Amostra</span>
+          <span class="metric-value">{{ (data.elasticity.rSquared * 100) | number:'1.1-1' }}%</span>
+          <span class="metric-sub">{{ data.elasticity.observationsCount }} meses com volume positivo</span>
+        </div>
+        <div class="metric-card">
+          <span class="metric-label">Preço e Margem Atuais</span>
+          <span class="metric-value">R$ {{ data.product.currentPrice | number:'1.2-2' }}</span>
+          <span class="metric-sub">Custo: R$ {{ data.product.costPrice | number:'1.2-2' }} (Estoque: {{ data.product.stock | number:'1.0-0' }})</span>
+        </div>
+      </div>
+
+      <div class="insight-box">
+        <p class="insight-text">{{ data.elasticity.insightMessage }}</p>
+      </div>
+    </section>
+
+    <!-- 5. Painel do Simulador de Reajuste de Preço -->
+    <section class="simulator-section" aria-labelledby="simulator-title">
+      <div class="simulator-card">
+        <div class="simulator-header">
+          <div>
+            <h3 id="simulator-title" class="simulator-title">Simulador de Impacto Financeiro</h3>
+            <p class="simulator-subtitle">
+              Simule a variação percentual de preço para projetar o impacto esperado em volume, receita e margem monetária.
+              @if (selectedCustomerCode()) {
+                <span class="simulating-customer-tag">
+                  Simulação restrita ao Cliente #{{ selectedCustomerCode() }}
+                  <button type="button" class="btn-clear-customer" (click)="selectCustomerForSimulation(null)">
+                    ✕ Limpar
+                  </button>
+                </span>
+              }
+            </p>
+          </div>
+          <div class="quick-adjust-group">
+            <span class="quick-label">Atalhos rápidos:</span>
+            <button type="button" class="btn-quick" (click)="setPriceQuickAdjust(-10)">-10%</button>
+            <button type="button" class="btn-quick" (click)="setPriceQuickAdjust(-5)">-5%</button>
+            <button type="button" class="btn-quick" (click)="setPriceQuickAdjust(5)">+5%</button>
+            <button type="button" class="btn-quick" (click)="setPriceQuickAdjust(10)">+10%</button>
+            <button type="button" class="btn-quick" (click)="setPriceQuickAdjust(20)">+20%</button>
+          </div>
+        </div>
+
+        <div class="slider-control-row">
+          <label for="price-slider" class="slider-label">Variação de Preço Pretendida:</label>
+          <div class="slider-wrapper">
+            <input
+              id="price-slider"
+              type="range"
+              min="-50"
+              max="100"
+              step="1"
+              class="price-slider"
+              [(ngModel)]="priceChangePct"
+              (input)="runSimulation()"
+              [disabled]="isSimulating()"
+              aria-valuemin="-50"
+              aria-valuemax="100"
+              [attr.aria-valuenow]="priceChangePct()"
+            />
+            <div class="slider-marks">
+              <span>-50%</span>
+              <span>-25%</span>
+              <span class="mark-zero">0%</span>
+              <span>+25%</span>
+              <span>+50%</span>
+              <span>+100%</span>
+            </div>
+          </div>
+          <div class="slider-input-group">
+            <input
+              type="number"
+              class="slider-number-input"
+              [(ngModel)]="priceChangePct"
+              (change)="runSimulation()"
+              min="-50"
+              max="100"
+            />
+            <span class="percent-symbol">%</span>
+          </div>
+        </div>
+
+        @if (simulationError()) {
+          <div class="simulation-error" role="alert">{{ simulationError() }}</div>
+        }
+
+        @if (simulationResult(); as sim) {
+          <div class="simulation-results-grid">
+            <!-- Coluna Volume -->
+            <div class="sim-card">
+              <span class="sim-card-title">Volume Projetado</span>
+              <div class="sim-main-val">
+                {{ sim.projectedVolume | number:'1.0-0' }} <span class="unit-label">un.</span>
+              </div>
+              <div
+                class="sim-delta"
+                [ngClass]="sim.volumeChangePct >= 0 ? 'delta-positive' : 'delta-negative'"
+              >
+                {{ sim.volumeChangePct >= 0 ? '+' : '' }}{{ sim.volumeChangePct | number:'1.1-1' }}% vs atual ({{ sim.currentVolume | number:'1.0-0' }} un.)
+              </div>
+            </div>
+
+            <!-- Coluna Faturamento / Receita -->
+            <div class="sim-card">
+              <span class="sim-card-title">Faturamento Projetado</span>
+              <div class="sim-main-val">
+                R$ {{ sim.projectedRevenue | number:'1.2-2' }}
+              </div>
+              <div
+                class="sim-delta"
+                [ngClass]="sim.revenueChangeAbs >= 0 ? 'delta-positive' : 'delta-negative'"
+              >
+                {{ sim.revenueChangeAbs >= 0 ? '+' : '' }}R$ {{ sim.revenueChangeAbs | number:'1.2-2' }} ({{ sim.revenueChangePct | number:'1.1-1' }}%)
+              </div>
+            </div>
+
+            <!-- Coluna Margem Financeira -->
+            <div class="sim-card sim-card-highlight">
+              <span class="sim-card-title">Margem de Contribuição</span>
+              <div class="sim-main-val">
+                R$ {{ sim.projectedMargin | number:'1.2-2' }}
+              </div>
+              <div
+                class="sim-delta"
+                [ngClass]="sim.marginChangeAbs >= 0 ? 'delta-positive' : 'delta-negative'"
+              >
+                {{ sim.marginChangeAbs >= 0 ? '+' : '' }}R$ {{ sim.marginChangeAbs | number:'1.2-2' }} ({{ sim.marginChangePct | number:'1.1-1' }}%)
+              </div>
+            </div>
+          </div>
+
+          <div class="simulation-recommendation-bar">
+            <span class="rec-icon">💡</span>
+            <span class="rec-text">{{ sim.recommendation }}</span>
+          </div>
+        }
+      </div>
+    </section>
+
+    <!-- 6. Tabela de Clientes do Produto -->
+    <section class="customers-section" aria-labelledby="customers-table-title">
+      <div class="customers-card">
+        <div class="customers-header">
+          <div>
+            <h3 id="customers-table-title" class="customers-title">Clientes Compradores deste SKU</h3>
+            <p class="customers-subtitle">
+              Visualização de elasticidade individual com suavização hierárquica (shrinkage bayesiano).
+            </p>
+          </div>
+          <span class="total-clients-badge">{{ totalClients() }} clientes na base</span>
+        </div>
+
+        @if (data.customers.length === 0) {
+          <div class="empty-state-card">
+            <span class="empty-icon">📭</span>
+            <p class="empty-title">Nenhum cliente registrado</p>
+            <p class="empty-desc">Este produto ainda não possui compras registradas no período avaliado.</p>
+          </div>
+        } @else {
+          <div class="table-responsive">
+            <table class="customers-table" aria-label="Tabela de elasticidade por cliente">
+              <thead>
+                <tr>
+                  <th scope="col">Código do Cliente</th>
+                  <th scope="col" class="text-right">Pedidos</th>
+                  <th scope="col" class="text-right">Unidades Totais</th>
+                  <th scope="col" class="text-right">Elasticidade Empírica</th>
+                  <th scope="col" class="text-right">Elasticidade Refinada (Shrinkage)</th>
+                  <th scope="col" class="text-center">Sensibilidade</th>
+                  <th scope="col" class="text-center">Ação</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (c of displayedCustomers(); track c.customerCode) {
+                  <tr [class.row-selected]="selectedCustomerCode() === c.customerCode">
+                    <td class="font-mono">
+                      <span class="customer-code-pill">#{{ c.customerCode }}</span>
+                    </td>
+                    <td class="text-right font-tabular">{{ c.ordersCount }}</td>
+                    <td class="text-right font-tabular">{{ c.totalUnits | number:'1.0-0' }}</td>
+                    <td class="text-right font-tabular font-mono">{{ c.empiricalElasticity | number:'1.2-2' }}</td>
+                    <td class="text-right font-tabular font-mono font-bold">{{ c.shrinkageElasticity | number:'1.2-2' }}</td>
+                    <td class="text-center">
+                      <span
+                        class="pill-tag"
+                        [ngClass]="c.classification === 'ELASTICO' ? 'pill-elastic' : 'pill-inelastic'"
+                      >
+                        {{ c.classification === 'ELASTICO' ? 'Elástico' : 'Inelástico' }}
+                      </span>
+                    </td>
+                    <td class="text-center">
+                      <button
+                        type="button"
+                        class="btn-table-action"
+                        (click)="selectCustomerForSimulation(c.customerCode)"
+                        title="Simular com os parâmetros deste cliente"
+                      >
+                        Simular
+                      </button>
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Paginação -->
+          <div class="table-pagination">
+            <span class="pagination-info">
+              Exibindo {{ clientPageOffset() + 1 }} a {{ clientPageOffset() + displayedCustomers().length }} de {{ totalClients() }} clientes
+            </span>
+            <div class="pagination-actions">
+              <button
+                type="button"
+                class="btn-page"
+                (click)="prevPage()"
+                [disabled]="clientPageOffset() === 0"
+              >
+                Anterior
+              </button>
+              <button
+                type="button"
+                class="btn-page"
+                (click)="nextPage()"
+                [disabled]="clientPageOffset() + clientPageLimit >= totalClients()"
+              >
+                Próxima
+              </button>
+            </div>
+          </div>
+        }
+      </div>
+    </section>
+  }
+</div>
