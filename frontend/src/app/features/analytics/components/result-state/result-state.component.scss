@@ -53,6 +53,6 @@ $text-measure: 60ch;
 }
 
 .state-action {
-  @include ui.button-secondary;
+  @extend %button-secondary;
   margin-top: var(--space-2);
 }

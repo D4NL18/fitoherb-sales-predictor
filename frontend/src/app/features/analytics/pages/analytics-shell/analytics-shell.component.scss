@@ -70,8 +70,10 @@ $active-rule: 3px;
   transition: color var(--transition-fast), border-color var(--transition-fast);
 
   @include ui.hover {
-    color: var(--text-primary);
-    border-bottom-color: var(--border-default);
+    &:hover {
+      color: var(--text-primary);
+      border-bottom-color: var(--border-default);
+    }
   }
 
   &:focus-visible {

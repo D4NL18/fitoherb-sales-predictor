@@ -53,6 +53,7 @@
                 [attr.aria-selected]="index === activeIndex() ? 'true' : 'false'"
                 (mousedown)="$event.preventDefault()"
                 (click)="selectOption(option)"
+                (keydown.enter)="selectOption(option)"
               >
                 <span class="suggestion-code">{{ option.codigo }}</span>
                 <span class="suggestion-description">{{ option.descricao }}</span>

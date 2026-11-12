@@ -28,7 +28,9 @@ $priority-rule: 3px;
   transition: background-color var(--transition-fast);
 
   @include ui.hover {
-    background: var(--bg-table-row-hover);
+    &:hover {
+      background: var(--bg-table-row-hover);
+    }
   }
 
   &.priority {

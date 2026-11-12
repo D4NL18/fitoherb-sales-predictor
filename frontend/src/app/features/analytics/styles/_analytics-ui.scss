@@ -1,18 +1,23 @@
 /* ==========================================================================
    Analytics Comercial - mixins visuais compartilhados (Design Plan §3, §6.5)
    Só tokens de styles.scss (Papel & Tinta, D-1), sem fallback hex.
-   Mixins não emitem CSS sozinhos: cada componente inclui só o que usa.
+   Mixins e placeholders não emitem CSS sozinhos: cada componente inclui (@include)
+   ou estende (@extend) só o que usa.
+   Nenhum mixin usa `&`: o seletor-pai (`&`) fica sempre no arquivo do componente,
+   onde tem raiz. Os estados dos botões ficam em placeholders (%), que têm seletor
+   próprio. Assim o CSS gerado é o mesmo e a análise estática (Sonar css:S8776)
+   não vê seletor aninhado sem raiz.
    ========================================================================== */
 
 $bp-mobile: 639.98px;
 $bp-tablet: 1023.98px;
 $touch-target: 40px;
 
+/* Só aplica o conteúdo em dispositivos com hover real (evita hover "grudado" no toque).
+   Uso: `@include ui.hover { &:hover { ... } }`. */
 @mixin hover {
   @media (hover: hover) {
-    &:hover {
-      @content;
-    }
+    @content;
   }
 }
 
@@ -29,7 +34,9 @@ $touch-target: 40px;
   box-shadow: var(--shadow-xs);
 }
 
-@mixin button-base {
+/* Botões: use `@extend %button-primary;` ou `@extend %button-secondary;` na regra do componente,
+   fora de @media (limitação do @extend). */
+%button-base {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -53,14 +60,14 @@ $touch-target: 40px;
   }
 }
 
-@mixin button-primary {
-  @include button-base;
+%button-primary {
+  @extend %button-base;
   background: var(--brand-primary);
   border-color: var(--brand-primary);
   color: var(--text-on-brand);
 
   @include hover {
-    &:not(:disabled):not([aria-disabled='true']) {
+    &:hover:not(:disabled):not([aria-disabled='true']) {
       background: var(--brand-primary-hover);
       border-color: var(--brand-primary-hover);
     }
@@ -71,14 +78,14 @@ $touch-target: 40px;
   }
 }
 
-@mixin button-secondary {
-  @include button-base;
+%button-secondary {
+  @extend %button-base;
   background: var(--bg-surface);
   border-color: var(--border-default);
   color: var(--text-primary);
 
   @include hover {
-    &:not(:disabled) {
+    &:hover:not(:disabled) {
       background: var(--bg-subtle);
     }
   }

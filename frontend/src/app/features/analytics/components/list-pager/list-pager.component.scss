@@ -38,5 +38,5 @@
 }
 
 .pager-button {
-  @include ui.button-secondary;
+  @extend %button-secondary;
 }

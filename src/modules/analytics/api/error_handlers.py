@@ -44,12 +44,12 @@ def _error_response(code: str, message: str, fields: Sequence[str]) -> JSONRespo
     return JSONResponse(status_code=status_code, content=body.model_dump(by_alias=True))
 
 
-async def _handle_domain_error(request: Request, exc: AnalyticsDomainException) -> JSONResponse:
+def _handle_domain_error(request: Request, exc: AnalyticsDomainException) -> JSONResponse:
     """XSL-001..004 -> 404/422/400 com mensagem fixa (P-067)."""
     return _error_response(exc.code, exc.message, exc.fields)
 
 
-async def _handle_infrastructure_error(request: Request, exc: AnalyticsInfrastructureException) -> JSONResponse:
+def _handle_infrastructure_error(request: Request, exc: AnalyticsInfrastructureException) -> JSONResponse:
     """ANL-001 -> 503, ANL-002 -> 429, sem detalhe do driver (LGPD-05)."""
     return _error_response(exc.code, exc.message, ())
 

@@ -45,7 +45,9 @@ $suggestions-max-height: 320px;
   transition: border-color var(--transition-fast);
 
   @include ui.hover {
-    border-color: var(--border-default);
+    &:hover {
+      border-color: var(--border-default);
+    }
   }
 
   /* O input não tem outline próprio: o anel de foco fica no container (correção de foco do §5.4). */
@@ -96,12 +98,14 @@ $suggestions-max-height: 320px;
   transition: color var(--transition-fast);
 
   @include ui.hover {
-    color: var(--text-primary);
+    &:hover {
+      color: var(--text-primary);
+    }
   }
 }
 
 .submit-button {
-  @include ui.button-primary;
+  @extend %button-primary;
 
   .spinner {
     @include ui.spinner;
@@ -133,7 +137,9 @@ $suggestions-max-height: 320px;
   }
 
   @include ui.hover {
-    background: var(--bg-table-row-hover);
+    &:hover {
+      background: var(--bg-table-row-hover);
+    }
   }
 
   /* Depois do hover: o destaque do teclado vence o mouse (NB-6). */

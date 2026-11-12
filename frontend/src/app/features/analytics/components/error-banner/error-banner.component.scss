@@ -31,5 +31,5 @@
 }
 
 .banner-action {
-  @include ui.button-secondary;
+  @extend %button-secondary;
 }

@@ -32,7 +32,7 @@
   }
 
   @include ui.hover {
-    &:not(.selected) {
+    &:hover:not(.selected) {
       background: var(--bg-subtle);
     }
   }
