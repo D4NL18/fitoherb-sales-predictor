@@ -1,0 +1,32 @@
+<div class="skeleton" aria-hidden="true">
+  @if (showHeader()) {
+    <div class="skeleton-header">
+      <div class="skeleton-header-text">
+        <span class="skeleton-line bar-title"></span>
+        <span class="skeleton-line bar-subtitle"></span>
+      </div>
+      <span class="skeleton-box bar-badge"></span>
+    </div>
+  }
+
+  @for (row of rowIndexes(); track row) {
+    <div class="skeleton-row">
+      <span class="skeleton-line bar-position"></span>
+      <div class="skeleton-stack">
+        <span class="skeleton-line bar-product"></span>
+        <span class="skeleton-line bar-caption"></span>
+      </div>
+      <div class="skeleton-stack skeleton-explanation">
+        <span class="skeleton-line bar-sentence"></span>
+        <span class="skeleton-line bar-sentence-short"></span>
+        <span class="skeleton-box bar-proportion"></span>
+      </div>
+      <div class="skeleton-signals">
+        <span class="skeleton-box bar-signal"></span>
+      </div>
+    </div>
+  }
+</div>
+
+<!-- Região viva sempre presente; o texto entra após 4 s para ser anunciado (UX NB-2). -->
+<p class="slow-notice" role="status" aria-live="polite">{{ slowNoticeVisible() ? slowNotice : '' }}</p>

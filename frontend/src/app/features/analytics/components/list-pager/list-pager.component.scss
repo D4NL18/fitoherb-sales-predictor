@@ -1,0 +1,42 @@
+/* Rodapé de paginação (Design Plan §5.9, §8). */
+@use '../../styles/analytics-ui' as ui;
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-6);
+
+  @media (max-width: ui.$bp-mobile) {
+    flex-direction: column;
+    align-items: stretch;
+    padding: var(--space-4);
+  }
+}
+
+.pager-range {
+  font-family: var(--font-family-mono);
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.pager-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+
+  @media (max-width: ui.$bp-mobile) {
+    justify-content: space-between;
+  }
+}
+
+.pager-position {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+.pager-button {
+  @extend %button-secondary;
+}

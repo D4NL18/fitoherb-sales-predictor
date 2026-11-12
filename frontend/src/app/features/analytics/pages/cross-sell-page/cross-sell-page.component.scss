@@ -1,0 +1,30 @@
+/* Seção Cross-sell (Design Plan §5.3). */
+.cross-sell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.section-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.section-title {
+  font-family: var(--font-family-headline);
+  font-size: 1.25rem;
+}
+
+.section-subtitle {
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+}
+
+.cache-notice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}

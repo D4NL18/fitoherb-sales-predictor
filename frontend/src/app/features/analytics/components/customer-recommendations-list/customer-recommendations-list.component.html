@@ -1,0 +1,42 @@
+@for (group of groups(); track group.start; let groupIndex = $index) {
+  @if (groupIndex > 0) {
+    <p class="list-divider" aria-hidden="true">Outras sugestões</p>
+  }
+  <ol class="recommendation-list" [attr.start]="group.start" [attr.aria-label]="group.label">
+    @for (item of group.items; track item.codigo; let index = $index) {
+      <li class="recommendation-row" [class.priority]="group.highlighted">
+        <span class="row-position" aria-hidden="true">{{ group.start + index | listPosition }}</span>
+
+        <div class="row-product">
+          <p class="product-name">{{ item.descricao }}</p>
+          <p class="product-meta">Cód. <span class="mono">{{ item.codigo }}</span> · {{ item.fornecedor }}</p>
+        </div>
+
+        <div class="row-explanation">
+          @if (item.explicacao.motivo) {
+            <p class="sentence-main">{{ item.explicacao.motivo }}</p>
+          }
+          <p class="sentence-secondary">{{ item.explicacao.frequencia }}</p>
+          @if (relatedNote(item); as note) {
+            <p class="sentence-note">{{ note }}</p>
+          }
+        </div>
+
+        <div class="row-signals">
+          @if (item.motivo === 'DORMENTE') {
+            <span class="tag tag-warning">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="9"></circle>
+                <polyline points="12 7 12 12 15 14"></polyline>
+              </svg>
+              Parou há {{ item.diasDesdeUltimaCompra }} dias
+            </span>
+          } @else {
+            <span class="tag tag-neutral">Nunca comprou</span>
+          }
+        </div>
+      </li>
+    }
+  </ol>
+}

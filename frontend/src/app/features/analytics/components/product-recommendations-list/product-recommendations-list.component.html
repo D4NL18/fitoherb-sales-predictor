@@ -1,0 +1,35 @@
+<ol class="recommendation-list" [attr.start]="pageOffset() + 1" [attr.aria-label]="label()">
+  @for (item of items(); track item.codigo; let index = $index) {
+    <li class="recommendation-row">
+      <span class="row-position" aria-hidden="true">{{ pageOffset() + index + 1 | listPosition }}</span>
+
+      <div class="row-product">
+        <p class="product-name">{{ item.descricao }}</p>
+        <p class="product-meta">Cód. <span class="mono">{{ item.codigo }}</span> · {{ item.fornecedor }}</p>
+      </div>
+
+      <div class="row-explanation">
+        <p class="sentence-main">{{ item.explicacao.frequencia }}</p>
+        <div class="proportion" aria-hidden="true">
+          <span class="proportion-fill" [style.width.%]="item.confianca * percentScale"></span>
+        </div>
+        <span class="sr-only">{{ item.explicacao.intensidade }} {{ item.explicacao.evidencia }}</span>
+      </div>
+
+      <div class="row-signals">
+        <span class="chip" aria-hidden="true">▲ {{ item.lift | ptDecimal: chipLiftDigits }}× mais que o normal</span>
+        <span class="chip mono" aria-hidden="true">{{ item.pedidosEmComum | ptDecimal }} pedidos</span>
+        @if (item.semEstoque) {
+          <span class="tag tag-critical">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"
+              stroke-linecap="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="9"></circle>
+              <line x1="5.6" y1="18.4" x2="18.4" y2="5.6"></line>
+            </svg>
+            Sem estoque
+          </span>
+        }
+      </div>
+    </li>
+  }
+</ol>

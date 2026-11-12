@@ -22,6 +22,8 @@ else:
 logger = logging.getLogger(__name__)
 
 from src.core.auth import HTTPBasicAuthASGIMiddleware
+from src.modules.analytics.api.error_handlers import register_analytics_error_handlers
+from src.modules.analytics.api.router import analytics_router
 from src.modules.inventory.api.router import inventory_router
 from src.modules.pricing.api.router import pricing_router
 from src.modules.pricing.api.schemas import (
@@ -80,6 +82,9 @@ app.add_middleware(
 # Registro Modular de Roteadores (DDD)
 app.include_router(pricing_router, prefix="/api/v1")
 app.include_router(inventory_router, prefix="/api/v1")
+# Analytics Comercial (ADR-002): carga preguiçosa na primeira requisição, sem pré-aquecimento no lifespan.
+app.include_router(analytics_router, prefix="/api/v1")
+register_analytics_error_handlers(app)
 
 
 # Montagem do Frontend Angular compilado para Produção (P-033)

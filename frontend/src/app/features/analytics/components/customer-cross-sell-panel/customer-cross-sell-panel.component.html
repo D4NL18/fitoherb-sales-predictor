@@ -1,0 +1,46 @@
+<section class="query-panel" aria-label="Consulta por cliente">
+  <app-code-search-form
+    label="Código do cliente"
+    placeholder="ex.: 1234"
+    hint="Só o código: a tela não mostra nome nem documento do cliente."
+    submitLabel="Ver o que oferecer"
+    [loading]="kind() === 'loading'"
+    [fieldError]="fieldError()"
+    (search)="onSearch($event)"
+  />
+</section>
+
+<section class="result-panel" aria-label="Sugestões por cliente" [attr.aria-busy]="kind() === 'loading' ? 'true' : null">
+  @switch (kind()) {
+    @case ('loading') {
+      @if (query.response(); as response) {
+        <app-query-context-header [title]="title()" [subtitle]="subtitle()" [dataReferencia]="response.meta.dataReferencia" />
+      }
+      <app-recommendation-list-skeleton [showHeader]="query.response() === null" />
+    }
+    @case ('results') {
+      @if (query.response(); as response) {
+        <app-query-context-header [title]="title()" [subtitle]="subtitle()" [dataReferencia]="response.meta.dataReferencia" />
+        <app-customer-recommendations-list [items]="response.data.recomendacoes" [pageOffset]="response.meta.offset" />
+        <app-list-pager
+          [page]="response.meta.page"
+          [totalPages]="response.meta.totalPages"
+          [totalItems]="response.meta.totalItems"
+          [offset]="response.meta.offset"
+          [itemCount]="response.data.recomendacoes.length"
+          (pageChange)="onPageChange($event)"
+        />
+      }
+    }
+    @case ('technical-error') {
+      <app-error-banner (retry)="retry()" />
+    }
+    @default {
+      @if (state(); as view) {
+        <app-result-state [view]="view" (action)="onStateAction($event)" />
+      }
+    }
+  }
+</section>
+
+<p class="sr-only" role="status" aria-live="polite">{{ live() }}</p>

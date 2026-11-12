@@ -1,0 +1,24 @@
+<div class="analytics-container">
+  <header class="analytics-hero">
+    <div class="hero-text">
+      <h1 class="hero-title">Análises de Vendas</h1>
+      <p class="hero-subtitle">Consultas sobre o histórico de pedidos. Clientes aparecem só pelo código.</p>
+    </div>
+
+    <nav class="section-nav" aria-label="Seções de análise">
+      @for (section of sections; track section.path) {
+        <a
+          class="section-link"
+          [routerLink]="section.path"
+          routerLinkActive="active"
+          ariaCurrentWhenActive="page"
+          [title]="section.description"
+        >
+          {{ section.label }}
+        </a>
+      }
+    </nav>
+  </header>
+
+  <router-outlet />
+</div>
