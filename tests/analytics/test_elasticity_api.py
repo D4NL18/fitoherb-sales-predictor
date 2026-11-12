@@ -12,20 +12,19 @@ from src.api import app
 from src.modules.analytics.api.schemas import (
     CustomerElasticityDetail,
     CustomerElasticityItem,
+    CustomerElasticityResponse,
     ElasticitySimulationResponse,
     ProductElasticityDetail,
+    ProductElasticityMetrics,
     ProductElasticityResponse,
     ProductHeader,
-)
-from src.modules.analytics.domain.elasticity import (
-    CustomerElasticityResult,
-    ProductElasticityResult,
-    SimulationImpactResult,
+    ResponseMeta,
+    SimulationImpactData,
 )
 from src.modules.analytics.domain.exceptions import (
-    CustomerWithoutHistoryError,
-    InsufficientBaseError,
-    ProductNotFoundError,
+    ElasticityCustomerWithoutHistoryError,
+    ElasticityInsufficientBaseError,
+    ElasticityProductNotFoundError,
 )
 
 client = TestClient(app)
@@ -34,7 +33,6 @@ BASE_URL = "/api/v1/analytics/elasticity"
 
 
 def _fake_product_response(sku: int = 1001) -> ProductElasticityResponse:
-    from src.modules.analytics.api.schemas import ResponseMeta
     return ProductElasticityResponse(
         data=ProductElasticityDetail(
             product=ProductHeader(
@@ -45,12 +43,12 @@ def _fake_product_response(sku: int = 1001) -> ProductElasticityResponse:
                 cost_price=12.00,
                 stock=420.0,
             ),
-            elasticity=ProductElasticityResult(
+            elasticity=ProductElasticityMetrics(
                 coefficient=-1.45,
                 classification="ELASTICO",
                 r_squared=0.58,
                 standard_error=0.18,
-                confidence_interval=(-1.80, -1.10),
+                confidence_interval=[-1.80, -1.10],
                 confidence_level="ALTA",
                 is_reliable=True,
                 observations_count=18,
@@ -99,7 +97,7 @@ def test_get_product_elasticity_success():
 def test_get_product_elasticity_not_found():
     """T-API-02: GET /elasticity/product/{sku} com SKU inexistente retorna 404 ELA-001."""
     with patch("src.modules.analytics.service.analytics_service.get_product_elasticity") as mock_get:
-        mock_get.side_effect = ProductNotFoundError()
+        mock_get.side_effect = ElasticityProductNotFoundError()
 
         response = client.get(f"{BASE_URL}/product/999999")
         assert response.status_code == 404
@@ -119,7 +117,6 @@ def test_get_product_elasticity_invalid_sku():
 
 def test_get_customer_elasticity_success():
     """T-API-04: GET /elasticity/product/{sku}/customer/{customerCode} retorna 200 com shrinkage."""
-    from src.modules.analytics.api.schemas import CustomerElasticityResponse, ResponseMeta
     fake_resp = CustomerElasticityResponse(
         data=CustomerElasticityDetail(
             sku=1001,
@@ -152,7 +149,7 @@ def test_get_customer_elasticity_success():
 def test_get_customer_elasticity_not_found():
     """T-API-05: GET /elasticity/product/{sku}/customer/{customerCode} sem compras retorna 404 ELA-002."""
     with patch("src.modules.analytics.service.analytics_service.get_customer_elasticity") as mock_get:
-        mock_get.side_effect = CustomerWithoutHistoryError()
+        mock_get.side_effect = ElasticityCustomerWithoutHistoryError()
 
         response = client.get(f"{BASE_URL}/product/1001/customer/999999")
         assert response.status_code == 404
@@ -162,9 +159,8 @@ def test_get_customer_elasticity_not_found():
 
 def test_simulate_price_impact_success():
     """T-API-06: POST /elasticity/simulate calcula variação e retorna 200."""
-    from src.modules.analytics.api.schemas import ElasticitySimulationResponse, ResponseMeta
     fake_sim = ElasticitySimulationResponse(
-        data=SimulationImpactResult(
+        data=SimulationImpactData(
             sku=1001,
             customer_code=None,
             applied_elasticity=-1.45,

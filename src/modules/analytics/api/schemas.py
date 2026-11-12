@@ -288,3 +288,199 @@ class ProductSearchResponse(CamelModel):
 
 
 ProductSearchItem = ConsultedProduct  # nome do contrato §3.6 / checklist B-20
+
+
+# ------------------------------------------------------------------ Elasticidade-Preço (F5 / P-095..P-105)
+
+class ResponseMeta(CamelModel):
+    """Metadados de resposta para os endpoints de elasticidade."""
+    timestamp: str = Field(description="Momento da resposta (ISO-8601).")
+    version: str = Field(default="1.0.0", description="Versão do contrato.")
+    total_items: Optional[int] = Field(default=None, description="Total de itens disponíveis.")
+    total_pages: Optional[int] = Field(default=None, description="Total de páginas.")
+    limit: Optional[int] = Field(default=None, description="Limite da página.")
+    offset: Optional[int] = Field(default=None, description="Deslocamento da página.")
+
+
+class ProductHeader(CamelModel):
+    """Cabeçalho com informações comerciais do produto avaliado."""
+    code: int = Field(description="Código do produto.")
+    description: str = Field(description="Descrição do produto.")
+    supplier: str = Field(description="Nome do fornecedor / fabricante.")
+    current_price: float = Field(description="Preço de venda praticado atual.")
+    cost_price: float = Field(description="Último preço de custo unitário.")
+    stock: float = Field(description="Estoque disponível atual.")
+
+
+class CustomerElasticityItem(CamelModel):
+    """Item da lista de clientes do produto com elasticidade individual e shrinkage."""
+    customer_code: int = Field(description="Código pseudonimizado do cliente.")
+    orders_count: int = Field(description="Total de pedidos do cliente com este produto.")
+    total_units: float = Field(description="Volume total de unidades compradas pelo cliente.")
+    empirical_elasticity: float = Field(description="Elasticidade calculada estritamente com dados do cliente.")
+    shrinkage_elasticity: float = Field(description="Elasticidade final suavizada via encolhimento bayesiano.")
+    classification: str = Field(description="Classificação econômica: ELASTICO ou INELASTICO.")
+    shrinkage_weight: float = Field(description="Peso amostral do cliente no shrinkage: n / (n + 10).")
+
+
+class ProductElasticityDetail(CamelModel):
+    """Dados agregados completos de elasticidade do produto."""
+    product: ProductHeader = Field(description="Dados cadastrais e comerciais do produto.")
+    elasticity: dict = Field(description="Parâmetros econométricos estimados de elasticidade.")
+    customers: List[CustomerElasticityItem] = Field(default_factory=list, description="Clientes com histórico no produto.")
+
+
+class ProductElasticityResponse(CamelModel):
+    """Envelope 200 OK para GET /analytics/elasticity/product/{sku}."""
+    data: ProductElasticityDetail = Field(description="Detalhe do produto e elasticidade.")
+    meta: ResponseMeta = Field(description="Metadados da requisição.")
+
+
+class CustomerElasticityDetail(CamelModel):
+    """Detalhes de elasticidade para o par produto x cliente."""
+    sku: int = Field(description="Código do produto.")
+    customer_code: int = Field(description="Código do cliente.")
+    product_elasticity: float = Field(description="Elasticidade geral do produto.")
+    customer_empirical_elasticity: float = Field(description="Elasticidade empírica do cliente.")
+    customer_elasticity: float = Field(description="Elasticidade final resultante do shrinkage.")
+    classification: str = Field(description="Classificação econômica: ELASTICO ou INELASTICO.")
+    shrinkage_weight: float = Field(description="Peso do cliente no encolhimento bayesiano.")
+    orders_count: int = Field(description="Total de pedidos do cliente no SKU.")
+    total_units: float = Field(description="Total de unidades adquiridas.")
+    confidence_level: str = Field(description="Nível de confiança estatística.")
+    is_reliable: bool = Field(description="Confiabilidade da estimativa.")
+    insight_message: str = Field(description="Mensagem de diagnóstico comercial.")
+
+
+class CustomerElasticityResponse(CamelModel):
+    """Envelope 200 OK para GET /analytics/elasticity/product/{sku}/customer/{customerCode}."""
+    data: CustomerElasticityDetail = Field(description="Dados de elasticidade do par produto x cliente.")
+    meta: ResponseMeta = Field(description="Metadados da requisição.")
+
+
+class ElasticitySimulationRequest(CamelModel):
+    """Corpo de requisição para POST /analytics/elasticity/simulate."""
+    sku: int = Field(gt=0, description="Código do produto avaliado.")
+    customer_code: Optional[int] = Field(default=None, gt=0, description="Código do cliente opcional.")
+    price_change_pct: float = Field(ge=-50.0, le=100.0, description="Variação percentual de preço pretendida.")
+
+
+class ElasticitySimulationResponse(CamelModel):
+    """Envelope 200 OK para POST /analytics/elasticity/simulate."""
+    data: dict = Field(description="Resultado dos impactos calculados em volume, receita e margem.")
+    meta: ResponseMeta = Field(description="Metadados da requisição.")
+# ------------------------------------------------------------------ Elasticidade (F5 / P-095..P-105)
+
+class ResponseMeta(CamelModel):
+    """Metadados de resposta para os endpoints de elasticidade."""
+    timestamp: str = Field(description="Momento da resposta (ISO-8601).")
+    version: str = Field(default="1.0.0", description="Versão do contrato.")
+    total_items: Optional[int] = Field(default=None, description="Total de itens disponíveis.")
+    total_pages: Optional[int] = Field(default=None, description="Total de páginas.")
+    limit: Optional[int] = Field(default=None, description="Limite da página.")
+    offset: Optional[int] = Field(default=None, description="Deslocamento da página.")
+
+
+class ProductHeader(CamelModel):
+    """Cabeçalho com informações comerciais do produto avaliado."""
+    code: int = Field(description="Código do produto.")
+    description: str = Field(description="Descrição do produto.")
+    supplier: str = Field(description="Nome do fornecedor / fabricante.")
+    current_price: float = Field(description="Preço de venda praticado atual.")
+    cost_price: float = Field(description="Último preço de custo unitário.")
+    stock: float = Field(description="Estoque disponível atual.")
+
+
+class CustomerElasticityItem(CamelModel):
+    """Item da lista de clientes do produto com elasticidade individual e shrinkage."""
+    customer_code: int = Field(description="Código pseudonimizado do cliente.")
+    orders_count: int = Field(description="Total de pedidos do cliente com este produto.")
+    total_units: float = Field(description="Volume total de unidades compradas pelo cliente.")
+    empirical_elasticity: float = Field(description="Elasticidade calculada estritamente com dados do cliente.")
+    shrinkage_elasticity: float = Field(description="Elasticidade final suavizada via encolhimento bayesiano.")
+    classification: str = Field(description="Classificação econômica: ELASTICO ou INELASTICO.")
+    shrinkage_weight: float = Field(description="Peso amostral do cliente no shrinkage: n / (n + 10).")
+
+
+class ProductElasticityMetrics(CamelModel):
+    """Parâmetros econométricos estimados de elasticidade do produto."""
+    coefficient: float = Field(description="Coeficiente de elasticidade da demanda.")
+    classification: str = Field(description="Classificação: ELASTICO ou INELASTICO.")
+    r_squared: float = Field(description="R² da regressão.")
+    standard_error: float = Field(description="Erro padrão do estimador beta.")
+    confidence_interval: List[float] = Field(description="Intervalo de confiança de 95%.")
+    confidence_level: str = Field(description="Nível de confiança: ALTA, MEDIA ou BAIXA.")
+    is_reliable: bool = Field(description="Se a estimativa é confiável.")
+    observations_count: int = Field(description="Número de observações válidas.")
+    fallback_applied: bool = Field(description="Se o fallback padrão foi aplicado.")
+    insight_message: str = Field(description="Mensagem descritiva de apoio comercial.")
+
+
+class ProductElasticityDetail(CamelModel):
+    """Dados agregados completos de elasticidade do produto."""
+    product: ProductHeader = Field(description="Dados cadastrais e comerciais do produto.")
+    elasticity: ProductElasticityMetrics = Field(description="Parâmetros econométricos estimados de elasticidade.")
+    customers: List[CustomerElasticityItem] = Field(default_factory=list, description="Clientes com histórico no produto.")
+
+
+class ProductElasticityResponse(CamelModel):
+    """Envelope 200 OK para GET /analytics/elasticity/product/{sku}."""
+    data: ProductElasticityDetail = Field(description="Detalhe do produto e elasticidade.")
+    meta: ResponseMeta = Field(description="Metadados da requisição.")
+
+
+class CustomerElasticityDetail(CamelModel):
+    """Detalhes de elasticidade para o par produto x cliente."""
+    sku: int = Field(description="Código do produto.")
+    customer_code: int = Field(description="Código do cliente.")
+    product_elasticity: float = Field(description="Elasticidade geral do produto.")
+    customer_empirical_elasticity: float = Field(description="Elasticidade empírica do cliente.")
+    customer_elasticity: float = Field(description="Elasticidade final resultante do shrinkage.")
+    classification: str = Field(description="Classificação econômica: ELASTICO ou INELASTICO.")
+    shrinkage_weight: float = Field(description="Peso do cliente no encolhimento bayesiano.")
+    orders_count: int = Field(description="Total de pedidos do cliente no SKU.")
+    total_units: float = Field(description="Total de unidades adquiridas.")
+    confidence_level: str = Field(description="Nível de confiança estatística.")
+    is_reliable: bool = Field(description="Confiabilidade da estimativa.")
+    insight_message: str = Field(description="Mensagem de diagnóstico comercial.")
+
+
+class CustomerElasticityResponse(CamelModel):
+    """Envelope 200 OK para GET /analytics/elasticity/product/{sku}/customer/{customerCode}."""
+    data: CustomerElasticityDetail = Field(description="Dados de elasticidade do par produto x cliente.")
+    meta: ResponseMeta = Field(description="Metadados da requisição.")
+
+
+class ElasticitySimulationRequest(CamelModel):
+    """Corpo de requisição para POST /analytics/elasticity/simulate."""
+    sku: int = Field(gt=0, description="Código do produto avaliado.")
+    customer_code: Optional[int] = Field(default=None, gt=0, description="Código do cliente opcional.")
+    price_change_pct: float = Field(ge=-50.0, le=100.0, description="Variação percentual de preço pretendida.")
+
+
+class SimulationImpactData(CamelModel):
+    """Resultado dos impactos calculados em volume, receita e margem."""
+    sku: int = Field(description="Código do produto.")
+    customer_code: Optional[int] = Field(default=None, description="Código do cliente se individualizado.")
+    applied_elasticity: float = Field(description="Elasticidade aplicada na projeção.")
+    price_change_pct: float = Field(description="Percentual de variação de preço informado.")
+    current_price: float = Field(description="Preço de venda atual.")
+    projected_price: float = Field(description="Preço de venda projetado.")
+    current_volume: float = Field(description="Volume atual em unidades.")
+    projected_volume: float = Field(description="Volume projetado em unidades.")
+    volume_change_pct: float = Field(description="Variação percentual de volume.")
+    current_revenue: float = Field(description="Faturamento atual em R$.")
+    projected_revenue: float = Field(description="Faturamento projetado em R$.")
+    revenue_change_pct: float = Field(description="Variação percentual de faturamento.")
+    revenue_change_abs: float = Field(description="Variação monetária de faturamento em R$.")
+    current_margin: float = Field(description="Margem financeira atual em R$.")
+    projected_margin: float = Field(description="Margem financeira projetada em R$.")
+    margin_change_pct: float = Field(description="Variação percentual de margem.")
+    margin_change_abs: float = Field(description="Variação monetária de margem em R$.")
+    recommendation: str = Field(description="Recomendação comercial do cenário.")
+
+
+class ElasticitySimulationResponse(CamelModel):
+    """Envelope 200 OK para POST /analytics/elasticity/simulate."""
+    data: SimulationImpactData = Field(description="Resultado dos impactos calculados em volume, receita e margem.")
+    meta: ResponseMeta = Field(description="Metadados da requisição.")

@@ -133,3 +133,77 @@ def fetch_catalog() -> pd.DataFrame:
     with _execute_readonly(_CATALOG_SQL) as cursor:
         rows = [tuple(row) for row in cursor.fetchall()]
     return pd.DataFrame(rows, columns=CATALOG_COLUMNS)
+
+
+# ------------------------------------------------------------------ Elasticidade (F5 / P-095, P-097; ADR-004 DA-02)
+
+_PRODUCT_PRICE_POINTS_SQL = f"""
+SELECT
+    YEAR([Data]) AS ano,
+    MONTH([Data]) AS mes,
+    [Operação] AS operacao,
+    SUM([Qtd Venda]) AS qtd,
+    SUM([Valor Venda]) AS valor
+FROM Externo01.Vendas
+WHERE [Cod Produto] = ?
+  AND [Data] < ?
+  AND ([Operação] = '{SALE_OPERATION}' OR [Operação] LIKE '{RETURN_OPERATION_PATTERN}')
+GROUP BY YEAR([Data]), MONTH([Data]), [Operação]
+""".strip()
+
+_PRODUCT_CUSTOMERS_SQL = f"""
+SELECT
+    [Cod Cliente] AS customer_code,
+    COUNT(DISTINCT [Pedido]) AS orders_count,
+    SUM([Qtd Venda]) AS total_units,
+    SUM([Valor Venda]) AS total_revenue
+FROM Externo01.Vendas
+WHERE [Cod Produto] = ?
+  AND [Data] < ?
+  AND ([Operação] = '{SALE_OPERATION}' OR [Operação] LIKE '{RETURN_OPERATION_PATTERN}')
+GROUP BY [Cod Cliente]
+HAVING SUM([Qtd Venda]) > 0
+ORDER BY total_units DESC
+""".strip()
+
+_SINGLE_CUSTOMER_POINTS_SQL = f"""
+SELECT
+    YEAR([Data]) AS ano,
+    MONTH([Data]) AS mes,
+    [Operação] AS operacao,
+    SUM([Qtd Venda]) AS qtd,
+    SUM([Valor Venda]) AS valor
+FROM Externo01.Vendas
+WHERE [Cod Produto] = ?
+  AND [Cod Cliente] = ?
+  AND [Data] < ?
+  AND ([Operação] = '{SALE_OPERATION}' OR [Operação] LIKE '{RETURN_OPERATION_PATTERN}')
+GROUP BY YEAR([Data]), MONTH([Data]), [Operação]
+""".strip()
+
+
+def fetch_product_price_points(sku: int, cutoff: date) -> pd.DataFrame:
+    """
+    Agregado mensal de vendas e devoluções para estimação de elasticidade de produto (P-095).
+    """
+    with _execute_readonly(_PRODUCT_PRICE_POINTS_SQL, (sku, cutoff)) as cursor:
+        rows = [tuple(row) for row in cursor.fetchall()]
+    return pd.DataFrame(rows, columns=["ano", "mes", "operacao", "qtd", "valor"])
+
+
+def fetch_product_customers(sku: int, cutoff: date) -> pd.DataFrame:
+    """
+    Agregado de clientes que compraram o produto com pedidos e unidades líquidas (P-097).
+    """
+    with _execute_readonly(_PRODUCT_CUSTOMERS_SQL, (sku, cutoff)) as cursor:
+        rows = [tuple(row) for row in cursor.fetchall()]
+    return pd.DataFrame(rows, columns=["customer_code", "orders_count", "total_units", "total_revenue"])
+
+
+def fetch_single_customer_points(sku: int, customer_code: int, cutoff: date) -> pd.DataFrame:
+    """
+    Agregado mensal para o par produto x cliente específico (P-097).
+    """
+    with _execute_readonly(_SINGLE_CUSTOMER_POINTS_SQL, (sku, customer_code, cutoff)) as cursor:
+        rows = [tuple(row) for row in cursor.fetchall()]
+    return pd.DataFrame(rows, columns=["ano", "mes", "operacao", "qtd", "valor"])
