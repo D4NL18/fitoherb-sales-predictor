@@ -18,21 +18,37 @@ import { formatWindowMonthSpan } from '../../utils/trend-format';
       [class.is-sorted]="isSorted()"
       (click)="sort.emit(windowMeta().meses)"
       [attr.aria-label]="ariaLabel()"
+      [attr.title]="tooltipText()"
     >
       <div class="header-title-row">
         <span class="window-title">{{ windowMeta().meses }} {{ windowMeta().meses === 1 ? 'MÊS' : 'MESES' }}</span>
-        <span class="sort-indicator" aria-hidden="true">
+        <span class="sort-chip" [class.is-active]="isSorted()" aria-hidden="true">
           @if (isSorted()) {
-            {{ sortDir() === 'desc' ? '↓' : '↑' }}
+            @if (sortDir() === 'desc') {
+              <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+                <path d="M6 2.25V9.75M6 9.75L2.75 6.5M6 9.75L9.25 6.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            } @else {
+              <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+                <path d="M6 9.75V2.25M6 2.25L2.75 5.5M6 2.25L9.25 5.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            }
           } @else {
-            <span class="unsorted-indicator">↕</span>
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+              <path d="M4 4.25L6 2.25L8 4.25M4 7.75L6 9.75L8 7.75" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
           }
         </span>
       </div>
 
       <div class="header-period-row">
-        <span class="period-line">{{ currentSpanText() }}</span>
-        <span class="period-line vs-line">vs {{ previousSpanDisplay() }}</span>
+        @if (showCurrentSpan()) {
+          <span class="period-line period-current">{{ currentSpanText() }}</span>
+        }
+        <span class="period-line vs-line">
+          <span class="vs-prefix">vs</span>
+          <span class="prev-target">{{ previousSpanDisplay() }}</span>
+        </span>
       </div>
 
       @if (windowMeta().semBase) {
@@ -44,15 +60,19 @@ import { formatWindowMonthSpan } from '../../utils/trend-format';
     :host {
       display: block;
       width: 100%;
+      height: 100%;
     }
 
     .header-btn {
       width: 100%;
       height: 100%;
+      min-height: 58px;
       display: flex;
       flex-direction: column;
+      justify-content: center;
       align-items: flex-end;
-      padding: var(--space-2, 8px) var(--space-3, 12px);
+      gap: 4px;
+      padding: 10px 12px;
       background: transparent;
       border: none;
       cursor: pointer;
@@ -60,68 +80,124 @@ import { formatWindowMonthSpan } from '../../utils/trend-format';
       font-family: var(--font-family-body);
       color: var(--text-primary);
       position: relative;
-      border-bottom: 3px solid transparent;
-      transition: background-color var(--transition-fast);
+      transition: background-color var(--transition-fast), box-shadow var(--transition-fast);
 
       &:hover {
-        background-color: var(--bg-table-row-hover);
+        background-color: var(--bg-subtle);
+
+        .window-title {
+          color: var(--brand-primary);
+        }
+
+        .sort-chip:not(.is-active) {
+          color: var(--brand-primary);
+          border-color: var(--border-default);
+        }
       }
 
       &.is-sorted {
-        border-bottom-color: var(--brand-primary);
         background-color: var(--brand-primary-subtle);
+        box-shadow: inset 0 3px 0 var(--brand-primary);
+
+        .window-title {
+          color: var(--brand-primary);
+        }
+
+        .vs-prefix {
+          color: var(--text-secondary);
+        }
       }
 
       &:focus-visible {
         outline: 2px solid var(--border-focus);
+        outline-offset: -2px;
       }
     }
 
     .header-title-row {
       display: inline-flex;
       align-items: center;
-      gap: 4px;
+      justify-content: flex-end;
+      gap: 6px;
       font-family: var(--font-family-headline);
       font-size: 0.72rem;
       font-weight: 700;
-      letter-spacing: 0.04em;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      line-height: 1.1;
+      color: var(--text-primary);
     }
 
-    .sort-indicator {
-      font-weight: bold;
+    .window-title {
+      transition: color var(--transition-fast);
     }
 
-    .unsorted-indicator {
+    .sort-chip {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 18px;
+      height: 18px;
+      border-radius: var(--radius-xs);
       color: var(--text-muted);
-      font-size: 0.75rem;
+      border: 1px solid transparent;
+      flex-shrink: 0;
+      transition: background-color var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+
+      &.is-active {
+        background-color: var(--brand-primary);
+        color: var(--text-on-brand);
+        border-color: var(--brand-primary);
+      }
     }
 
     .header-period-row {
       display: flex;
       flex-direction: column;
-      margin-top: 2px;
+      align-items: flex-end;
+      gap: 1px;
       font-family: var(--font-family-mono);
-      font-size: 0.72rem;
+      font-size: 0.6875rem;
+      letter-spacing: -0.02em;
       color: var(--text-secondary);
-      line-height: 1.2;
+      line-height: 1.25;
+      white-space: nowrap;
+
+      @media (max-width: 1080px) {
+        white-space: normal;
+      }
+    }
+
+    .period-current {
+      color: var(--text-secondary);
+      font-weight: 500;
     }
 
     .vs-line {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 3px;
+    }
+
+    .vs-prefix {
       color: var(--text-muted);
+      font-family: var(--font-family-body);
+      font-size: 0.6875rem;
+      letter-spacing: 0;
+    }
+
+    .prev-target {
+      color: var(--text-secondary);
+      font-weight: 500;
     }
 
     .window-badge {
       display: inline-block;
-      margin-top: 4px;
+      margin-top: 2px;
       padding: 1px 5px;
       font-size: 0.6875rem;
       font-weight: 600;
       border-radius: var(--radius-xs);
-    }
-
-    .badge-partial {
-      background-color: var(--feedback-info-bg);
-      color: var(--text-on-brand);
     }
 
     .badge-nobase {
@@ -143,6 +219,11 @@ export class TrendColumnHeaderComponent {
   readonly previousSpanText = computed(() => formatWindowMonthSpan(this.windowMeta().anterior));
   readonly comparisonMode = input<TrendComparisonMode>('point');
 
+  readonly showCurrentSpan = computed(() => {
+    const atual = this.windowMeta().atual;
+    return atual.inicio.slice(0, 7) !== atual.fim.slice(0, 7);
+  });
+
   readonly previousSpanDisplay = computed(() => {
     const prev = this.previousSpanText();
     if (this.comparisonMode() === 'average' && this.windowMeta().meses > 1) {
@@ -151,6 +232,7 @@ export class TrendColumnHeaderComponent {
     return prev;
   });
 
+  readonly tooltipText = computed(() => `${this.currentSpanText()} vs ${this.previousSpanDisplay()}`);
 
   readonly ariaLabel = computed(() => {
     const months = this.windowMeta().meses;

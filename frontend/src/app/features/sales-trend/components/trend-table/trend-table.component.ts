@@ -18,6 +18,7 @@ import {
   TrendWindowMeta,
 } from '../../models/sales-trend.model';
 import { SupplierDetailState } from '../../services/sales-trend.store';
+import { formatWindowMonthSpan } from '../../utils/trend-format';
 import { TrendColumnHeaderComponent } from '../trend-column-header/trend-column-header.component';
 import { TrendRowComponent } from '../trend-row/trend-row.component';
 import { TrendCellComponent } from '../trend-cell/trend-cell.component';
@@ -42,11 +43,19 @@ import { TrendSupplierGroupComponent } from '../trend-supplier-group/trend-suppl
           <tr>
             <th class="th-expand" scope="col"><span class="sr-only">Expandir</span></th>
             <th class="th-entity" scope="col">
-              {{ groupBy() === 'supplier' ? 'FORNECEDOR' : 'PRODUTO' }}
+              <div class="th-entity-content">
+                <span class="th-entity-title">{{ groupBy() === 'supplier' ? 'FORNECEDOR' : 'PRODUTO' }}</span>
+                @if (baseSpanLabel()) {
+                  <span class="th-entity-sub">
+                    Mês-base: <span class="th-entity-base">{{ baseSpanLabel() }}</span>
+                  </span>
+                }
+              </div>
             </th>
             @for (col of columns(); track col.meses) {
               <th
                 class="th-window"
+                [class.is-sorted]="col.meses === sortWindow()"
                 scope="col"
                 [attr.aria-sort]="col.meses === sortWindow() ? (sortDir() === 'desc' ? 'descending' : 'ascending') : 'none'"
               >
@@ -139,6 +148,7 @@ import { TrendSupplierGroupComponent } from '../trend-supplier-group/trend-suppl
       border: 1px solid var(--border-default);
       border-radius: var(--radius-sm);
       box-shadow: var(--shadow-xs);
+      overflow: hidden;
     }
 
     .trend-table {
@@ -149,7 +159,8 @@ import { TrendSupplierGroupComponent } from '../trend-supplier-group/trend-suppl
       th {
         background-color: var(--bg-table-header);
         border-bottom: 2px solid var(--border-default);
-        vertical-align: bottom;
+        vertical-align: middle;
+        height: 1px;
         padding: 0;
       }
     }
@@ -159,19 +170,51 @@ import { TrendSupplierGroupComponent } from '../trend-supplier-group/trend-suppl
     }
 
     .th-entity {
-      padding: var(--space-2, 8px) var(--space-3, 12px);
       text-align: left;
-      font-family: var(--font-family-headline);
-      font-size: 0.72rem;
-      font-weight: 700;
-      letter-spacing: 0.04em;
       color: var(--text-primary);
     }
 
+    .th-entity-content {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      min-height: 58px;
+      gap: 4px;
+      padding: 10px var(--space-3, 12px);
+    }
+
+    .th-entity-title {
+      font-family: var(--font-family-headline);
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      line-height: 18px;
+      color: var(--text-primary);
+    }
+
+    .th-entity-sub {
+      font-family: var(--font-family-body);
+      font-size: 0.6875rem;
+      font-weight: 500;
+      line-height: 1.25;
+      color: var(--text-muted);
+    }
+
+    .th-entity-base {
+      font-family: var(--font-family-mono);
+      font-weight: 600;
+      color: var(--text-secondary);
+    }
+
     .th-window {
-      width: 15%;
-      min-width: 110px;
-      max-width: 168px;
+      width: 16%;
+      min-width: 120px;
+      border-left: 1px solid var(--border-subtle);
+      transition: background-color var(--transition-fast);
+
+      &.is-sorted {
+        background-color: var(--brand-primary-subtle);
+      }
     }
 
     .total-row {
@@ -243,6 +286,18 @@ export class TrendTableComponent {
   readonly detailSortChange = output<{ supplierKey: string; sortBy: TrendSortBy }>();
   readonly detailPageChange = output<{ supplierKey: string; page: number }>();
   readonly detailRetry = output<string>();
+
+  readonly baseSpanLabel = computed(() => {
+    const cols = this.columns();
+    if (!cols.length) return '';
+    const first = cols[0].atual;
+    const firstStart = first.inicio.slice(0, 7);
+    const firstEnd = first.fim.slice(0, 7);
+    const allSameSingleMonth = cols.every(
+      (c) => c.atual.inicio.slice(0, 7) === firstStart && c.atual.fim.slice(0, 7) === firstEnd && firstStart === firstEnd,
+    );
+    return allSameSingleMonth ? formatWindowMonthSpan(first) : '';
+  });
 
   getItemKey(item: TrendProductRow | TrendSupplierRow): string | number {
     return (item as TrendSupplierRow).fornecedorChave ?? (item as TrendProductRow).codigo;
