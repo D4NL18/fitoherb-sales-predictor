@@ -280,17 +280,7 @@ export class SalesTrendPageComponent implements OnInit {
   }
 
   readonly subtitleText = computed(() => {
-    const meta = this.store.currentMeta;
-    const mode = this.store.query().comparisonMode || 'point';
-    const base = meta?.mesBase;
-    if (mode === 'point') {
-      return base
-        ? `O que subiu e o que caiu: compara as vendas de ${base} pontualmente com o mês de 1, 3, 6 e 12 meses atrás.`
-        : 'Compara o mês-base pontualmente com o mês de 1, 3, 6 e 12 meses atrás.';
-    }
-    return base
-      ? `O que subiu e o que caiu: compara as vendas de ${base} com a média mensal dos períodos anteriores de 1, 3, 6 e 12 meses.`
-      : 'Compara o mês-base com a média mensal dos períodos anteriores de 1, 3, 6 e 12 meses.';
+    return 'Identifique o que subiu e o que caiu nas vendas nas janelas de 1, 3, 6 e 12 meses.';
   });
 
   readonly columns = computed(() => this.store.currentMeta?.janelas || []);
