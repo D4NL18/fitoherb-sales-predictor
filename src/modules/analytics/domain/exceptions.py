@@ -64,3 +64,42 @@ class InvalidParametersError(AnalyticsDomainException):
             message=msg,
             fields=field_list,
         )
+
+
+# ---------------------------------------------------------------------------
+# F3: Churn de Clientes (P-127; ADR-006 DA-06)
+# ---------------------------------------------------------------------------
+
+class CustomerChurnNotFoundError(AnalyticsDomainException):
+    """CHU-001: Cliente não encontrado ou sem pedidos válidos de venda."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code="CHU-001",
+            message="Cliente não encontrado ou sem histórico de compras válidas.",
+            fields=(),
+        )
+
+
+class ChurnBaseInsufficientError(AnalyticsDomainException):
+    """CHU-002: Base de clientes/pedidos insuficiente para o cálculo de churn."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code="CHU-002",
+            message="Base de vendas insuficiente para cálculo de churn de clientes.",
+            fields=(),
+        )
+
+
+class ChurnInvalidParametersError(AnalyticsDomainException):
+    """CHU-003: Parâmetros inválidos informados para a rota de churn."""
+
+    def __init__(self, fields: Sequence[str] = ()) -> None:
+        field_list = tuple(fields)
+        msg = f"Parâmetros de churn inválidos: {', '.join(field_list)}." if field_list else "Parâmetros de churn inválidos."
+        super().__init__(
+            code="CHU-003",
+            message=msg,
+            fields=field_list,
+        )
