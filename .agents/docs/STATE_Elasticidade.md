@@ -34,20 +34,26 @@
   - [x] Parecer de Privacidade: `.agents/docs/privacy/analytics-elasticidade.md`
   - [x] DBA: Bypass justificado (somente leitura em views existentes)
   - [x] AI Specialist: Bypass justificado (regressão determinística log-log com shrinkage)
-- [ ] **ETAPA 3: TDD e Implementação**
-  - [ ] Testes unitários e de integração (`tests/analytics/test_elasticity_*.py`)
-  - [ ] Domínio de elasticidade (`src/modules/analytics/domain/elasticity.py`)
-  - [ ] Repositório e agregados com abatimento de devoluções
-  - [ ] Rotas e schemas da API REST
-  - [ ] Frontend Angular (página de elasticidade e simulador)
-- [ ] **ETAPA 4: Quality Gate 360 e Auto-Healer**
-  - [ ] Review de Clean Code e conformidade
-  - [ ] UX Reviewer (8 estados e Design System)
-  - [ ] Auditoria de Privacidade LGPD
-  - [ ] Execução dos testes e auto-correção
+- [x] **ETAPA 3: TDD e Implementação**
+  - [x] Testes unitários e de integração (`tests/analytics/test_elasticity_*.py`): 14/14 passaram
+  - [x] Domínio de elasticidade (`src/modules/analytics/domain/elasticity.py`)
+  - [x] Repositório e agregados com abatimento de devoluções (`sales_repository.py`)
+  - [x] Rotas e schemas da API REST (`router.py`, `schemas.py`, `error_handlers.py`)
+  - [x] Frontend Angular (`elasticity-page.component`, models, service, rotas, 99/99 testes karma passaram)
+
+- [x] **ETAPA 4: Quality Gate 360 e Auto-Healer**
+  - [x] Review de Clean Code e conformidade (aprovado, zero arquivos fora de `.agents/docs/`)
+  - [x] UX Reviewer (8 estados validados, acessibilidade e Design System)
+  - [x] Auditoria de Privacidade LGPD (aprovada com poder de veto: minimização estrita, zero PII)
+  - [x] Execução de testes e Auto-Healer (14/14 backend, 99/99 frontend, 0 retentativas)
 
 ---
 
 ## 3. Registro de Decisões e Commits
 
-- *Início do fluxo F5*: Conclusão da Etapa 1 (Regras P-095..P-105 e Tasks).
+- Commit `fa33893`: docs(analytics): define regras P-095 a P-105 e checklist de tarefas da elasticidade
+- Commit `f3a629a`: docs(analytics): registra ADR-004, contrato de api, design plan e parecer de privacidade da elasticidade
+- Commit `c58f1e9`: test(analytics): adiciona testes TDD de elasticidade de produto e cliente (P-095..P-101)
+- Commit `7656364`: feat(analytics): implementa estimador de elasticidade log-log, shrinkage bayesiano e simulador (P-095..P-104)
+- Commit `088a3bf`: feat(analytics): implementa aba de elasticidade com simulador reativo e 8 estados interativos (P-105)
+
