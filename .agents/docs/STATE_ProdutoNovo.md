@@ -43,9 +43,13 @@
   - `designer`:
     - Design Plan completo em `.agents/docs/design/plans/analytics-produto-novo.md`.
     - Macroestrutura Workbench/Ledger consumindo tokens Papel & Tinta (`styles.scss`), checklist Hallmark Anti-IA auditado, especificação detalhada dos 8 estados interativos e drawer de explicabilidade.
+  - `ux_reviewer` / **Revisão Sênior UX/UI (Checkpoint Etapa 2):**
+    - Auditoria e correção integral do Design Plan contra `frontend/src/styles.scss` (Papel & Tinta), `styles/_analytics-ui.scss` e os componentes reais em `frontend/src/app/features/analytics/`.
+    - Correções aplicadas: remoção de tokens/classes inexistentes (`Inter`, `--feedback-success-bg`, `--feedback-critical-text`, `.tag-success`), regra de contraste impedindo texto escuro sobre `--feedback-*-bg` ou `--text-muted` sobre `--bg-subtle`/`--brand-primary-subtle`, reuso explícito de `AnalyticsShellComponent` (com `<h2>`), `ErrorBannerComponent`, `ResultStateComponent`, `analytics-error.ts`, `pt-br-format` (justificativa YAGNI para não usar `ListPagerComponent`), remoção de dados fabricados (tokens TF-IDF falsos, `{count}` não estruturado e rota inexistente em `NEW-001`), Focus Trap + `Escape` + `[attr.inert]` + restauração de foco no Drawer, gráfico SVG colorblind-safe com tabela pareada e degradação graciosa da sazonalidade F1, além de diretrizes Angular 18 (`OnPush`, `switchMap`, `takeUntilDestroyed`, zero `any`, remoção da menção inválida a "Signal Forms").
+    - Alinhamento contratual e de backlog atualizado em `.agents/docs/api_contracts/analytics-produto-novo.md` (`meta.dataReferencia`, `error.fields`, `seasonalityStatus`/`seasonalityConfidence`, borda `custoUnitario == precoVendaPrevisto`) e `.agents/docs/tasks/analytics-produto-novo.md` (Etapas 1.2, 5.1 e Tarefa 6).
   - `dba`: Bypass confirmado (somente leitura).
   - `privacy_officer`: Parecer formal emitido em `.agents/docs/privacy/analytics-produto-novo.md` (Aprovação com Bypass Total / ausência de PII).
-- **Status:** **CONCLUÍDO**
+- **Status:** **CONCLUÍDO (REVISADO E OTIMIZADO NO CHECKPOINT)**
 
 ---
 

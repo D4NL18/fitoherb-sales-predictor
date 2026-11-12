@@ -38,8 +38,8 @@ Criar os esquemas Pydantic e as rotas HTTP para consulta de opções do catálog
 - [ ] Erros de validação e de domínio retornam códigos semânticos `NEW-001` a `NEW-005` sem stacktrace.
 
 **Checklist Técnico (Arquiteto):**
-- [ ] **Etapa 1.1:** Criar `NewProductOptionsResponse`, `NewProductForecastRequest` e `NewProductForecastResponse` em Pydantic v2 com `to_camel`.
-- [ ] **Etapa 1.2:** Implementar exceções de domínio `NewProductDomainException` com atributos `code` e `status_code` herdando de `AnalyticsDomainException`.
+- [ ] **Etapa 1.1:** Criar `NewProductOptionsResponse`, `NewProductForecastRequest` e `NewProductForecastResponse` (com `meta.dataReferencia`, `seasonalityStatus` e `seasonalityConfidence`) em Pydantic v2 com `to_camel`.
+- [ ] **Etapa 1.2:** Implementar exceções de domínio `NewProductDomainException` com atributos `code`, `status_code` e `fields` herdando de `AnalyticsDomainException` (LGPD-05: sem eco de valores recebidos).
 - [ ] **Etapa 1.3:** Configurar rotas no APIRouter com tags e documentação OpenAPI.
 
 ---
@@ -108,28 +108,29 @@ Calcular faturamento projetado, margem bruta nominal e percentual, verificação
 - [ ] Consumo desacoplado do serviço de sazonalidade: fallback seguro para 1.00 se ausente ou confiança `BAIXA`.
 
 **Checklist Técnico (Arquiteto):**
-- [ ] **Etapa 5.1:** Definir interface desacoplada `SeasonalityProvider` com método `get_category_index(tipo, mes_calendario)`.
-- [ ] **Etapa 5.2:** Aplicar filtro de amortecimento $[0.90, 1.10]$ e validação de confiança.
-- [ ] **Etapa 5.3:** Implementar cálculos de receita, margem bruta e validação de viabilidade.
+- [ ] **Etapa 5.1:** Definir interface desacoplada `SeasonalityProvider` com método `get_category_seasonality(category, month)` retornando `SeasonalityResult`.
+- [ ] **Etapa 5.2:** Aplicar filtro de amortecimento $[0.90, 1.10]$ e validação de confiança (`seasonalityStatus` e `seasonalityConfidence`).
+- [ ] **Etapa 5.3:** Implementar cálculos de receita, margem bruta (`0.00` quando `custoUnitario == precoVendaPrevisto`) e validação de viabilidade.
 
 ---
 
 ### Tarefa 6: Interface de Usuário Angular (Design Plan e 8 Estados)
 **Descritivo Detalhado:**
-Criar o componente de tela de viabilidade de produto novo no Angular seguindo o Design Plan e o Design System Papel & Tinta (sem SKU, formulário limpo, gráfico/tabela de faixas, cartão de viabilidade, selo conservador e tratamento dos 8 estados).
+Criar a rota `/analytics/produto-novo` dentro de `AnalyticsShellComponent` seguindo rigorosamente o Design Plan atualizado (`.agents/docs/design/plans/analytics-produto-novo.md`) e o Design System Papel & Tinta (`frontend/src/styles.scss` + `styles/_analytics-ui.scss`), com reuso dos componentes compartilhados do módulo `analytics`, acessibilidade WCAG 2.1 AA e `ChangeDetectionStrategy.OnPush`.
 
 **Critérios de Aceite:**
-- [ ] Formulário com selects de tipo e fornecedor (alimentados via API) e inputs monetários/percentuais com formatação pt-BR.
-- [ ] Gráfico e tabela de projeção apresentando faixas (P10, Conservador, Mediana e Teto Maduro).
-- [ ] Cartão de viabilidade com badge destacado (Viável / Margem Abaixo do Esperado) e dados em Overpass Mono.
-- [ ] Selo proeminente de "Estimativa Conservadora: calculada para proteger seu estoque".
-- [ ] Cobertura dos 8 estados: Inicial, Preenchido Válido, Preenchido Inválido, Carregando (Skeleton), Sucesso, Base Insuficiente (Aviso), Vazio e Erro de Servidor.
+- [ ] Rota registrada em `ANALYTICS_ROUTES` (`AnalyticsShellComponent`), usando `<h2>` como título da seção, `tipo` em `<select>` acessível e `fornecedor` em combobox ARIA alimentados via `GET /analytics/new-product/options` (com skeleton de carga e retry via `ErrorBannerComponent` em caso de falha).
+- [ ] Validação inline em pt-BR (`0–100%` convertido para `0.00–1.00`, borda `custoUnitario > precoVendaPrevisto`, aviso informativo para `custoUnitario == precoVendaPrevisto` e margem sem custo), botão `Limpar simulação` e bloqueio de double-submit via `switchMap` + `takeUntilDestroyed`.
+- [ ] Gráfico SVG de faixas (`P10` triângulo tracejado, `Conservador` círculo sólido, `P50` quadrado pontilhado) acessível (`role="img"` + `aria-label` + tabela ledger pareada), bloco separado não-meta para `Teto Maduro (P75)` e degradação graciosa quando F1 tiver confiança baixa ou estiver indisponível.
+- [ ] Cartão de viabilidade com tags semânticas Papel & Tinta (`tag-positive` / `tag-warning` / `tag-neutral`, texto branco garantido sobre `--feedback-*-bg`), números em `Overpass Mono` com `tabular-nums` e selo proeminente `"Estimativa Conservadora: calculada para proteger seu estoque"`.
+- [ ] Drawer de explicabilidade com `role="dialog"`, `aria-modal="true"`, Focus Trap (`Tab`/`Shift+Tab` + `[attr.inert]`), fechamento por `Escape`/backdrop e restauração de foco ao gatilho, exibindo os 3 scores parciais sem inventar termos TF-IDF não retornados pela API.
+- [ ] Reuso explícito de `ErrorBannerComponent`, `ResultStateComponent`, `analytics-error.ts` (`NEW-001`..`NEW-005`), `pt-br-format` pipes/utils e `_analytics-ui.scss`, cobrindo os 8 estados e responsividade mobile (`< 640px`, cards e alvos `>= 40px`).
 
 **Checklist Técnico (Arquiteto):**
-- [ ] **Etapa 6.1:** Desenvolver `NewProductFormComponent` com Signal Forms e validação em tempo real.
-- [ ] **Etapa 6.2:** Desenvolver `NewProductResultsComponent` com tabela de faixas e cartão de viabilidade financeira.
-- [ ] **Etapa 6.3:** Desenvolver `NewProductSimilarsDrawerComponent` detalhando os similares e os scores parciais.
-- [ ] **Etapa 6.4:** Integrar com `AnalyticsService` tipado e tratar estados de erro semântico.
+- [ ] **Etapa 6.1:** Estender `ErrorBannerComponent`, `ResultStateComponent` e `analytics-error.ts` para suportar mensagens customizáveis e códigos `NEW-001`..`NEW-005`, criando `NewProductStore` (`OnPush`, Signals, `switchMap`, `takeUntilDestroyed`).
+- [ ] **Etapa 6.2:** Desenvolver `NewProductFormComponent` com Angular 18 Signals + validação tipada reativa em pt-BR, skeleton de `/options` e proteção anti-double-submit.
+- [ ] **Etapa 6.3:** Desenvolver `NewProductResultsComponent` e `NewProductBandChartComponent` com gráfico acessível colorblind-safe, tabela ledger, bloco de referência P75 e aviso gracioso de sazonalidade F1.
+- [ ] **Etapa 6.4:** Desenvolver `NewProductSimilarsDrawerComponent` com `role="dialog"`, Focus Trap nativo, `[attr.inert]`, `Escape` e restauração de foco, integrando com `AnalyticsService` tipado (zero `any`).
 
 ---
 
