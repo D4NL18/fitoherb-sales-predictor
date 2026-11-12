@@ -288,3 +288,81 @@ class ProductSearchResponse(CamelModel):
 
 
 ProductSearchItem = ConsultedProduct  # nome do contrato §3.6 / checklist B-20
+
+
+# ------------------------------------------------------------------ sazonalidade por produto (contrato 1.0.0; P-106..P-116)
+
+class SeasonalityProduct(CamelModel):
+    """Dados cadastrais básicos do produto consultado para sazonalidade."""
+
+    codigo: int = Field(description="Código do produto.")
+    descricao: str = Field(description="Descrição cadastral.")
+    fornecedor: str = Field(description="Fornecedor.")
+    estoque: float = Field(description="Estoque atual disponível.")
+    preco_venda: float = Field(description="Preço de venda praticado.")
+
+
+class SeasonalityPeakValleySchema(CamelModel):
+    """Período de pico ou vale da sazonalidade."""
+
+    mes_inicio: int = Field(description="Mês inicial do período (1 a 12).")
+    mes_fim: int = Field(description="Mês final do período (1 a 12).")
+    nome_periodo: str = Field(description="Nome formatado (ex: 'Março' ou 'Mai–Jul').")
+    indice: float = Field(description="Índice sazonal do ponto extremo.")
+    confianca: str = Field(description="Nível de confiança: ALTA, MEDIA ou BAIXA.")
+
+
+class MonthlySeasonalityPointSchema(CamelModel):
+    """Ponto de índice sazonal para um mês do calendário."""
+
+    mes: int = Field(description="Mês do calendário (1 a 12).")
+    nome_mes: str = Field(description="Nome do mês por extenso (ex: 'Janeiro').")
+    indice: float = Field(description="Índice sazonal normalizado (1.0 = neutro).")
+    confianca: str = Field(description="Nível de confiança: ALTA, MEDIA ou BAIXA.")
+    observacoes_disponiveis: int = Field(description="Número de ocorrências observadas (1 ou 2).")
+    razao_2025: Optional[float] = Field(default=None, description="Razão anual observada em 2025.")
+    razao_2026: Optional[float] = Field(default=None, description="Razão anual observada em 2026.")
+    volume_liquido_historico: int = Field(description="Soma de quantidades líquidas no histórico.")
+    receita_liquida_historica: float = Field(description="Soma de receita líquida no histórico.")
+
+
+class SeasonalityData(CamelModel):
+    """Payload de dados do produto na consulta de sazonalidade."""
+
+    produto: SeasonalityProduct = Field(description="Dados do produto.")
+    elegivel: bool = Field(description="Se possui histórico suficiente para análise confiável.")
+    forca: str = Field(description="Grau de sazonalidade: FORTE, MODERADA, FRACA ou INSUFICIENTE.")
+    motivo_insuficiencia: Optional[str] = Field(default=None, description="HISTORICO_CURTO ou VENDA_ESPORADICA se inelegível.")
+    amplitude: float = Field(description="Diferença entre o maior e o menor índice sazonal.")
+    correlacao_yoy: Optional[float] = Field(default=None, description="Correlação ano a ano nos meses em comum.")
+    pico: SeasonalityPeakValleySchema = Field(description="Período de pico de demanda.")
+    vale: SeasonalityPeakValleySchema = Field(description="Período de menor demanda.")
+    serie_mensal: List[MonthlySeasonalityPointSchema] = Field(description="Curva dos 12 meses do calendário.")
+
+
+class SeasonalityResponse(CamelModel):
+    """Resposta de GET /analytics/seasonality/{sku}."""
+
+    data: SeasonalityData = Field(description="Diagnóstico completo de sazonalidade.")
+    meta: AnalyticsMeta = Field(description="Metadados da resposta.")
+
+
+class SeasonalityRankingItemSchema(CamelModel):
+    """Item do ranking de sazonalidade."""
+
+    sku: int = Field(description="Código do produto.")
+    descricao: str = Field(description="Descrição do produto.")
+    fornecedor: str = Field(description="Fornecedor.")
+    forca: str = Field(description="FORTE, MODERADA, FRACA ou INSUFICIENTE.")
+    amplitude: float = Field(description="Amplitude do índice sazonal.")
+    mes_pico: str = Field(description="Mês ou período de pico.")
+    mes_vale: str = Field(description="Mês ou período de vale.")
+    faturamento_total: float = Field(description="Faturamento total líquido no período.")
+    motivo_insuficiencia: Optional[str] = Field(default=None, description="Motivo se for pouco mensurável.")
+
+
+class SeasonalityRankingResponse(CamelModel):
+    """Resposta de GET /analytics/seasonality/ranking."""
+
+    data: List[SeasonalityRankingItemSchema] = Field(description="Lista paginada de produtos.")
+    meta: PagedMeta = Field(description="Metadados com paginação.")

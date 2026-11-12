@@ -1,7 +1,7 @@
 """
-Rotas REST do módulo Analytics Comercial (contrato `analytics-cross-sell` 1.1.0, ADR-002 DA-01).
+Rotas REST do módulo Analytics Comercial (contrato `analytics-cross-sell` 1.1.0, `analytics-sazonalidade` 1.0.0, ADR-002 DA-01, ADR-005).
 
-As rotas só recebem e validam a entrada (tipos e faixas, P-066.2/P-067: 400 `XSL-004` via handler
+As rotas só recebem e validam a entrada (tipos e faixas, P-066.2/P-067: 400 `XSL-004`/`SEA-002` via handler
 global), chamam o serviço pelo módulo (`analytics_service.<caso_de_uso>`) e devolvem o envelope.
 Sem regra de negócio e sem `try/except` (o handler global traduz os erros). Rotas síncronas: a carga
 usa pyodbc e mineração em CPU, então o FastAPI as executa no threadpool.
@@ -20,6 +20,8 @@ from src.modules.analytics.api.schemas import (
     CustomerCrossSellResponse,
     ProductCrossSellResponse,
     ProductSearchResponse,
+    SeasonalityRankingResponse,
+    SeasonalityResponse,
 )
 from src.modules.analytics.domain.pagination import DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT, PageRequest
 from src.modules.analytics.domain.product_search import (
@@ -41,6 +43,13 @@ def _validate_search_query(query: str) -> str:
     return query
 
 
+def _validate_ranking_order(order: str) -> str:
+    """Validação de ordenação do ranking de sazonalidade (P-114)."""
+    if order not in ("most", "least"):
+        raise ValueError("order deve ser 'most' ou 'least'")
+    return order
+
+
 SkuPath = Annotated[int, Path(gt=0, le=MAX_INT32, description="Código (`Codigo`) do produto consultado.")]
 CustomerCodePath = Annotated[int, Path(alias="customerCode", gt=0, le=MAX_INT32,
                                        description="Código do cliente (`Cod Cliente`).")]
@@ -52,12 +61,21 @@ SearchQuery = Annotated[
 SearchLimitQuery = Annotated[
     int, Query(ge=MIN_PAGE_LIMIT, le=MAX_SEARCH_LIMIT, description="Máximo de resultados (1 a 20)."),
 ]
+RankingOrderQuery = Annotated[
+    str, Query(description="Ordenação do ranking: 'most' ou 'least'."), AfterValidator(_validate_ranking_order),
+]
 
 _ERROR = {"model": AnalyticsErrorResponse}
 _CROSS_SELL_ERRORS = {
     400: {**_ERROR, "description": "XSL-004: parâmetros inválidos."},
     404: {**_ERROR, "description": "XSL-001 (produto) ou XSL-002 (cliente)."},
     422: {**_ERROR, "description": "XSL-003: base insuficiente."},
+    503: {**_ERROR, "description": "ANL-001: base de vendas indisponível."},
+}
+_SEASONALITY_ERRORS = {
+    400: {**_ERROR, "description": "SEA-002: parâmetros inválidos."},
+    404: {**_ERROR, "description": "SEA-001: produto não encontrado."},
+    422: {**_ERROR, "description": "SEA-003: base insuficiente."},
     503: {**_ERROR, "description": "ANL-001: base de vendas indisponível."},
 }
 
@@ -101,3 +119,21 @@ def get_customer_cross_sell(customer_code: CustomerCodePath, limit: LimitQuery =
 def search_products(q: SearchQuery, limit: SearchLimitQuery = DEFAULT_SEARCH_LIMIT,
                     offset: OffsetQuery = MIN_OFFSET) -> ProductSearchResponse:
     return analytics_service.search_products(q, PageRequest(limit=limit, offset=offset))
+
+
+# ------------------------------------------------------------------ sazonalidade por produto (P-106..P-116; ADR-005)
+# NOTA: /seasonality/ranking DEVE vir antes de /seasonality/{sku} para evitar conflito de path matching
+
+@analytics_router.get("/seasonality/ranking", response_model=SeasonalityRankingResponse,
+                      summary="Rankings de sazonalidade", responses=_SEASONALITY_ERRORS,
+                      description="Lista produtos mais sazonais ou menos mensuráveis paginados (P-114).")
+def get_seasonality_ranking(order: RankingOrderQuery = "most", limit: LimitQuery = DEFAULT_PAGE_LIMIT,
+                            offset: OffsetQuery = MIN_OFFSET) -> SeasonalityRankingResponse:
+    return analytics_service.get_seasonality_ranking(order, PageRequest(limit=limit, offset=offset))
+
+
+@analytics_router.get("/seasonality/{sku}", response_model=SeasonalityResponse,
+                      summary="Detecção de sazonalidade por produto", responses=_SEASONALITY_ERRORS,
+                      description="Retorna a curva mensal de sazonalidade, pico, vale, força e confiança (P-106 a P-113).")
+def get_product_seasonality(sku: SkuPath) -> SeasonalityResponse:
+    return analytics_service.get_product_seasonality(sku)

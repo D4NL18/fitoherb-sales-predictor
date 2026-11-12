@@ -133,3 +133,38 @@ def fetch_catalog() -> pd.DataFrame:
     with _execute_readonly(_CATALOG_SQL) as cursor:
         rows = [tuple(row) for row in cursor.fetchall()]
     return pd.DataFrame(rows, columns=CATALOG_COLUMNS)
+
+
+MONTHLY_SALES_COLUMNS = ["sku", "sale_year", "sale_month", "net_quantity", "net_revenue"]
+
+_MONTHLY_SALES_SQL = f"""
+SELECT
+    [Cod Produto]                                     AS sku,
+    YEAR([Data])                                      AS sale_year,
+    MONTH([Data])                                     AS sale_month,
+    SUM([Qtd Venda])                                  AS net_quantity,
+    SUM([Valor Venda])                                AS net_revenue
+FROM Externo01.Vendas
+WHERE ([Operação] = '{SALE_OPERATION}' OR [Operação] LIKE '{RETURN_OPERATION_PATTERN}')
+  AND [Data] < ?
+GROUP BY [Cod Produto], YEAR([Data]), MONTH([Data])
+""".strip()
+
+
+def fetch_monthly_sales(cutoff: date) -> pd.DataFrame:
+    """
+    Agregado mensal líquido de vendas e devoluções por SKU (P-106; ADR-005 DA-02).
+
+    Retorna DataFrame com colunas `sku, sale_year, sale_month, net_quantity, net_revenue`.
+    """
+    with _execute_readonly(_MONTHLY_SALES_SQL, (cutoff,)) as cursor:
+        rows = [tuple(row) for row in cursor.fetchall()]
+    if not rows:
+        return pd.DataFrame(columns=MONTHLY_SALES_COLUMNS)
+    df = pd.DataFrame(rows, columns=MONTHLY_SALES_COLUMNS)
+    df["sku"] = df["sku"].astype(np.int32)
+    df["sale_year"] = df["sale_year"].astype(np.int32)
+    df["sale_month"] = df["sale_month"].astype(np.int32)
+    df["net_quantity"] = df["net_quantity"].astype(np.int64)
+    df["net_revenue"] = df["net_revenue"].astype(float)
+    return df

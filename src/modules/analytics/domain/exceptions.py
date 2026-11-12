@@ -64,3 +64,38 @@ class InvalidParametersError(AnalyticsDomainException):
             message=msg,
             fields=field_list,
         )
+
+
+class SeasonalityProductNotFoundError(AnalyticsDomainException):
+    """SEA-001: Produto não encontrado ou sem histórico de vendas para sazonalidade (P-116)."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code="SEA-001",
+            message="Produto não encontrado ou sem histórico de vendas.",
+            fields=(),
+        )
+
+
+class SeasonalityInvalidParametersError(AnalyticsDomainException):
+    """SEA-002: Parâmetros inválidos na consulta de sazonalidade (P-116)."""
+
+    def __init__(self, fields: Sequence[str] = ()) -> None:
+        field_list = tuple(fields)
+        msg = f"Parâmetros inválidos: {', '.join(field_list)}." if field_list else "Parâmetros inválidos."
+        super().__init__(
+            code="SEA-002",
+            message=msg,
+            fields=field_list,
+        )
+
+
+class SeasonalityInsufficientBaseError(AnalyticsDomainException):
+    """SEA-003: Base de dados agregada insuficiente para análise de sazonalidade (P-116)."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code="SEA-003",
+            message="Base de vendas insuficiente para calcular sazonalidade dos produtos.",
+            fields=(),
+        )

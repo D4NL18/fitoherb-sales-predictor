@@ -288,3 +288,34 @@ def get_snapshot(force_reload: bool = False) -> AnalyticsSnapshot:
         if current is not None and _is_fresh(current.loaded_at):
             return current
         return _load_and_publish()
+
+
+# ------------------------------------------------------------------ cache de vendas mensais (P-106, ADR-005 DA-07)
+
+_MONTHLY_SALES_DF: Optional[pd.DataFrame] = None
+_MONTHLY_SALES_LOADED_AT: Optional[datetime] = None
+_MONTHLY_SALES_LOCK = threading.Lock()
+
+
+def get_monthly_sales(force_reload: bool = False) -> pd.DataFrame:
+    """
+    Retorna o agregado mensal líquido por SKU, com cache e TTL de 6h (ADR-005 DA-07).
+    """
+    global _MONTHLY_SALES_DF, _MONTHLY_SALES_LOADED_AT
+    seen = _MONTHLY_SALES_DF
+    if not force_reload and seen is not None and _MONTHLY_SALES_LOADED_AT is not None and _is_fresh(_MONTHLY_SALES_LOADED_AT):
+        return seen
+
+    with _MONTHLY_SALES_LOCK:
+        if not force_reload and _MONTHLY_SALES_DF is not None and _MONTHLY_SALES_LOADED_AT is not None and _is_fresh(_MONTHLY_SALES_LOADED_AT):
+            return _MONTHLY_SALES_DF
+
+        now = _utc_now()
+        ref_date = business_date(now)
+        # Exclui mês corrente: corte no 1º dia do mês corrente
+        first_of_month = ref_date.replace(day=1)
+        df = sales_repository.fetch_monthly_sales(first_of_month)
+        _MONTHLY_SALES_DF = df
+        _MONTHLY_SALES_LOADED_AT = now
+        logger.info("Carga de vendas mensais concluida: %d registros agregados.", len(df))
+        return df
