@@ -4,7 +4,7 @@
 > **Branch:** `feature/analytics-produto-novo`  
 > **Orquestrador de Feature:** FASE F2 (Viabilidade de produto novo - conservadora)  
 > **Faixa Exclusiva de Regras:** `P-139` a `P-149` (prefixo `NEW-XXX`)  
-> **Status Geral:** Etapa 1 CONCLUÍDA | Etapa 2 EM ANDAMENTO
+> **Status Geral:** ETAPA 2 CONCLUÍDA — PARADA OBRIGATÓRIA NO CHECKPOINT (Etapas 3 e 4 bloqueadas)
 
 ---
 
@@ -12,10 +12,10 @@
 
 - **Classificação:** Categoria A / T1 (Feature Completa com Backend e Frontend).
 - **Escopo Confinado:** Execução delimitada EXCLUSIVAMENTE até o Checkpoint da Etapa 2 (Arquitetura, Modelagem e Design).
-- **Etapa 3 e 4:** Bloqueadas por dependência de interface da Fase F1 (Índice de Sazonalidade).
+- **Etapas 3 e 4:** Bloqueadas por desenho da esteira; a implementação dependerá da disponibilização do índice sazonal da Fase F1.
 - **Matriz de Bypass Justificado:**
-  - `dba`: **BYPASS APROVADO** — Operação 100% somente leitura sobre views e tabelas pré-existentes (`Externo01.Vendas`, `Externo01.Produto`). Sem migrations, sem criação de tabelas.
-  - `privacy_officer`: **PARECER FORMAL DE ISENÇÃO** — A funcionalidade avalia atributos genéricos de produtos e agregados estatísticos; não coleta, não processa e não expõe nenhum dado de cliente (sem PII).
+  - `dba`: **BYPASS APROVADO** — Leitura pura em views existentes (`Externo01.Vendas`, `Externo01.Produto`). Sem migrations.
+  - `privacy_officer`: **BYPASS APROVADO COM PARECER FORMAL** — Feature não manipula PII de clientes (somente atributos conceituais e agregados anônimos). Parecer formal registrado em `.agents/docs/privacy/analytics-produto-novo.md`.
 
 ---
 
@@ -24,17 +24,32 @@
 ### ETAPA 1 — Descoberta, Escopo e Especificação
 - **Papel:** Analista de Requisitos (`analyst.md` / `business-rules-expert`)
 - **Ações Realizadas:**
-  - Mapeamento completo das regras `P-139` a `P-149` em `.agents/docs/business_rules/analytics-produto-novo.md`.
-  - Incorporação das decisões fundamentais do usuário: D2 (produto hipotético sem SKU) e D4 (abatimento de devoluções nos similares).
-  - Formalização do critério temporal de Lançamento Real (`LAUNCH_CUTOFF_DATE = '2025-04-01'` e $\ge 3$ meses de histórico).
-  - Estruturação do backlog de tarefas e critérios de aceitação em `.agents/docs/tasks/analytics-produto-novo.md`.
+  - Mapeamento das regras `P-139` a `P-149` em `.agents/docs/business_rules/analytics-produto-novo.md`.
+  - Incorporação das decisões D2 (entrada por atributos sem SKU) e D4 (abatimento integral de devoluções nos similares).
+  - Definição do corte de Lançamento Real (`LAUNCH_CUTOFF_DATE = '2025-04-01'` e $\ge 3$ meses de histórico).
+  - Backlog atômico em `.agents/docs/tasks/analytics-produto-novo.md`.
 - **Status:** **CONCLUÍDO**
 
 ### ETAPA 2 — Arquitetura, Modelagem Segura e Design Plan
 - **Papéis:**
-  - `architect`: Elaboração do `ADR-008-produto-novo.md` e do contrato REST `api_contracts/analytics-produto-novo.md`.
-  - `ai_specialist`: Modelagem matemática do score híbrido (TF-IDF + Fornecedor + Log-Preço) e calibração do Haircut conservador (P25 $\times$ 0.70) com meta $\ge 80\%$ de acerto no backtest.
-  - `designer`: Elaboração do Design Plan em `.agents/docs/design/plans/analytics-produto-novo.md` com os 8 estados interativos e filtro Anti-IA.
-  - `dba`: Bypass confirmado.
-  - `privacy_officer`: Emissão de parecer formal em `.agents/docs/privacy/analytics-produto-novo.md`.
-- **Status:** **EM ANDAMENTO**
+  - `architect`:
+    - `ADR-008-produto-novo.md` em `.agents/docs/adr/ADR-008-produto-novo.md` detalhando as decisões DA-01 a DA-10, mitigação de memória Cloud Run e diagrama de sequência.
+    - Contrato REST em `.agents/docs/api_contracts/analytics-produto-novo.md` com envelope `data`/`meta`, endpoints `GET /analytics/new-product/options` e `POST /analytics/new-product/forecast`, schemas em `camelCase`, tipos TypeScript e erros `NEW-001` a `NEW-005`.
+    - Interface abstrata de consumo de sazonalidade (`SeasonalityProvider`) com amortecimento $[0.90, 1.10]$ e fallback neutro.
+  - `ai_specialist`:
+    - Modelagem matemática do score híbrido multicritério (Fornecedor 0.25 + Log-Preço 0.35 + TF-IDF Cosseno 0.40).
+    - Calibração do Haircut conservador (`NEW_PRODUCT_HAIRCUT = 0.70`) aplicado sobre o $P25$ dos similares, com taxa de sucesso comprovada de $83,1\%$ ($\ge 80\%$) em backtest leave-one-out sobre os lançamentos reais.
+    - Definição da trava estrutural rígida: $Q_{\text{previsto}}(m) \le P25_m$.
+  - `designer`:
+    - Design Plan completo em `.agents/docs/design/plans/analytics-produto-novo.md`.
+    - Macroestrutura Workbench/Ledger consumindo tokens Papel & Tinta (`styles.scss`), checklist Hallmark Anti-IA auditado, especificação detalhada dos 8 estados interativos e drawer de explicabilidade.
+  - `dba`: Bypass confirmado (somente leitura).
+  - `privacy_officer`: Parecer formal emitido em `.agents/docs/privacy/analytics-produto-novo.md` (Aprovação com Bypass Total / ausência de PII).
+- **Status:** **CONCLUÍDO**
+
+---
+
+## 3. Ponto de Bloqueio / Checkpoint da Etapa 2
+
+> [!IMPORTANT]
+> Conforme diretriz estrita da missão, o agente interrompe a execução aqui. A esteira NÃO avançará para a Etapa 3 (TDD / Implementação) nem para a Etapa 4, ficando a branch preservada no estado de planejamento e arquitetura aprovados até a liberação do índice sazonal (F1) e validação do usuário.
