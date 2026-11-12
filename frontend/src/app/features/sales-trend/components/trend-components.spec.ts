@@ -141,31 +141,33 @@ describe('Sales Trend Components (T-18)', () => {
       component = fixture.componentInstance;
     });
 
-    it('gera opções decrescentes entre minMonth e maxMonth', () => {
+    it('gera apenas 2 opções: mês atual e mês passado', () => {
       fixture.componentRef.setInput('value', '2026-10');
       fixture.componentRef.setInput('defaultMonth', '2026-10');
-      fixture.componentRef.setInput('minMonth', '2026-08');
       fixture.componentRef.setInput('maxMonth', '2026-11');
       fixture.componentRef.setInput('lastCoveredDay', '2026-11-08');
       fixture.detectChanges();
 
       const opts = component.monthOptions();
-      expect(opts.length).toBe(4); // nov, out, set, ago
+      expect(opts.length).toBe(2);
       expect(opts[0].value).toBe('2026-11');
+      expect(opts[0].label).toContain('mês atual');
       expect(opts[1].value).toBe('2026-10');
-      expect(opts[3].value).toBe('2026-08');
+      expect(opts[1].label).toContain('mês passado');
     });
 
-    it('navega para o mês anterior ao clicar no botão ‹', () => {
+    it('emite mês selecionado ao alterar o select', () => {
       fixture.componentRef.setInput('value', '2026-10');
       fixture.componentRef.setInput('defaultMonth', '2026-10');
-      fixture.componentRef.setInput('minMonth', '2026-08');
       fixture.componentRef.setInput('maxMonth', '2026-11');
       fixture.detectChanges();
 
       spyOn(component.monthChange, 'emit');
-      component.stepMonth(-1);
-      expect(component.monthChange.emit).toHaveBeenCalledWith('2026-09');
+      const select = fixture.nativeElement.querySelector('select');
+      select.value = '2026-11';
+      select.dispatchEvent(new Event('change'));
+
+      expect(component.monthChange.emit).toHaveBeenCalledWith('2026-11');
     });
   });
 
