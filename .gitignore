@@ -80,9 +80,10 @@ venv.bak/
 !.env.example
 
 # IDEs e Editores / Agentes
-.agents/
-AGENTS.md
-agents.md
+# .agents/ e AGENTS.md são versionados: guardam a documentação e a memória do projeto (decisão de 2026-11-10).
+# O repositório é público: o catálogo do banco do ERP (esquema, tabelas, volumes) nunca vai para o GitHub.
+.agents/docs/db/
+.claude/
 .vscode/
 .idea/
 *.sublime-project

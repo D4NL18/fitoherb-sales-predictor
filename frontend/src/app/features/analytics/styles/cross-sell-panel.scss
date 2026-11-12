@@ -1,0 +1,33 @@
+/* Painéis irmãos de consulta e resultado de cada modo (Design Plan §5.3, §8). */
+@use 'analytics-ui' as ui;
+
+$query-panel-max-width: 720px;
+
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.query-panel {
+  @include ui.panel;
+  max-width: $query-panel-max-width;
+  padding: var(--space-5) var(--space-6);
+
+  @media (max-width: ui.$bp-tablet) {
+    max-width: none;
+  }
+
+  @media (max-width: ui.$bp-mobile) {
+    padding: var(--space-4);
+  }
+}
+
+.result-panel {
+  @include ui.panel;
+  min-width: 0;
+}
+
+.sr-only {
+  @include ui.sr-only;
+}

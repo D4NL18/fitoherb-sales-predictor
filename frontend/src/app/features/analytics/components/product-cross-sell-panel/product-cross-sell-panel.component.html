@@ -1,0 +1,61 @@
+<section class="query-panel" aria-label="Consulta por produto">
+  <app-code-search-form
+    label="Produto (código ou descrição)"
+    [invalidFormatMessage]="invalidFormatMessage"
+    placeholder="ex.: 10432 ou chá verde"
+    hint="Use o código do catálogo (o mesmo da tabela de preços) ou digite parte da descrição e escolha na lista."
+    submitLabel="Ver sugestões"
+    [enableProductSearch]="true"
+    [loading]="kind() === 'loading'"
+    [fieldError]="fieldError()"
+    [initialValue]="initialSku()"
+    (search)="onSearch($event)"
+  />
+</section>
+
+<section class="result-panel" aria-label="Sugestões por produto" [attr.aria-busy]="kind() === 'loading' ? 'true' : null">
+  @switch (kind()) {
+    @case ('loading') {
+      @if (query.response(); as response) {
+        <app-query-context-header
+          [title]="title()"
+          [subtitle]="'Cód. ' + response.data.produto.codigo + ' · ' + response.data.produto.fornecedor"
+          [dataReferencia]="response.meta.dataReferencia"
+        />
+      }
+      <app-recommendation-list-skeleton [showHeader]="query.response() === null" />
+    }
+    @case ('results') {
+      @if (query.response(); as response) {
+        <app-query-context-header
+          [title]="title()"
+          [subtitle]="'Cód. ' + response.data.produto.codigo + ' · ' + response.data.produto.fornecedor"
+          [dataReferencia]="response.meta.dataReferencia"
+        />
+        <app-product-recommendations-list
+          [items]="response.data.recomendacoes"
+          [pageOffset]="response.meta.offset"
+          [label]="'Sugestões para ' + response.data.produto.descricao"
+        />
+        <app-list-pager
+          [page]="response.meta.page"
+          [totalPages]="response.meta.totalPages"
+          [totalItems]="response.meta.totalItems"
+          [offset]="response.meta.offset"
+          [itemCount]="response.data.recomendacoes.length"
+          (pageChange)="onPageChange($event)"
+        />
+      }
+    }
+    @case ('technical-error') {
+      <app-error-banner (retry)="retry()" />
+    }
+    @default {
+      @if (state(); as view) {
+        <app-result-state [view]="view" (action)="onStateAction($event)" />
+      }
+    }
+  }
+</section>
+
+<p class="sr-only" role="status" aria-live="polite">{{ live() }}</p>

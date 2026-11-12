@@ -1,0 +1,27 @@
+<section class="cross-sell" aria-labelledby="xs-section-title">
+  <header class="section-header">
+    <h2 id="xs-section-title" class="section-title">O que oferecer junto</h2>
+    <p class="section-subtitle">Produtos que costumam sair no mesmo pedido, a partir do histórico de vendas.</p>
+  </header>
+
+  <app-mode-switch [options]="modeOptions" [mode]="mode()" (modeChange)="onModeChange($event)" />
+
+  @if (cacheNotice(); as notice) {
+    <p class="cache-notice">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="9"></circle>
+        <polyline points="12 7 12 12 15 14"></polyline>
+      </svg>
+      <span>{{ notice }}</span>
+    </p>
+  }
+
+  <div role="tabpanel" id="xs-panel-product" aria-labelledby="xs-tab-product" [hidden]="mode() !== 'product'">
+    <app-product-cross-sell-panel [initialSku]="initialSku()" (productSearched)="onProductSearched($event)" />
+  </div>
+
+  <div role="tabpanel" id="xs-panel-customer" aria-labelledby="xs-tab-customer" [hidden]="mode() !== 'customer'">
+    <app-customer-cross-sell-panel />
+  </div>
+</section>

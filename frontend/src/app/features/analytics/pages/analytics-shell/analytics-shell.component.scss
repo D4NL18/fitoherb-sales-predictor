@@ -1,0 +1,88 @@
+/* Casca /analytics (Design Plan §5.2, §6.5, §8): anatomia de .feature-hero com nav de seções. */
+@use '../../styles/analytics-ui' as ui;
+
+$container-max-width: 1600px;
+$active-rule: 3px;
+
+.analytics-container {
+  max-width: $container-max-width;
+  margin: 0 auto;
+  padding: var(--space-5) var(--space-6) var(--space-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+
+  @media (max-width: ui.$bp-mobile) {
+    padding: var(--space-4) var(--space-4) var(--space-6);
+  }
+}
+
+.analytics-hero {
+  @include ui.panel;
+  border-top: $active-rule solid var(--brand-primary);
+  padding: var(--space-6) var(--space-6) 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+
+  @media (max-width: ui.$bp-mobile) {
+    padding: var(--space-4) var(--space-4) 0;
+  }
+}
+
+.hero-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.hero-title {
+  font-family: var(--font-family-headline);
+  font-size: 1.85rem;
+  line-height: 1.2;
+}
+
+.hero-subtitle {
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+}
+
+.section-nav {
+  display: flex;
+  gap: var(--space-5);
+  border-top: 1px solid var(--border-subtle);
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+}
+
+.section-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: ui.$touch-target;
+  padding: var(--space-2) 0;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-decoration: none;
+  white-space: nowrap;
+  scroll-snap-align: start;
+  border-bottom: $active-rule solid transparent;
+  transition: color var(--transition-fast), border-color var(--transition-fast);
+
+  @include ui.hover {
+    &:hover {
+      color: var(--text-primary);
+      border-bottom-color: var(--border-default);
+    }
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--border-focus);
+    outline-offset: 2px;
+  }
+
+  &.active {
+    color: var(--text-primary);
+    border-bottom-color: var(--brand-primary);
+  }
+}

@@ -7,6 +7,10 @@ export const routes: Routes = [
   { path: 'pricing', component: PricingPageComponent },
   { path: 'inventory', component: InventoryPageComponent },
   {
+    path: 'analytics',
+    loadChildren: () => import('./features/analytics/analytics.routes').then((m) => m.ANALYTICS_ROUTES),
+  },
+  {
     path: 'tendencia-vendas',
     loadComponent: () =>
       import('./features/sales-trend/pages/sales-trend-page/sales-trend-page.component').then(
@@ -15,4 +19,3 @@ export const routes: Routes = [
   },
   { path: '**', redirectTo: 'pricing' }
 ];
-

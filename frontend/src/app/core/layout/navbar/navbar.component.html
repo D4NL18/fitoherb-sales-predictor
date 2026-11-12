@@ -71,13 +71,30 @@
 
         <li class="nav-item">
           <a
+            routerLink="/analytics"
+            routerLinkActive="active"
+            (click)="closeMobileMenu()"
+            class="nav-link"
+            title="Consultas sobre o histórico de pedidos"
+          >
+            <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <line x1="6" y1="20" x2="6" y2="14"></line>
+              <line x1="12" y1="20" x2="12" y2="4"></line>
+              <line x1="18" y1="20" x2="18" y2="10"></line>
+            </svg>
+            <span class="nav-label">Análises de Vendas</span>
+          </a>
+        </li>
+
+        <li class="nav-item">
+          <a
             routerLink="/tendencia-vendas"
             routerLinkActive="active"
             (click)="closeMobileMenu()"
             class="nav-link"
             title="Acessar a Tendência de Vendas por Item"
           >
-            <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline>
               <polyline points="17 6 23 6 23 12"></polyline>
             </svg>
