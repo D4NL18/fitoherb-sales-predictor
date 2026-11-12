@@ -1,0 +1,19 @@
+<div class="mode-switch" role="tablist" aria-label="Tipo de consulta">
+  @for (option of options(); track option.mode; let index = $index) {
+    <button
+      #tab
+      type="button"
+      role="tab"
+      class="segment"
+      [id]="option.tabId"
+      [class.selected]="option.mode === mode()"
+      [attr.aria-selected]="option.mode === mode() ? 'true' : 'false'"
+      [attr.aria-controls]="option.panelId"
+      [attr.tabindex]="option.mode === mode() ? 0 : -1"
+      (click)="select(index)"
+      (keydown)="onKeydown($event, index)"
+    >
+      {{ option.label }}
+    </button>
+  }
+</div>

@@ -1,0 +1,185 @@
+/* Formulário de consulta por código + combobox de produto (Design Plan §5.4, §6.4, §6.5, §8). */
+@use '../../styles/analytics-ui' as ui;
+
+$suggestions-max-height: 320px;
+
+:host {
+  display: block;
+}
+
+.code-search {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.field-label {
+  font-family: var(--font-family-body);
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.field-row {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-3);
+
+  @media (max-width: ui.$bp-mobile) {
+    flex-direction: column;
+  }
+}
+
+.field-box {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: ui.$touch-target;
+  padding: 0 var(--space-3);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  transition: border-color var(--transition-fast);
+
+  @include ui.hover {
+    border-color: var(--border-default);
+  }
+
+  /* O input não tem outline próprio: o anel de foco fica no container (correção de foco do §5.4). */
+  &:focus-within {
+    outline: 2px solid var(--border-focus);
+    outline-offset: 2px;
+  }
+
+  &.has-error {
+    border-color: var(--feedback-critical-bg);
+  }
+
+  input {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    border: none;
+    background: transparent;
+    font-family: var(--font-family-body);
+    font-size: 0.88rem;
+    color: var(--text-primary);
+    outline: none;
+
+    /* Placeholder sobre --bg-subtle usa --text-secondary (contraste, §3). */
+    &::placeholder {
+      color: var(--text-secondary);
+    }
+  }
+}
+
+.field-icon {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
+.clear-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: ui.$touch-target;
+  height: ui.$touch-target;
+  margin-right: calc(-1 * var(--space-3));
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: var(--radius-xs);
+  transition: color var(--transition-fast);
+
+  @include ui.hover {
+    color: var(--text-primary);
+  }
+}
+
+.submit-button {
+  @include ui.button-primary;
+
+  .spinner {
+    @include ui.spinner;
+  }
+}
+
+.suggestions {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  left: 0;
+  right: 0;
+  z-index: 10;
+  max-height: $suggestions-max-height;
+  overflow-y: auto;
+  @include ui.panel;
+  box-shadow: var(--shadow-md);
+}
+
+.suggestion {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+  border-bottom: 1px solid var(--border-subtle);
+
+  &:last-child {
+    border-bottom: none;
+  }
+
+  @include ui.hover {
+    background: var(--bg-table-row-hover);
+  }
+
+  /* Depois do hover: o destaque do teclado vence o mouse (NB-6). */
+  &.active,
+  &.active:hover {
+    background: var(--brand-primary-subtle);
+  }
+}
+
+.suggestion-code {
+  grid-row: span 2;
+  font-family: var(--font-family-mono);
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.suggestion-description {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.suggestion-supplier {
+  @include ui.caption;
+}
+
+.field-error {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--feedback-critical-bg);
+}
+
+.search-status {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+
+  /* Vazio continua na árvore de acessibilidade (região viva), mas sem ocupar espaço. */
+  &:empty {
+    @include ui.sr-only;
+  }
+}
+
+.field-hint {
+  @include ui.caption;
+}

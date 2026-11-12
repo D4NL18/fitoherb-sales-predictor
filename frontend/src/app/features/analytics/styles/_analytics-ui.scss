@@ -1,0 +1,126 @@
+/* ==========================================================================
+   Analytics Comercial - mixins visuais compartilhados (Design Plan §3, §6.5)
+   Só tokens de styles.scss (Papel & Tinta, D-1), sem fallback hex.
+   Mixins não emitem CSS sozinhos: cada componente inclui só o que usa.
+   ========================================================================== */
+
+$bp-mobile: 639.98px;
+$bp-tablet: 1023.98px;
+$touch-target: 40px;
+
+@mixin hover {
+  @media (hover: hover) {
+    &:hover {
+      @content;
+    }
+  }
+}
+
+@mixin reduced-motion {
+  @media (prefers-reduced-motion: reduce) {
+    @content;
+  }
+}
+
+@mixin panel {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-xs);
+}
+
+@mixin button-base {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: $touch-target;
+  padding: var(--space-2) var(--space-4);
+  font-family: var(--font-family-body);
+  font-size: 0.88rem;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+
+  &:disabled,
+  &[aria-disabled='true'] {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+@mixin button-primary {
+  @include button-base;
+  background: var(--brand-primary);
+  border-color: var(--brand-primary);
+  color: var(--text-on-brand);
+
+  @include hover {
+    &:not(:disabled):not([aria-disabled='true']) {
+      background: var(--brand-primary-hover);
+      border-color: var(--brand-primary-hover);
+    }
+  }
+
+  &:active:not(:disabled) {
+    background: var(--brand-primary-active);
+  }
+}
+
+@mixin button-secondary {
+  @include button-base;
+  background: var(--bg-surface);
+  border-color: var(--border-default);
+  color: var(--text-primary);
+
+  @include hover {
+    &:not(:disabled) {
+      background: var(--bg-subtle);
+    }
+  }
+
+  &:active:not(:disabled) {
+    background: var(--bg-muted);
+  }
+}
+
+@mixin spinner {
+  width: var(--space-4);
+  height: var(--space-4);
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: var(--radius-full);
+  animation: analytics-spin 0.7s linear infinite;
+
+  @include reduced-motion {
+    animation: none;
+  }
+
+  @keyframes analytics-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+}
+
+@mixin sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+@mixin caption {
+  font-family: var(--font-family-body);
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}

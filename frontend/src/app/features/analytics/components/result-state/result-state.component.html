@@ -1,0 +1,50 @@
+<section class="result-state" [class.tone-warning]="view().tone === 'warning'">
+  <span class="state-icon" aria-hidden="true">
+    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+      stroke-linecap="round" stroke-linejoin="round">
+      @switch (view().icon) {
+        @case ('pair') {
+          <rect x="2" y="7" width="8" height="8" rx="1"></rect>
+          <rect x="14" y="7" width="8" height="8" rx="1"></rect>
+          <line x1="10" y1="11" x2="14" y2="11"></line>
+        }
+        @case ('person') {
+          <circle cx="8" cy="7" r="3"></circle>
+          <path d="M2 20c0-3.3 2.7-6 6-6s6 2.7 6 6"></path>
+          <rect x="15" y="12" width="7" height="7" rx="1"></rect>
+        }
+        @case ('box') {
+          <path d="M21 8v8a2 2 0 0 1-1 1.7l-7 4a2 2 0 0 1-2 0l-7-4A2 2 0 0 1 3 16V8"></path>
+          <line x1="8" y1="12" x2="16" y2="12"></line>
+        }
+        @case ('check') {
+          <path d="M21 8v8a2 2 0 0 1-1 1.7l-7 4a2 2 0 0 1-2 0l-7-4A2 2 0 0 1 3 16V8"></path>
+          <polyline points="8 12 11 15 16 9"></polyline>
+        }
+        @case ('clock') {
+          <circle cx="12" cy="12" r="9"></circle>
+          <polyline points="12 7 12 12 15 14"></polyline>
+        }
+        @case ('list') {
+          <line x1="8" y1="6" x2="21" y2="6"></line>
+          <line x1="8" y1="12" x2="21" y2="12"></line>
+          <line x1="8" y1="18" x2="21" y2="18"></line>
+          <line x1="3" y1="6" x2="3.01" y2="6"></line>
+          <line x1="3" y1="12" x2="3.01" y2="12"></line>
+          <line x1="3" y1="18" x2="3.01" y2="18"></line>
+        }
+        @case ('chart') {
+          <line x1="3" y1="21" x2="21" y2="21"></line>
+          <circle cx="7" cy="15" r="1.2"></circle>
+          <circle cx="13" cy="10" r="1.2"></circle>
+        }
+      }
+    </svg>
+  </span>
+
+  <div class="state-body">
+    <h3 class="state-title">{{ view().title }}</h3>
+    <p class="state-text">{{ view().text }}</p>
+    <button type="button" class="state-action" (click)="action.emit(view().action)">{{ view().actionLabel }}</button>
+  </div>
+</section>

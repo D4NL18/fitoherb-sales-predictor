@@ -1,0 +1,18 @@
+@if (visible()) {
+  <nav class="pager" aria-label="Paginação das sugestões">
+    <p class="pager-range">
+      {{ firstItem() | ptDecimal }}–{{ lastItem() | ptDecimal }} de {{ totalItems() | ptDecimal }}
+    </p>
+    <div class="pager-controls">
+      <button type="button" class="pager-button" aria-label="Página anterior"
+        [disabled]="isFirst() || disabled()" (click)="go(page() - 1)">
+        <span aria-hidden="true">‹</span> Anterior
+      </button>
+      <span class="pager-position">Página {{ page() }} de {{ totalPages() }}</span>
+      <button type="button" class="pager-button" aria-label="Próxima página"
+        [disabled]="isLast() || disabled()" (click)="go(page() + 1)">
+        Próxima <span aria-hidden="true">›</span>
+      </button>
+    </div>
+  </nav>
+}

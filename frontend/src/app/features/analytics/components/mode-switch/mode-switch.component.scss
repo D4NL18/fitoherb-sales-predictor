@@ -1,0 +1,58 @@
+/* Controle segmentado (Design Plan §5.3, §6.5, §8). */
+@use '../../styles/analytics-ui' as ui;
+
+.mode-switch {
+  display: inline-flex;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xs);
+  background: var(--bg-surface);
+  overflow: hidden;
+
+  @media (max-width: ui.$bp-mobile) {
+    display: flex;
+    width: 100%;
+  }
+}
+
+.segment {
+  flex: 1;
+  min-height: ui.$touch-target;
+  padding: var(--space-2) var(--space-5);
+  border: none;
+  background: var(--bg-surface);
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+
+  & + & {
+    border-left: 1px solid var(--border-default);
+  }
+
+  @include ui.hover {
+    &:not(.selected) {
+      background: var(--bg-subtle);
+    }
+  }
+
+  &:focus-visible {
+    outline-offset: -3px;
+  }
+
+  &.selected {
+    background: var(--brand-primary);
+    color: var(--text-on-brand);
+  }
+
+  /* Roving tabindex: o foco do teclado cai sempre aqui. Anel branco interno sobre a marca (WCAG 2.4.7 / 1.4.11, B-2). */
+  &.selected:focus-visible {
+    outline-color: var(--text-on-brand);
+  }
+
+  &:active {
+    background: var(--brand-primary-active);
+    color: var(--text-on-brand);
+  }
+}

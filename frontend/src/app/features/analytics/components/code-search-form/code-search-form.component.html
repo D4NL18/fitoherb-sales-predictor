@@ -1,0 +1,99 @@
+<form class="code-search" role="search" novalidate (submit)="onSubmit($event)">
+  <label class="field-label" [for]="ids.input">{{ label() }}</label>
+
+  <div class="field-row">
+    <div class="field-box" [class.has-error]="displayedError() !== null">
+      <svg class="field-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="11" cy="11" r="7"></circle>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+      </svg>
+
+      <input
+        #codeInput
+        type="text"
+        [attr.inputmode]="enableProductSearch() ? 'search' : 'numeric'"
+        autocomplete="off"
+        enterkeyhint="search"
+        [id]="ids.input"
+        [value]="value()"
+        [placeholder]="placeholder()"
+        [attr.role]="enableProductSearch() ? 'combobox' : null"
+        [attr.aria-autocomplete]="enableProductSearch() ? 'list' : null"
+        [attr.aria-controls]="enableProductSearch() ? ids.listbox : null"
+        [attr.aria-expanded]="enableProductSearch() ? (expanded() ? 'true' : 'false') : null"
+        [attr.aria-activedescendant]="activeOptionId()"
+        [attr.aria-invalid]="displayedError() !== null ? 'true' : null"
+        [attr.aria-describedby]="displayedError() !== null ? ids.error + ' ' + ids.hint : ids.hint"
+        (input)="onInput($event)"
+        (keydown)="onKeydown($event)"
+        (blur)="onBlur()"
+      />
+
+      @if (value() !== '') {
+        <button type="button" class="clear-button" aria-label="Limpar código" (click)="clearAndFocus()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+            stroke-linecap="round" aria-hidden="true">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      }
+
+      @if (enableProductSearch()) {
+        <div class="suggestions" role="listbox" [id]="ids.listbox" [attr.aria-label]="'Produtos encontrados'"
+          [hidden]="!expanded()">
+          @if (expanded()) {
+            @for (option of suggestions(); track option.codigo; let index = $index) {
+              <div
+                class="suggestion"
+                role="option"
+                [id]="optionId(index)"
+                [class.active]="index === activeIndex()"
+                [attr.aria-selected]="index === activeIndex() ? 'true' : 'false'"
+                (mousedown)="$event.preventDefault()"
+                (click)="selectOption(option)"
+              >
+                <span class="suggestion-code">{{ option.codigo }}</span>
+                <span class="suggestion-description">{{ option.descricao }}</span>
+                <span class="suggestion-supplier">{{ option.fornecedor }}</span>
+              </div>
+            }
+          }
+        </div>
+      }
+    </div>
+
+    <button
+      type="submit"
+      class="submit-button"
+      [disabled]="value().trim() === '' && !loading()"
+      [attr.aria-disabled]="loading() ? 'true' : null"
+    >
+      @if (loading()) {
+        <span class="spinner" aria-hidden="true"></span>
+        <span>Buscando…</span>
+      } @else {
+        <span>{{ submitLabel() }}</span>
+      }
+    </button>
+  </div>
+
+  @if (displayedError(); as message) {
+    <p class="field-error" [id]="ids.error">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="10"></circle>
+        <line x1="12" y1="8" x2="12" y2="12"></line>
+        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+      </svg>
+      <span>{{ message }}</span>
+    </p>
+  }
+
+  @if (enableProductSearch()) {
+    <p class="search-status" role="status" aria-live="polite">{{ searchStatus() }}</p>
+  }
+
+  <p class="field-hint" [id]="ids.hint">{{ hint() }}</p>
+</form>

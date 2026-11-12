@@ -1,0 +1,105 @@
+/* Skeleton com a geometria da linha real (Design Plan §6.2), pulse sólido global sem gradiente. */
+@use '../../styles/analytics-ui' as ui;
+
+$proportion-width: 120px;
+$proportion-height: 6px;
+$badge-width: 140px;
+$badge-height: 28px;
+$signal-width: 96px;
+$position-width: 20px;
+$position-column: 40px;
+$priority-rule: 3px;
+
+:host {
+  display: block;
+}
+
+.skeleton-line,
+.skeleton-box {
+  display: block;
+
+  @include ui.reduced-motion {
+    animation: none;
+  }
+}
+
+.skeleton-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-6);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.skeleton-header-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.bar-title { width: 60%; height: 1.25rem; }
+.bar-subtitle { width: 35%; height: 0.78rem; }
+.bar-badge { width: $badge-width; height: $badge-height; }
+
+/* Mesma grade e breakpoints de `styles/recommendation-list.scss` (.recommendation-row), para não "pular" (NB-3). */
+.skeleton-row {
+  display: grid;
+  grid-template-columns: $position-column minmax(0, 1.1fr) minmax(0, 1.6fr) auto;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-4) var(--space-6);
+  border-bottom: 1px solid var(--border-subtle);
+  border-left: $priority-rule solid transparent;
+
+  @media (max-width: ui.$bp-tablet) {
+    grid-template-columns: $position-column minmax(0, 1fr) auto;
+
+    .skeleton-explanation {
+      grid-column: 1 / -1;
+    }
+  }
+
+  @media (max-width: ui.$bp-mobile) {
+    grid-template-columns: $position-column minmax(0, 1fr);
+    padding: var(--space-4);
+
+    .skeleton-signals {
+      grid-column: 1 / -1;
+    }
+  }
+}
+
+.skeleton-signals {
+  display: flex;
+  justify-content: flex-end;
+
+  @media (max-width: ui.$bp-mobile) {
+    justify-content: flex-start;
+  }
+}
+
+.skeleton-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.bar-position { width: $position-width; height: 0.78rem; }
+.bar-product { width: 70%; height: 0.95rem; }
+.bar-caption { width: 45%; height: 0.78rem; }
+.bar-sentence { width: 95%; height: 0.88rem; }
+.bar-sentence-short { width: 70%; height: 0.88rem; }
+.bar-proportion { width: $proportion-width; height: $proportion-height; }
+.bar-signal { width: $signal-width; height: var(--space-5); }
+
+.slow-notice {
+  padding: var(--space-3) var(--space-6);
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+
+  &:empty {
+    padding: 0;
+  }
+}

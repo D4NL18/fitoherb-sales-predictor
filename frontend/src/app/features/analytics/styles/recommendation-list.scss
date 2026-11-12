@@ -1,0 +1,149 @@
+/* ==========================================================================
+   Linhas "ledger" das listas de cross-sell (Design Plan §5.6, §5.7, §8)
+   Compartilhado pelas listas de produto e de cliente. Linha não clicável;
+   status sempre com texto (tags globais de styles.scss).
+   ========================================================================== */
+@use 'analytics-ui' as ui;
+
+$position-column: 40px;
+$proportion-width: 120px;
+$proportion-height: 6px;
+$priority-rule: 3px;
+
+:host {
+  display: block;
+}
+
+.recommendation-list {
+  list-style: none;
+}
+
+.recommendation-row {
+  display: grid;
+  grid-template-columns: $position-column minmax(0, 1.1fr) minmax(0, 1.6fr) auto;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-4) var(--space-6);
+  border-bottom: 1px solid var(--border-subtle);
+  border-left: $priority-rule solid transparent;
+  transition: background-color var(--transition-fast);
+
+  @include ui.hover {
+    background: var(--bg-table-row-hover);
+  }
+
+  &.priority {
+    border-left-color: var(--brand-primary);
+  }
+
+  @media (max-width: ui.$bp-tablet) {
+    grid-template-columns: $position-column minmax(0, 1fr) auto;
+
+    .row-explanation {
+      grid-column: 1 / -1;
+    }
+  }
+
+  @media (max-width: ui.$bp-mobile) {
+    grid-template-columns: $position-column minmax(0, 1fr);
+    padding: var(--space-4);
+
+    .row-signals {
+      grid-column: 1 / -1;
+      justify-content: flex-start;
+    }
+  }
+}
+
+.row-position {
+  font-family: var(--font-family-mono);
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  padding-top: var(--space-1);
+}
+
+.row-product,
+.row-explanation {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.product-name {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.product-meta {
+  @include ui.caption;
+}
+
+.mono {
+  font-family: var(--font-family-mono);
+}
+
+.sentence-main {
+  font-size: 0.88rem;
+  color: var(--text-primary);
+}
+
+.sentence-secondary {
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+}
+
+.sentence-note {
+  @include ui.caption;
+}
+
+.proportion {
+  width: $proportion-width;
+  height: $proportion-height;
+  margin: var(--space-1) 0;
+  background: var(--bg-muted);
+  border-radius: var(--radius-xs);
+  overflow: hidden;
+}
+
+.proportion-fill {
+  display: block;
+  height: 100%;
+  background: var(--brand-primary);
+}
+
+.row-signals {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-1) var(--space-2);
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--brand-primary);
+  background: var(--brand-primary-subtle);
+  border-radius: var(--radius-xs);
+  white-space: nowrap;
+}
+
+
+.list-divider {
+  padding: var(--space-3) var(--space-6) var(--space-2);
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.sr-only {
+  @include ui.sr-only;
+}
