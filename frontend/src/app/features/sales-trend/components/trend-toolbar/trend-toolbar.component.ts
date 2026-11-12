@@ -82,7 +82,7 @@ import { TrendSearchFieldComponent } from '../trend-search-field/trend-search-fi
         </div>
 
         <div class="volume-wrapper">
-          <label class="volume-label" for="min-volume-input">Volume mínimo:</label>
+          <label class="volume-label" for="min-volume-input">{{ minFilterLabel() }}</label>
           <div class="volume-input-group">
             <input
               id="min-volume-input"
@@ -90,7 +90,8 @@ import { TrendSearchFieldComponent } from '../trend-search-field/trend-search-fi
               min="0"
               step="any"
               class="volume-input"
-              placeholder="0"
+              [placeholder]="minFilterPlaceholder()"
+              [attr.aria-label]="minFilterAriaLabel()"
               [value]="query().minVolume || ''"
               [disabled]="loading()"
               (change)="onVolumeChange($event)"
@@ -238,6 +239,20 @@ export class TrendToolbarComponent {
   ];
 
   readonly metricUnit = computed(() => (this.query().metric === 'quantity' ? 'un' : 'R$'));
+
+  readonly minFilterLabel = computed(() =>
+    this.query().metric === 'quantity' ? 'Volume mínimo:' : 'Faturamento mínimo:'
+  );
+
+  readonly minFilterPlaceholder = computed(() =>
+    this.query().metric === 'quantity' ? '0' : '0,00'
+  );
+
+  readonly minFilterAriaLabel = computed(() =>
+    this.query().metric === 'quantity'
+      ? 'Volume mínimo em unidades'
+      : 'Faturamento mínimo em reais'
+  );
 
   readonly searchPlaceholder = computed(() =>
     this.query().groupBy === 'supplier'

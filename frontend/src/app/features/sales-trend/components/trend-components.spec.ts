@@ -288,5 +288,25 @@ describe('Sales Trend Components (T-18)', () => {
       expect(searchInput).toBeTruthy();
       expect(searchInput.disabled).toBeFalse();
     });
+
+    it('alterna texto e placeholder do filtro mínimo conforme métrica selecionada', () => {
+      fixture.componentRef.setInput('query', { groupBy: 'product', metric: 'revenue' });
+      fixture.detectChanges();
+
+      const label = fixture.nativeElement.querySelector('.volume-label') as HTMLLabelElement;
+      const input = fixture.nativeElement.querySelector('#min-volume-input') as HTMLInputElement;
+      const unit = fixture.nativeElement.querySelector('.volume-unit') as HTMLElement;
+
+      expect(label.textContent?.trim()).toBe('Faturamento mínimo:');
+      expect(input.placeholder).toBe('0,00');
+      expect(unit.textContent?.trim()).toBe('R$');
+
+      fixture.componentRef.setInput('query', { groupBy: 'product', metric: 'quantity' });
+      fixture.detectChanges();
+
+      expect(label.textContent?.trim()).toBe('Volume mínimo:');
+      expect(input.placeholder).toBe('0');
+      expect(unit.textContent?.trim()).toBe('un');
+    });
   });
 });
