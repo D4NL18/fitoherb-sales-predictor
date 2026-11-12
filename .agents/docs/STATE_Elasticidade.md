@@ -27,11 +27,13 @@
 - [x] **ETAPA 1: Descoberta, Escopo e Especificação**
   - [x] Regras de Negócio P-095 a P-105: `.agents/docs/business_rules/analytics-elasticidade.md`
   - [x] Checklist de Tarefas: `.agents/docs/tasks/analytics-elasticidade.md`
-- [ ] **ETAPA 2: Arquitetura, Design Plan e Privacy by Design**
-  - [ ] ADR-004: `.agents/docs/adr/ADR-004-elasticidade-preco.md`
-  - [ ] Contrato de API REST: `.agents/docs/api_contracts/analytics-elasticidade.md`
-  - [ ] Design Plan: `.agents/docs/design/plans/analytics-elasticidade.md`
-  - [ ] Parecer de Privacidade: `.agents/docs/privacy/analytics-elasticidade.md`
+- [x] **ETAPA 2: Arquitetura, Design Plan e Privacy by Design**
+  - [x] ADR-004: `.agents/docs/adr/ADR-004-elasticidade-preco.md`
+  - [x] Contrato de API REST: `.agents/docs/api_contracts/analytics-elasticidade.md`
+  - [x] Design Plan: `.agents/docs/design/plans/analytics-elasticidade.md`
+  - [x] Parecer de Privacidade: `.agents/docs/privacy/analytics-elasticidade.md`
+  - [x] DBA: Bypass justificado (somente leitura em views existentes)
+  - [x] AI Specialist: Bypass justificado (regressão determinística log-log com shrinkage)
 - [ ] **ETAPA 3: TDD e Implementação**
   - [ ] Testes unitários e de integração (`tests/analytics/test_elasticity_*.py`)
   - [ ] Domínio de elasticidade (`src/modules/analytics/domain/elasticity.py`)
