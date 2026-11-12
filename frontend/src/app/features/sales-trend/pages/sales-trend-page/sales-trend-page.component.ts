@@ -2,7 +2,7 @@
  * Página principal /tendencia-vendas (P-086, Design Plan §4 e §5).
  * Único componente inteligente da feature; compõe store, toolbar, tabela/cartões, skeleton, vazios e guia de leitura.
  */
-import { Component, OnInit, computed, inject } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
 import { SalesTrendStore } from '../../services/sales-trend.store';
@@ -270,7 +270,7 @@ export class SalesTrendPageComponent implements OnInit {
   formatIsoDate = formatIsoDate;
 
   // Set local para controle de linhas de produto expandidas
-  private readonly expandedProductSkus = new Set<string | number>();
+  readonly expandedProductSkus = signal<Set<string | number>>(new Set());
 
   ngOnInit(): void {
     const params = queryParamsToState(this.route.snapshot.queryParams);
@@ -302,7 +302,7 @@ export class SalesTrendPageComponent implements OnInit {
     if (this.store.query().groupBy === 'supplier') {
       return new Set(this.store.expandedSuppliers().keys());
     }
-    return new Set(this.expandedProductSkus);
+    return this.expandedProductSkus();
   });
 
   readonly liveRegionText = computed(() => {
@@ -321,11 +321,13 @@ export class SalesTrendPageComponent implements OnInit {
     if (this.store.query().groupBy === 'supplier') {
       this.store.toggleSupplier(key.toString());
     } else {
-      if (this.expandedProductSkus.has(key)) {
-        this.expandedProductSkus.delete(key);
+      const next = new Set(this.expandedProductSkus());
+      if (next.has(key)) {
+        next.delete(key);
       } else {
-        this.expandedProductSkus.add(key);
+        next.add(key);
       }
+      this.expandedProductSkus.set(next);
     }
   }
 

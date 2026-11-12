@@ -3,7 +3,7 @@ Agrupamento por fornecedor, soma líquida e cálculo de contribuição de produt
 Garante que a variação % do fornecedor seja calculada sobre a soma de vendas dos produtos ativos,
 e calcula o fecho matemático da contribuição em p.p. e valor.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import datetime
 from fractions import Fraction
 import re
@@ -61,6 +61,15 @@ class SuppliersRankingResult:
 
 
 @dataclass(frozen=True)
+class SupplierProductDetailCell:
+    """Célula de detalhe de produto com contribuição."""
+    cell: TrendCell
+    contribuicao_pp: Optional[float]
+    contribuicao_valor: Optional[float]
+    contribuicao_fracao: Fraction
+
+
+@dataclass(frozen=True)
 class SupplierProductItem:
     """Produto no detalhe expandido de um fornecedor."""
     sku: int
@@ -75,6 +84,8 @@ class SupplierProductItem:
     base_baixa: bool
     devolucao_liquida: bool
     contribuicao_fracao: Fraction
+    fornecedor: Optional[str] = None
+    janelas: Dict[int, SupplierProductDetailCell] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -329,14 +340,31 @@ def get_supplier_detail(
     if not agg_series:
         raise SupplierNotFoundError(fields=("supplierKey",))
 
-    supplier_cell = compute_cell(
-        series=agg_series,
-        base_month_index=base_month_index,
-        size=sort_window,
-        metric=metric,
-        monthly_sales=monthly_sales,
-        last_covered_day=last_covered_day,
-    )
+    # Pré-calcula as 4 janelas do fornecedor
+    supplier_cells = {
+        w: compute_cell(
+            series=agg_series,
+            base_month_index=base_month_index,
+            size=w,
+            metric=metric,
+            monthly_sales=monthly_sales,
+            last_covered_day=last_covered_day,
+        )
+        for w in WINDOW_SIZES_MONTHS
+    }
+    supplier_cell = supplier_cells[sort_window]
+
+    # Pré-calcula coberturas e flags de base parcial por janela
+    first_sale = monthly_sales.first_sale_date or datetime.date.min
+    window_meta_info = {}
+    for w in WINDOW_SIZES_MONTHS:
+        c_span, p_span = window_pair(base_month_index, w)
+        c_cov_prev = covered_days(p_span, first_sale, last_covered_day)
+        c_cov_curr = covered_days(c_span, first_sale, last_covered_day)
+        c_days_prev = days_in_span(p_span)
+        c_days_curr = days_in_span(c_span)
+        c_is_partial = (c_cov_curr < c_days_curr) or (c_cov_prev < c_days_prev)
+        window_meta_info[w] = (c_cov_curr, c_cov_prev, c_is_partial)
 
     # Identifica dias e cobertura para cálculo de contribuição
     curr_span, prev_span = window_pair(base_month_index, sort_window)
@@ -370,17 +398,9 @@ def get_supplier_detail(
         if not has_movement:
             continue
 
-        prod_cell = compute_cell(
-            series=series,
-            base_month_index=base_month_index,
-            size=sort_window,
-            metric=metric,
-            monthly_sales=monthly_sales,
-            last_covered_day=last_covered_day,
-        )
-
         entry = catalog.get(sku)
         descricao = entry.descricao if entry else ""
+        fornecedor_str = entry.fornecedor if entry else None
 
         # Filtro de busca de produto dentro do fornecedor
         if q:
@@ -388,46 +408,64 @@ def get_supplier_detail(
             if not matches_product(q, sku, desc_norm):
                 continue
 
-        # Cálculo de contribuição:
-        # Se fornecedor está SEM_BASE ou anterior efetivo <= 0 -> contribuição p.p. é null
-        contribuicao_pp: Optional[float] = None
-        contribuicao_fracao: Fraction = Fraction(0)
+        prod_detail_cells: Dict[int, SupplierProductDetailCell] = {}
+        for w in WINDOW_SIZES_MONTHS:
+            prod_w_cell = compute_cell(
+                series=series,
+                base_month_index=base_month_index,
+                size=w,
+                metric=metric,
+                monthly_sales=monthly_sales,
+                last_covered_day=last_covered_day,
+            )
+            s_w_cell = supplier_cells[w]
+            w_cov_curr, w_cov_prev, w_is_partial = window_meta_info[w]
 
-        # Contribuição em valor: delta simples ou por dia se baseParcial
-        if is_partial:
-            c_val = (prod_cell.atual_por_dia or 0.0) - (prod_cell.anterior_por_dia or 0.0)
-        else:
-            c_val = prod_cell.atual - prod_cell.anterior
-
-        if supplier_cell.status != "SEM_BASE" and supplier_cell.anterior_bruto_escalado > 0:
-            if is_partial:
-                # Contribuição por taxas diárias
-                p_curr_rate = Fraction(max(0, prod_cell.atual_bruto_escalado), max(1, cov_curr) * VALUE_SCALE)
-                p_prev_rate = Fraction(max(0, prod_cell.anterior_bruto_escalado), max(1, cov_prev) * VALUE_SCALE)
-                delta_rate = p_curr_rate - p_prev_rate
-                s_prev_rate = Fraction(max(1, supplier_cell.anterior_bruto_escalado), max(1, cov_prev) * VALUE_SCALE)
-                contribuicao_fracao = (delta_rate / s_prev_rate) * 100
+            if w_is_partial:
+                w_c_val = (prod_w_cell.atual_por_dia or 0.0) - (prod_w_cell.anterior_por_dia or 0.0)
             else:
-                # delta nominal sobre anterior do fornecedor
-                delta_escalado = max(0, prod_cell.atual_bruto_escalado) - max(0, prod_cell.anterior_bruto_escalado)
-                contribuicao_fracao = Fraction(delta_escalado, supplier_cell.anterior_bruto_escalado) * 100
+                w_c_val = prod_w_cell.atual - prod_w_cell.anterior
 
-            contribuicao_pp = round_fraction_half_up(contribuicao_fracao, 1)
+            w_c_pp: Optional[float] = None
+            w_c_frac: Fraction = Fraction(0)
+
+            if s_w_cell.status != "SEM_BASE" and s_w_cell.anterior_bruto_escalado > 0:
+                if w_is_partial:
+                    p_curr_r = Fraction(max(0, prod_w_cell.atual_bruto_escalado), max(1, w_cov_curr) * VALUE_SCALE)
+                    p_prev_r = Fraction(max(0, prod_w_cell.anterior_bruto_escalado), max(1, w_cov_prev) * VALUE_SCALE)
+                    d_rate = p_curr_r - p_prev_r
+                    s_prev_r = Fraction(max(1, s_w_cell.anterior_bruto_escalado), max(1, w_cov_prev) * VALUE_SCALE)
+                    w_c_frac = (d_rate / s_prev_r) * 100
+                else:
+                    d_esc = max(0, prod_w_cell.atual_bruto_escalado) - max(0, prod_w_cell.anterior_bruto_escalado)
+                    w_c_frac = Fraction(d_esc, s_w_cell.anterior_bruto_escalado) * 100
+                w_c_pp = round_fraction_half_up(w_c_frac, 1)
+
+            prod_detail_cells[w] = SupplierProductDetailCell(
+                cell=prod_w_cell,
+                contribuicao_pp=w_c_pp,
+                contribuicao_valor=w_c_val,
+                contribuicao_fracao=w_c_frac,
+            )
+
+        active_detail = prod_detail_cells[sort_window]
 
         product_items.append(
             SupplierProductItem(
                 sku=sku,
                 descricao=descricao,
-                variacao_pct=prod_cell.variacao_pct,
-                status=prod_cell.status,
-                atual=prod_cell.atual,
-                anterior=prod_cell.anterior,
-                contribuicao_pp=contribuicao_pp,
-                contribuicao_valor=c_val,
-                base_parcial=prod_cell.base_parcial,
-                base_baixa=prod_cell.base_baixa,
-                devolucao_liquida=prod_cell.devolucao_liquida,
-                contribuicao_fracao=contribuicao_fracao,
+                fornecedor=fornecedor_str,
+                variacao_pct=active_detail.cell.variacao_pct,
+                status=active_detail.cell.status,
+                atual=active_detail.cell.atual,
+                anterior=active_detail.cell.anterior,
+                contribuicao_pp=active_detail.contribuicao_pp,
+                contribuicao_valor=active_detail.contribuicao_valor or 0.0,
+                base_parcial=active_detail.cell.base_parcial,
+                base_baixa=active_detail.cell.base_baixa,
+                devolucao_liquida=active_detail.cell.devolucao_liquida,
+                contribuicao_fracao=active_detail.contribuicao_fracao,
+                janelas=prod_detail_cells,
             )
         )
 

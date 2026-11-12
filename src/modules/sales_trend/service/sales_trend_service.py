@@ -49,6 +49,7 @@ class SalesTrendServiceResult:
     mes_base_parcial: bool
     agrupamento: str
     metrica: str
+    view: str
     sort_window: int
     sort_dir: str
 
@@ -144,6 +145,7 @@ def get_sales_trend(
         mes_base_parcial=mes_base_parcial,
         agrupamento=group_by,
         metrica=metric,
+        view=view,
         sort_window=sort_window,
         sort_dir=sort_dir,
     )

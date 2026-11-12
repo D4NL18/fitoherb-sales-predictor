@@ -52,29 +52,31 @@ class LazyJanelas(dict):
         self._last_covered_day = last_covered_day
 
     def _ensure_window(self, w: int) -> TrendCell:
-        cell = compute_cell(
-            series=self._series,
-            base_month_index=self._base_month_index,
-            size=w,
-            metric=self._metric,
-            monthly_sales=self._monthly_sales,
-            last_covered_day=self._last_covered_day,
-        )
-        self[w] = cell
-        return cell
+        if not super().__contains__(w):
+            cell = compute_cell(
+                series=self._series,
+                base_month_index=self._base_month_index,
+                size=w,
+                metric=self._metric,
+                monthly_sales=self._monthly_sales,
+                last_covered_day=self._last_covered_day,
+            )
+            super().__setitem__(w, cell)
+            return cell
+        return super().__getitem__(w)
 
     def _ensure_all(self) -> None:
         for w in WINDOW_SIZES_MONTHS:
-            if w not in self:
+            if not super().__contains__(w):
                 self._ensure_window(w)
 
     def __getitem__(self, key: int) -> TrendCell:
-        if key in WINDOW_SIZES_MONTHS and key not in self:
+        if key in WINDOW_SIZES_MONTHS:
             return self._ensure_window(key)
         return super().__getitem__(key)
 
     def get(self, key: int, default=None):
-        if key in WINDOW_SIZES_MONTHS and key not in self:
+        if key in WINDOW_SIZES_MONTHS:
             return self._ensure_window(key)
         return super().get(key, default)
 

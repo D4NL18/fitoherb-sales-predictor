@@ -75,18 +75,29 @@ def test_get_trend_products_contract_format():
         # Valida campos da primeira linha
         if json_data["data"]:
             item = json_data["data"][0]
-            assert "sku" in item
+            assert "codigo" in item
             assert "descricao" in item
             assert "janelas" in item
+            assert isinstance(item["janelas"], list)
+            assert len(item["janelas"]) == 4
+            assert item["janelas"][0]["meses"] == 1
             assert "ativo" not in item, "Campo 'ativo' não deve existir (P-072.2)"
 
         # Valida metadados
         meta = json_data["meta"]
-        assert meta["versaoContrato"] == "1.0.0"
+        assert meta["version"] == "1.0.0"
         assert meta["mesBase"] == "2026-10"
         assert "janelas" in meta
+        assert isinstance(meta["janelas"], list)
+        assert len(meta["janelas"]) == 4
+        assert meta["janelas"][0]["meses"] == 1
+        assert "atual" in meta["janelas"][0]
+        assert "anterior" in meta["janelas"][0]
         assert "totaisPorVisao" in meta
+        assert "todos" in meta["totaisPorVisao"]
         assert "parametros" in meta
+        assert "total" in meta
+        assert isinstance(meta["total"]["janelas"], list)
 
 
 def test_get_trend_suppliers_contract_format():
@@ -100,10 +111,12 @@ def test_get_trend_suppliers_contract_format():
         assert "data" in json_data
         if json_data["data"]:
             item = json_data["data"][0]
-            assert "supplierKey" in item
+            assert "fornecedorChave" in item
             assert "fornecedor" in item
-            assert "totalSkus" in item
+            assert "qtdProdutos" in item
             assert "janelas" in item
+            assert isinstance(item["janelas"], list)
+            assert len(item["janelas"]) == 4
 
 
 def test_get_supplier_products_detail_format():
@@ -117,4 +130,13 @@ def test_get_supplier_products_detail_format():
 
         assert "data" in json_data
         assert "meta" in json_data
-        assert json_data["meta"]["fornecedor"] == snap.supplier_index[key_alfa].display_name
+        assert isinstance(json_data["meta"]["fornecedor"], dict)
+        assert json_data["meta"]["fornecedor"]["fornecedor"] == snap.supplier_index[key_alfa].display_name
+        assert json_data["meta"]["fornecedor"]["fornecedorChave"] == key_alfa
+        if json_data["data"]:
+            item = json_data["data"][0]
+            assert "codigo" in item
+            assert "janelas" in item
+            assert isinstance(item["janelas"], list)
+            assert len(item["janelas"]) == 4
+            assert "contribuicaoPp" in item["janelas"][0]
