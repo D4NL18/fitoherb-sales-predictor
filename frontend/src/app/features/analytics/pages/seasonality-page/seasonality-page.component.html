@@ -1,0 +1,362 @@
+<div class="seasonality-container">
+  <!-- 1. CONTROLE DE CONSULTA (BUSCA COM AUTOCOMPLETE) -->
+  <section class="search-section" aria-label="Busca de produto para análise de sazonalidade">
+    <div class="search-input-wrapper">
+      <label for="product-search-input" class="sr-only">Buscar produto por código ou nome</label>
+      <input
+        id="product-search-input"
+        type="text"
+        class="search-input"
+        placeholder="Digite o código (ex: 1042) ou nome do produto..."
+        [ngModel]="searchQuery()"
+        (ngModelChange)="searchQuery.set($event); onSearchInput()"
+        (keydown.enter)="submitSearch()"
+        autocomplete="off"
+      />
+      @if (searchQuery().length > 0) {
+        <button type="button" class="btn-clear" (click)="clearSearch()" title="Limpar busca" aria-label="Limpar campo de busca">
+          &times;
+        </button>
+      }
+      <button type="button" class="btn-search" (click)="submitSearch()">
+        Buscar
+      </button>
+
+      <!-- Dropdown de Autocomplete -->
+      @if (showSuggestions() && searchResults().length > 0) {
+        <ul class="suggestions-dropdown" role="listbox" aria-label="Sugestões de produtos">
+          @for (prod of searchResults(); track prod.codigo) {
+            <li
+              role="option"
+              class="suggestion-item"
+              (click)="selectProduct(prod)"
+              (keydown.enter)="selectProduct(prod)"
+              tabindex="0"
+            >
+              <span class="suggestion-code">#{{ prod.codigo }}</span>
+              <span class="suggestion-desc">{{ prod.descricao }}</span>
+              <span class="suggestion-supplier">{{ prod.fornecedor }}</span>
+            </li>
+          }
+        </ul>
+      }
+    </div>
+  </section>
+
+  <!-- 2. PAINEL DE DIAGNÓSTICO DO PRODUTO -->
+  @if (isLoadingProduct()) {
+    <section class="product-panel skeleton-panel" aria-busy="true" aria-label="Carregando diagnóstico do produto">
+      <div class="skeleton-header"></div>
+      <div class="skeleton-cards">
+        <div class="skeleton-card"></div>
+        <div class="skeleton-card"></div>
+        <div class="skeleton-card"></div>
+        <div class="skeleton-card"></div>
+      </div>
+      <div class="skeleton-chart"></div>
+    </section>
+  } @else if (productError()) {
+    <section class="product-error-panel" aria-live="assertive">
+      <app-error-banner (retry)="selectedSku() ? selectProductBySku(selectedSku()!) : null" />
+    </section>
+  } @else {
+    @if (productData(); as data) {
+      <section class="product-panel" aria-label="Diagnóstico de sazonalidade do produto selecionado">
+        <!-- Cabeçalho do Produto -->
+        <header class="product-header">
+          <div class="product-meta-primary">
+            <span class="product-badge">#{{ data.produto.codigo }}</span>
+            <h2 class="product-title">{{ data.produto.descricao }}</h2>
+          </div>
+          <div class="product-meta-secondary">
+            <span class="meta-item"><strong>Fornecedor:</strong> {{ data.produto.fornecedor }}</span>
+            <span class="meta-separator" aria-hidden="true">·</span>
+            <span class="meta-item"><strong>Estoque:</strong> {{ data.produto.estoque | ptDecimal:0 }} un.</span>
+            <span class="meta-separator" aria-hidden="true">·</span>
+            <span class="meta-item"><strong>Preço:</strong> {{ data.produto.precoVenda | brl }}</span>
+          </div>
+        </header>
+
+        <!-- Banners de Alerta de Negócio -->
+        @if (!data.elegivel) {
+          <div class="alert-banner alert-insufficient" role="alert">
+            <div class="alert-icon" aria-hidden="true">ℹ</div>
+            <div class="alert-content">
+              <strong>Histórico de vendas insuficiente para mensuração precisa.</strong>
+              @if (data.motivoInsuficiencia === 'HISTORICO_CURTO') {
+                <span>Este produto tem menos de 18 meses de vendas desde o lançamento (P-107).</span>
+              } @else if (data.motivoInsuficiencia === 'VENDA_ESPORADICA') {
+                <span>Este produto vendeu em menos de 50% dos meses do seu período ativo (P-107).</span>
+              }
+            </div>
+          </div>
+        }
+
+        @if (hasLowConfidenceExtreme()) {
+          <div class="alert-banner alert-warning" role="alert">
+            <div class="alert-icon" aria-hidden="true">⚠</div>
+            <div class="alert-content">
+              <strong>Atenção à confiança estatística:</strong>
+              O período de maior ou menor venda deste produto ocorre em meses com apenas 1 ano de histórico completo na base (2025). Interprete o pico/vale com moderação até que novos ciclos sejam registrados.
+            </div>
+          </div>
+        }
+
+        <!-- 4 Cards de Métricas Principais -->
+        <div class="metrics-grid">
+          <div class="metric-card peak-card">
+            <span class="metric-label">Período de Pico</span>
+            <div class="metric-value-row">
+              <span class="metric-value">{{ data.pico.nomePeriodo }}</span>
+              <span class="metric-subvalue">{{ data.pico.indice | ptDecimal:2 }}x</span>
+            </div>
+            <span class="confidence-badge confidence-{{ data.pico.confianca.toLowerCase() }}">
+              Confiança {{ data.pico.confianca }}
+            </span>
+          </div>
+
+          <div class="metric-card valley-card">
+            <span class="metric-label">Período de Vale</span>
+            <div class="metric-value-row">
+              <span class="metric-value">{{ data.vale.nomePeriodo }}</span>
+              <span class="metric-subvalue">{{ data.vale.indice | ptDecimal:2 }}x</span>
+            </div>
+            <span class="confidence-badge confidence-{{ data.vale.confianca.toLowerCase() }}">
+              Confiança {{ data.vale.confianca }}
+            </span>
+          </div>
+
+          <div class="metric-card strength-card">
+            <span class="metric-label">Grau de Sazonalidade</span>
+            <div class="metric-value-row">
+              <span class="metric-value">{{ data.forca }}</span>
+            </div>
+            <span class="metric-caption">Amplitude: {{ data.amplitude | ptDecimal:2 }}</span>
+          </div>
+
+          <div class="metric-card yoy-card">
+            <span class="metric-label">Repetição Ano a Ano</span>
+            <div class="metric-value-row">
+              @if (data.correlacaoYoY !== null) {
+                <span class="metric-value">{{ (data.correlacaoYoY * 100) | ptDecimal:0 }}%</span>
+              } @else {
+                <span class="metric-value">-</span>
+              }
+            </div>
+            <span class="metric-caption">Correlação linear entre anos</span>
+          </div>
+        </div>
+
+        <!-- 3. GRÁFICO MENSAL DE SAZONALIDADE -->
+        <div class="chart-container" aria-label="Curva de sazonalidade mês a mês">
+          <div class="chart-header">
+            <h3 class="chart-title">Curva Sazonal Anual (1.0 = Volume Médio Mensal)</h3>
+            <div class="chart-legend">
+              <span class="legend-item"><span class="legend-swatch peak-swatch"></span> Pico</span>
+              <span class="legend-item"><span class="legend-swatch valley-swatch"></span> Vale</span>
+              <span class="legend-item"><span class="legend-swatch neutral-swatch"></span> Normal</span>
+              <span class="legend-item"><span class="legend-line baseline-swatch"></span> Média (1.0)</span>
+            </div>
+          </div>
+
+          <div class="bars-wrapper" role="region" aria-label="Gráfico de colunas de Janeiro a Dezembro">
+            <!-- Linha de base neutra 1.0 -->
+            <div
+              class="chart-baseline"
+              [style.bottom.%]="getBaselineBottomPercent()"
+              aria-hidden="true"
+            >
+              <span class="baseline-label">1.0</span>
+            </div>
+
+            <!-- 12 Colunas Mensais -->
+            <div class="chart-columns">
+              @for (point of data.serieMensal; track point.mes) {
+                <div
+                  class="chart-column"
+                  [class.is-peak]="isPeakMonth(point)"
+                  [class.is-valley]="isValleyMonth(point)"
+                  tabindex="0"
+                  role="graphics-symbol"
+                  [attr.aria-label]="point.nomeMes + ': índice ' + (point.indice | ptDecimal:2) + 'x, confiança ' + point.confianca"
+                >
+                  <!-- Valor no topo da barra -->
+                  <span class="column-value">{{ point.indice | ptDecimal:2 }}x</span>
+
+                  <!-- Barra proporcional -->
+                  <div class="column-bar-slot">
+                    <div
+                      class="column-bar"
+                      [style.height.%]="getBarHeightPercent(point.indice)"
+                    ></div>
+                  </div>
+
+                  <!-- Rótulo do Mês -->
+                  <span class="column-month-name">{{ point.nomeMes.substring(0, 3) }}</span>
+
+                  <!-- Selo de Confiança do Mês -->
+                  <span
+                    class="month-confidence-badge conf-{{ point.confianca.toLowerCase() }}"
+                    [title]="point.observacoesDisponiveis === 1 ? 'Baseado em 1 único ano (2025)' : 'Observado em 2 anos (2025 e 2026)'"
+                  >
+                    {{ point.confianca === 'BAIXA' ? '1 ano' : point.confianca }}
+                  </span>
+                </div>
+              }
+            </div>
+          </div>
+
+          <!-- Tabela Oculta para Leitores de Tela (Acessibilidade WCAG AA) -->
+          <table class="sr-only" aria-label="Dados numéricos do gráfico de sazonalidade">
+            <caption>Índice sazonal e confiança por mês</caption>
+            <thead>
+              <tr>
+                <th scope="col">Mês</th>
+                <th scope="col">Índice</th>
+                <th scope="col">Confiança</th>
+                <th scope="col">Volume Líquido Histórico</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (p of data.serieMensal; track p.mes) {
+                <tr>
+                  <td>{{ p.nomeMes }}</td>
+                  <td>{{ p.indice | ptDecimal:2 }}</td>
+                  <td>{{ p.confianca }}</td>
+                  <td>{{ p.volumeLiquidoHistorico }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </section>
+    } @else {
+      <!-- Empty State Inicial (Nenhum produto consultado) -->
+      <section class="initial-empty-state" aria-label="Painel de boas-vindas">
+        <div class="empty-state-card">
+          <h2 class="empty-title">Consulte a Sazonalidade de um Produto</h2>
+          <p class="empty-desc">
+            Digite o código ou nome de um item na busca acima para visualizar os períodos de pico, vale e a curva de demanda anual calculada sobre o histórico real.
+          </p>
+        </div>
+      </section>
+    }
+  }
+
+  <!-- 4. SEÇÃO DE RANKINGS DE SAZONALIDADE -->
+  <section class="rankings-section" aria-label="Rankings de sazonalidade de produtos">
+    <div class="rankings-header">
+      <div class="rankings-title-group">
+        <h3 class="rankings-title">Rankings de Sazonalidade</h3>
+        <p class="rankings-subtitle">Identifique rapidamente os itens com maior variação sazonal ou histórico ainda insuficiente.</p>
+      </div>
+
+      <div class="ranking-mode-switch" role="group" aria-label="Critério do ranking">
+        <button
+          type="button"
+          class="switch-btn"
+          [class.active]="activeRankingOrder() === 'most'"
+          (click)="setRankingOrder('most')"
+        >
+          Mais Sazonais
+        </button>
+        <button
+          type="button"
+          class="switch-btn"
+          [class.active]="activeRankingOrder() === 'least'"
+          (click)="setRankingOrder('least')"
+        >
+          Pouco Mensuráveis
+        </button>
+      </div>
+    </div>
+
+    @if (isLoadingRanking()) {
+      <div class="rankings-loading" aria-busy="true">
+        <div class="skeleton-table-row"></div>
+        <div class="skeleton-table-row"></div>
+        <div class="skeleton-table-row"></div>
+        <div class="skeleton-table-row"></div>
+      </div>
+    } @else if (rankingError()) {
+      <div class="rankings-error">
+        <app-error-banner (retry)="loadRankings()" />
+      </div>
+    } @else {
+      <div class="table-responsive">
+        <table class="rankings-table">
+          <thead>
+            <tr>
+              <th scope="col" class="col-sku">SKU</th>
+              <th scope="col" class="col-desc">Produto</th>
+              <th scope="col" class="col-supplier">Fornecedor</th>
+              <th scope="col" class="col-strength">
+                {{ activeRankingOrder() === 'most' ? 'Força' : 'Diagnóstico' }}
+              </th>
+              @if (activeRankingOrder() === 'most') {
+                <th scope="col" class="col-amp">Amplitude</th>
+                <th scope="col" class="col-peak">Pico</th>
+                <th scope="col" class="col-valley">Vale</th>
+              }
+              <th scope="col" class="col-revenue">Faturamento</th>
+              <th scope="col" class="col-action">Ação</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (item of rankingItems(); track item.sku) {
+              <tr class="ranking-row">
+                <td class="col-sku font-mono">#{{ item.sku }}</td>
+                <td class="col-desc font-bold">{{ item.descricao }}</td>
+                <td class="col-supplier">{{ item.fornecedor }}</td>
+                <td class="col-strength">
+                  @if (item.forca === 'INSUFICIENTE') {
+                    <span class="status-tag tag-warning">
+                      {{ item.motivoInsuficiencia === 'HISTORICO_CURTO' ? 'Histórico Curto' : 'Venda Esporádica' }}
+                    </span>
+                  } @else {
+                    <span class="status-tag tag-{{ item.forca.toLowerCase() }}">
+                      {{ item.forca }}
+                    </span>
+                  }
+                </td>
+                @if (activeRankingOrder() === 'most') {
+                  <td class="col-amp font-mono">{{ item.amplitude | ptDecimal:2 }}</td>
+                  <td class="col-peak">{{ item.mesPico }}</td>
+                  <td class="col-valley">{{ item.mesVale }}</td>
+                }
+                <td class="col-revenue font-mono">{{ item.faturamentoTotal | brl }}</td>
+                <td class="col-action">
+                  <button
+                    type="button"
+                    class="btn-view-chart"
+                    (click)="selectProductBySku(item.sku)"
+                    title="Ver diagnóstico e curva sazonal deste produto"
+                  >
+                    Ver Gráfico
+                  </button>
+                </td>
+              </tr>
+            } @empty {
+              <tr>
+                <td colspan="8" class="empty-table-cell">
+                  Nenhum produto encontrado nesta classificação.
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Paginação -->
+      <app-list-pager
+        [page]="rankingPage()"
+        [totalPages]="rankingTotalPages()"
+        [totalItems]="rankingTotalItems()"
+        [offset]="rankingOffset()"
+        [itemCount]="rankingItems().length"
+        [disabled]="isLoadingRanking()"
+        (pageChange)="onRankingPageChange($event)"
+      />
+    }
+  </section>
+</div>
