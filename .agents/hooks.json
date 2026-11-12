@@ -1,0 +1,16 @@
+{
+  "project-quality-gates": {
+    "Stop": [
+      {
+        "type": "command",
+        "command": "npm run lint || echo \"Linter falhou, verifique os erros\"",
+        "timeout": 60
+      },
+      {
+        "type": "command",
+        "command": "npm run test || echo \"Testes falharam, favor refatorar\"",
+        "timeout": 60
+      }
+    ]
+  }
+}
