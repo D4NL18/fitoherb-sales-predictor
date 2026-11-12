@@ -83,13 +83,13 @@ export function getCellDisplayModel(
     if (cell.atualPorDia !== null) {
       currentDailyText =
         metric === 'revenue'
-          ? `R$ ${formatDecimal(cell.atualPorDia, 4)}/dia`
+          ? `${formatCurrency(cell.atualPorDia)}/dia`
           : `${formatDecimal(cell.atualPorDia, 4)} un/dia`;
     }
     if (cell.anteriorPorDia !== null) {
       previousDailyText =
         metric === 'revenue'
-          ? `R$ ${formatDecimal(cell.anteriorPorDia, 4)}/dia`
+          ? `${formatCurrency(cell.anteriorPorDia)}/dia`
           : `${formatDecimal(cell.anteriorPorDia, 4)} un/dia`;
     }
   }

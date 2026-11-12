@@ -117,7 +117,7 @@ export class TrendRowValuesComponent {
   formatDaily(val: number | null): string {
     if (val === null) return '—';
     if (this.metric() === 'revenue') {
-      return `R$ ${formatDecimal(val, 4)}/dia`;
+      return `${formatCurrency(val)}/dia`;
     }
     return `${formatDecimal(val, 4)} un/dia`;
   }

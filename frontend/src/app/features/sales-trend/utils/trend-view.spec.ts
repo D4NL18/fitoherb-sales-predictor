@@ -24,7 +24,8 @@ describe('trend-view utils (T-16)', () => {
     expect(model.direction).toBe('up');
     expect(model.percentText).toBe('+50,0%');
     expect(model.badges.length).toBe(0);
-    expect(model.currentDailyText).toContain('/dia');
+    expect(model.currentDailyText).toBe('R$ 50,00/dia');
+    expect(model.previousDailyText).toBe('R$ 33,33/dia');
     expect(model.ariaLabel).toContain('alta de +50,0%');
   });
 
