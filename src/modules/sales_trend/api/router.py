@@ -58,6 +58,7 @@ def list_sales_trend(query: TrendListQuery = Depends()):
         min_volume=query.min_volume,
         limit=query.limit,
         offset=query.offset,
+        comparison_mode=query.comparison_mode,
     )
     if query.group_by == "supplier":
         return map_suppliers_response(service_res)
@@ -81,6 +82,7 @@ def list_supplier_products(query: TrendDetailQuery = Depends()):
         limit=query.limit,
         offset=query.offset,
         sort_window=query.sort_window,
+        comparison_mode=query.comparison_mode,
     )
     return map_supplier_detail_response(
         detail_res=detail_res,
@@ -92,6 +94,7 @@ def list_supplier_products(query: TrendDetailQuery = Depends()):
         limit=query.limit,
         offset=query.offset,
         sort_window=query.sort_window,
+        comparison_mode=query.comparison_mode,
     )
 
 

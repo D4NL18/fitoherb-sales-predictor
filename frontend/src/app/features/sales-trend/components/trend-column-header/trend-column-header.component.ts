@@ -4,7 +4,7 @@
  */
 import { Component, computed, input, output } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { TrendSortDir, TrendSortWindow, TrendWindowMeta } from '../../models/sales-trend.model';
+import { TrendComparisonMode, TrendSortDir, TrendSortWindow, TrendWindowMeta } from '../../models/sales-trend.model';
 import { formatWindowMonthSpan } from '../../utils/trend-format';
 
 @Component({
@@ -32,7 +32,7 @@ import { formatWindowMonthSpan } from '../../utils/trend-format';
 
       <div class="header-period-row">
         <span class="period-line">{{ currentSpanText() }}</span>
-        <span class="period-line vs-line">vs {{ previousSpanText() }}</span>
+        <span class="period-line vs-line">vs {{ previousSpanDisplay() }}</span>
       </div>
 
       @if (windowMeta().semBase) {
@@ -141,6 +141,16 @@ export class TrendColumnHeaderComponent {
 
   readonly currentSpanText = computed(() => formatWindowMonthSpan(this.windowMeta().atual));
   readonly previousSpanText = computed(() => formatWindowMonthSpan(this.windowMeta().anterior));
+  readonly comparisonMode = input<TrendComparisonMode>('point');
+
+  readonly previousSpanDisplay = computed(() => {
+    const prev = this.previousSpanText();
+    if (this.comparisonMode() === 'average' && this.windowMeta().meses > 1) {
+      return `média ${prev}`;
+    }
+    return prev;
+  });
+
 
   readonly ariaLabel = computed(() => {
     const months = this.windowMeta().meses;

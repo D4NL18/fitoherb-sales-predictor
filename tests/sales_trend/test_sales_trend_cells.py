@@ -52,6 +52,31 @@ def test_ca02_returns_deducted_quantity():
     assert cell_6m.variacao_pct == 8.3
 
 
+def test_compute_cell_point_and_average_modes():
+    """Valida cálculo de tendência nos modos point (mês pontual) e average (média do período)."""
+    from src.modules.sales_trend.domain.month_windows import month_index
+    from src.modules.sales_trend.domain.sales_trend import compute_cell
+
+    ms = _setup_monthly_sales()
+    series_1001 = ms.series[1001]
+    base_idx = month_index(2026, 10)
+
+    # Modo point (mês pontual): out/26 (30) vs jul/26 (20) -> +50.0%
+    cell_point_3m = compute_cell(series_1001, base_idx, 3, "quantity", ms, LAST_COVERED_DATE, mode="point")
+    assert cell_point_3m.status == "VARIACAO"
+    assert cell_point_3m.atual == 30.0
+    assert cell_point_3m.anterior == 20.0
+    assert cell_point_3m.variacao_pct == 50.0
+
+    # Modo average (média do período): out/26 (30) vs média jul..set (60 / 3 = 20) -> +50.0%
+    cell_avg_3m = compute_cell(series_1001, base_idx, 3, "quantity", ms, LAST_COVERED_DATE, mode="average")
+    assert cell_avg_3m.status == "VARIACAO"
+    assert cell_avg_3m.atual == 30.0
+    assert cell_avg_3m.anterior == 20.0
+    assert cell_avg_3m.variacao_pct == 50.0
+
+
+
 def test_ca03_12m_partial_base_daily_averages():
     """Valida CA-03: Janela 12m com base parcial compara médias diárias (+108.3%)."""
     from src.modules.sales_trend.domain.month_windows import month_index

@@ -162,12 +162,16 @@ def compute_cell(
     metric: str,
     monthly_sales: MonthlySales,
     last_covered_day: datetime.date,
+    mode: str = "range",
 ) -> TrendCell:
     """
     Calcula uma célula de tendência de vendas para uma janela de 'size' meses.
+    - mode='point': mês-base pontual vs mês de X meses atrás.
+    - mode='average': mês-base pontual vs média mensal dos X meses anteriores.
+    - mode='range': bloco de X meses vs bloco imediatamente anterior de X meses.
     Aplica piso zero, médias diárias se baseParcial, Fraction para exatidão e precedência.
     """
-    curr_span, prev_span = window_pair(base_month_index, size)
+    curr_span, prev_span = window_pair(base_month_index, size, mode=mode)
 
     # 1. Cobertura da janela anterior
     days_prev = days_in_span(prev_span)
@@ -222,7 +226,10 @@ def compute_cell(
         anterior_por_dia = float(prev_rate)
     else:
         curr_rate = Fraction(curr_effective, VALUE_SCALE)
-        prev_rate = Fraction(prev_effective, VALUE_SCALE)
+        if mode == "average" and size > 1:
+            prev_rate = Fraction(prev_effective, size * VALUE_SCALE)
+        else:
+            prev_rate = Fraction(prev_effective, VALUE_SCALE)
 
     # 4. Status e Percentual de Variação
     variacao_pct: Optional[float] = None
@@ -245,13 +252,17 @@ def compute_cell(
     base_baixa = False
     if status == "VARIACAO":
         threshold = LOW_BASE_MIN_REVENUE if metric == "revenue" else LOW_BASE_MIN_QUANTITY
-        prev_nominal = prev_effective / VALUE_SCALE
+        prev_nominal = (prev_effective / (size if mode == "average" else 1)) / VALUE_SCALE
         base_baixa = prev_nominal < threshold
 
     # Valores nominais para exibição
     places = 2 if metric == "revenue" else 3
     atual_float = round_scaled_half_up(curr_effective, places, VALUE_SCALE)
-    anterior_float = round_scaled_half_up(prev_effective, places, VALUE_SCALE)
+    if mode == "average" and size > 1:
+        prev_scaled_display = prev_effective // size
+        anterior_float = round_scaled_half_up(prev_scaled_display, places, VALUE_SCALE)
+    else:
+        anterior_float = round_scaled_half_up(prev_effective, places, VALUE_SCALE)
 
     return TrendCell(
         status=status,

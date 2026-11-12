@@ -56,14 +56,26 @@ def previous_month(base_month_index: int) -> int:
     return base_month_index - 1
 
 
-def window_pair(base_month_index: int, size: int) -> Tuple[List[int], List[int]]:
+def window_pair(
+    base_month_index: int,
+    size: int,
+    mode: str = "range",
+) -> Tuple[List[int], List[int]]:
     """
-    Calcula as janelas atual e anterior de tamanho 'size' a partir de base_month_index.
-    Janela atual: termina em base_month_index, abrangendo 'size' meses.
-    Janela anterior: termina em (base_month_index - size), abrangendo 'size' meses.
+    Calcula as janelas atual e anterior a partir de base_month_index.
+    - Se mode == 'point': mês-base pontual [base_month_index] vs mês de X meses atrás [base_month_index - size].
+    - Se mode == 'average': mês-base pontual [base_month_index] vs os size meses anteriores [base_month_index - size .. base_month_index - 1].
+    - Se mode == 'range': bloco de size meses atual vs bloco imediatamente anterior de size meses.
     """
-    curr = list(range(base_month_index - size + 1, base_month_index + 1))
-    prev = list(range(base_month_index - 2 * size + 1, base_month_index - size + 1))
+    if mode == "point":
+        curr = [base_month_index]
+        prev = [base_month_index - size]
+    elif mode == "average":
+        curr = [base_month_index]
+        prev = list(range(base_month_index - size, base_month_index))
+    else:
+        curr = list(range(base_month_index - size + 1, base_month_index + 1))
+        prev = list(range(base_month_index - 2 * size + 1, base_month_index - size + 1))
     return curr, prev
 
 

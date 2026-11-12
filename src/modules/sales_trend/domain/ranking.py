@@ -42,6 +42,7 @@ class LazyJanelas(dict):
         metric: str,
         monthly_sales: MonthlySales,
         last_covered_day: datetime.date,
+        comparison_mode: str = "point",
     ):
         super().__init__()
         self[sort_window] = initial_cell
@@ -50,6 +51,7 @@ class LazyJanelas(dict):
         self._metric = metric
         self._monthly_sales = monthly_sales
         self._last_covered_day = last_covered_day
+        self._comparison_mode = comparison_mode
 
     def _ensure_window(self, w: int) -> TrendCell:
         if not super().__contains__(w):
@@ -60,6 +62,7 @@ class LazyJanelas(dict):
                 metric=self._metric,
                 monthly_sales=self._monthly_sales,
                 last_covered_day=self._last_covered_day,
+                mode=self._comparison_mode,
             )
             super().__setitem__(w, cell)
             return cell
@@ -132,6 +135,7 @@ def filter_and_rank_products(
     q: Optional[str],
     min_volume: float,
     last_covered_day: datetime.date,
+    comparison_mode: str = "point",
 ) -> RankingResult:
     """
     Filtra o universo de produtos ativos com movimento em [M-23, M],
@@ -170,6 +174,7 @@ def filter_and_rank_products(
             metric=metric,
             monthly_sales=monthly_sales,
             last_covered_day=last_covered_day,
+            mode=comparison_mode,
         )
 
         cells = LazyJanelas(
@@ -180,6 +185,7 @@ def filter_and_rank_products(
             metric=metric,
             monthly_sales=monthly_sales,
             last_covered_day=last_covered_day,
+            comparison_mode=comparison_mode,
         )
 
         rows_universe.append(

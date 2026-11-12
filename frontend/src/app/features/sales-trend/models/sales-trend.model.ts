@@ -18,6 +18,8 @@ export type TrendSortDir = 'asc' | 'desc';
 
 export type TrendSortBy = 'contribution' | 'variation';
 
+export type TrendComparisonMode = 'point' | 'average';
+
 export type TrendSortWindow = 1 | 3 | 6 | 12;
 
 export interface TrendParameters {
@@ -108,6 +110,7 @@ export interface TrendMeta {
   mesBaseMaximo: string;
   mesBaseParcial: boolean;
   metrica: TrendMetric;
+  modoComparacao?: TrendComparisonMode;
   janelas: [TrendWindowMeta, TrendWindowMeta, TrendWindowMeta, TrendWindowMeta] | TrendWindowMeta[];
   parametros: TrendParameters;
   page: number;
@@ -187,6 +190,7 @@ export interface TrendQueryParams {
   baseMonth?: string;
   metric?: TrendMetric;
   groupBy?: TrendGroupBy;
+  comparisonMode?: TrendComparisonMode;
   sortWindow?: TrendSortWindow;
   sortDir?: TrendSortDir;
   view?: TrendView;
@@ -200,6 +204,7 @@ export interface SupplierProductsQueryParams {
   supplierKey: string;
   baseMonth?: string;
   metric?: TrendMetric;
+  comparisonMode?: TrendComparisonMode;
   sortBy?: TrendSortBy;
   sortWindow?: TrendSortWindow;
   sortDir?: TrendSortDir;

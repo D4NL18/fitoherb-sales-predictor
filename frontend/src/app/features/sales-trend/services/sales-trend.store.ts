@@ -12,6 +12,7 @@ import {
   SupplierDetailResponse,
   SupplierProductsQueryParams,
   SupplierTrendResponse,
+  TrendComparisonMode,
   TrendErrorCode,
   TrendErrorPayload,
   TrendGroupBy,
@@ -44,6 +45,7 @@ export interface SupplierDetailState {
 const DEFAULT_QUERY: TrendQueryParams = {
   metric: 'revenue',
   groupBy: 'product',
+  comparisonMode: 'point',
   sortWindow: 3,
   sortDir: 'desc',
   view: 'all',
@@ -161,6 +163,19 @@ export class SalesTrendStore {
       ...curr,
       metric,
       minVolume: 0,
+      offset: 0,
+    }));
+    this.expandedSuppliers.set(new Map());
+    this.loadTrend();
+  }
+
+  setComparisonMode(comparisonMode: TrendComparisonMode): void {
+    if (this.query().comparisonMode === comparisonMode) {
+      return;
+    }
+    this.query.update((curr) => ({
+      ...curr,
+      comparisonMode,
       offset: 0,
     }));
     this.expandedSuppliers.set(new Map());
@@ -295,6 +310,7 @@ export class SalesTrendStore {
       supplierKey,
       baseMonth,
       metric,
+      comparisonMode: this.query().comparisonMode,
       sortBy: paramsOverride?.sortBy ?? curr.sortBy,
       sortWindow: paramsOverride?.sortWindow ?? curr.sortWindow,
       sortDir: paramsOverride?.sortDir ?? curr.sortDir,

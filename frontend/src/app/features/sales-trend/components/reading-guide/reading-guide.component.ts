@@ -22,7 +22,7 @@ import { CommonModule } from '@angular/common';
       <div class="guide-content">
         <ul class="guide-list">
           <li>
-            <strong>Janelas de comparação:</strong> cada coluna compara os meses terminando no Mês-Base com o período imediatamente anterior de mesmo tamanho (ex.: 3 meses compara ago–out vs mai–jul).
+            <strong>Modos de tendência:</strong> no modo <em>Mês pontual</em>, compara o mês-base diretamente com o mês de 1, 3, 6 ou 12 meses atrás. No modo <em>Média do período</em>, compara o mês-base com a média mensal de vendas do período anterior.
           </li>
           <li>
             <strong>Direção (▲ e ▼):</strong> triângulo para cima indica crescimento percentual; triângulo para baixo indica retração. Valores próximos de zero são exibidos sem sinal (0,0%).

@@ -5,6 +5,7 @@
 import { Component, computed, input, output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
+  TrendComparisonMode,
   TrendGroupBy,
   TrendMetric,
   TrendParameters,
@@ -53,6 +54,7 @@ import { TrendSupplierGroupComponent } from '../trend-supplier-group/trend-suppl
                   [windowMeta]="col"
                   [sortWindow]="sortWindow()"
                   [sortDir]="sortDir()"
+                  [comparisonMode]="comparisonMode()"
                   (sort)="sort.emit($event)"
                 />
               </th>
@@ -228,6 +230,7 @@ export class TrendTableComponent {
   readonly rows = input.required<(TrendProductRow | TrendSupplierRow)[]>();
   readonly groupBy = input.required<TrendGroupBy>();
   readonly metric = input.required<TrendMetric>();
+  readonly comparisonMode = input<TrendComparisonMode>('point');
   readonly sortWindow = input.required<TrendSortWindow>();
   readonly sortDir = input.required<TrendSortDir>();
   readonly params = input<TrendParameters | undefined>(undefined);

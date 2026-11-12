@@ -5,6 +5,7 @@
 import { Component, computed, input, output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
+  TrendComparisonMode,
   TrendGroupBy,
   TrendListMeta,
   TrendMetric,
@@ -45,6 +46,15 @@ import { TrendSearchFieldComponent } from '../trend-search-field/trend-search-fi
             [options]="metricOptions"
             [value]="query().metric || 'revenue'"
             (valueChange)="metricChange.emit($event)"
+          />
+        </div>
+
+        <div class="control-item">
+          <span class="control-caption">Tendência:</span>
+          <app-segmented-control
+            [options]="comparisonModeOptions"
+            [value]="query().comparisonMode || 'point'"
+            (valueChange)="comparisonModeChange.emit($event)"
           />
         </div>
 
@@ -207,6 +217,7 @@ export class TrendToolbarComponent {
 
   readonly groupByChange = output<TrendGroupBy>();
   readonly metricChange = output<TrendMetric>();
+  readonly comparisonModeChange = output<TrendComparisonMode>();
   readonly baseMonthChange = output<string>();
   readonly searchChange = output<string>();
   readonly minVolumeChange = output<number>();
@@ -215,6 +226,11 @@ export class TrendToolbarComponent {
   readonly groupByOptions: SegmentOption<TrendGroupBy>[] = [
     { value: 'product', label: 'Por produto' },
     { value: 'supplier', label: 'Por fornecedor' },
+  ];
+
+  readonly comparisonModeOptions: SegmentOption<TrendComparisonMode>[] = [
+    { value: 'point', label: 'Mês pontual' },
+    { value: 'average', label: 'Média do período' },
   ];
 
   readonly metricOptions: SegmentOption<TrendMetric>[] = [

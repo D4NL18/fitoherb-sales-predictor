@@ -132,6 +132,7 @@ class TrendMeta(CamelModel):
     mes_base_maximo: str
     mes_base_parcial: bool
     metrica: str
+    modo_comparacao: str = "point"
     janelas: List[JanelaMeta]
     parametros: ParametrosMeta
     page: int

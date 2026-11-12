@@ -70,13 +70,17 @@ def _map_cell_to_schema(cell: TrendCell, window_months: int) -> TrendCellSchema:
     )
 
 
-def _build_janelas_meta(base_month_idx: int, snapshot: SalesTrendSnapshot) -> List[JanelaMeta]:
+def _build_janelas_meta(
+    base_month_idx: int,
+    snapshot: SalesTrendSnapshot,
+    comparison_mode: str = "point",
+) -> List[JanelaMeta]:
     """Constrói metadados estruturados das 4 janelas (1, 3, 6, 12 meses)."""
     metas: List[JanelaMeta] = []
     first_date = snapshot.monthly_sales.first_sale_date or date(2025, 1, 1)
 
     for w in WINDOW_SIZES_MONTHS:
-        curr_span, prev_span = window_pair(base_month_idx, w)
+        curr_span, prev_span = window_pair(base_month_idx, w, mode=comparison_mode)
 
         dias_j_curr = days_in_span(curr_span)
         dias_cov_curr = covered_days(curr_span, first_date, snapshot.last_covered_day)
@@ -115,7 +119,12 @@ def _build_janelas_meta(base_month_idx: int, snapshot: SalesTrendSnapshot) -> Li
     return metas
 
 
-def _build_total_row(base_month_idx: int, metric: str, snapshot: SalesTrendSnapshot) -> TrendTotalRowSchema:
+def _build_total_row(
+    base_month_idx: int,
+    metric: str,
+    snapshot: SalesTrendSnapshot,
+    comparison_mode: str = "point",
+) -> TrendTotalRowSchema:
     """Calcula a linha de total geral somando todos os produtos ativos com movimento."""
     first_m = snapshot.monthly_sales.first_month
     m_count = snapshot.monthly_sales.month_count
@@ -148,6 +157,7 @@ def _build_total_row(base_month_idx: int, metric: str, snapshot: SalesTrendSnaps
                     metric=metric,
                     monthly_sales=snapshot.monthly_sales,
                     last_covered_day=snapshot.last_covered_day,
+                    mode=comparison_mode,
                 ),
                 w,
             )
@@ -181,6 +191,7 @@ def _build_trend_meta(service_res: SalesTrendServiceResult) -> TrendListMeta:
         mes_base_parcial=service_res.mes_base_parcial,
         agrupamento=service_res.agrupamento,
         metrica=service_res.metrica,
+        modo_comparacao=service_res.comparison_mode,
         visao=service_res.view,
         total_items=service_res.total_items,
         total_pages=service_res.total_pages,
@@ -197,8 +208,17 @@ def _build_trend_meta(service_res: SalesTrendServiceResult) -> TrendListMeta:
             janela=service_res.sort_window,
             sentido=service_res.sort_dir,
         ),
-        total=_build_total_row(service_res.base_month_index, service_res.metrica, snap),
-        janelas=_build_janelas_meta(service_res.base_month_index, snap),
+        total=_build_total_row(
+            service_res.base_month_index,
+            service_res.metrica,
+            snap,
+            comparison_mode=service_res.comparison_mode,
+        ),
+        janelas=_build_janelas_meta(
+            service_res.base_month_index,
+            snap,
+            comparison_mode=service_res.comparison_mode,
+        ),
         parametros=ParametrosMeta(
             limite_base_baixa_quantidade=LOW_BASE_MIN_QUANTITY,
             limite_base_baixa_faturamento=LOW_BASE_MIN_REVENUE,
@@ -260,6 +280,7 @@ def map_supplier_detail_response(
     limit: int,
     offset: int,
     sort_window: int = 1,
+    comparison_mode: str = "point",
 ) -> SupplierDetailResponse:
     """Mapeia detalhe de fornecedor para SupplierDetailResponse."""
     data_items: List[SupplierProductItemSchema] = []
@@ -312,6 +333,7 @@ def map_supplier_detail_response(
                         metric=metric,
                         monthly_sales=snapshot.monthly_sales,
                         last_covered_day=snapshot.last_covered_day,
+                        mode=comparison_mode,
                     ),
                     w,
                 )
@@ -346,13 +368,14 @@ def map_supplier_detail_response(
         mes_base_maximo=format_year_month(curr_m_idx),
         mes_base_parcial=(base_month_idx == curr_m_idx),
         metrica=metric,
+        modo_comparacao=comparison_mode,
         total_items=detail_res.total_items,
         total_pages=detail_res.total_pages,
         page=detail_res.page,
         limit=limit,
         offset=offset,
         ordenacao=DetailOrdenacaoMeta(por=sort_by, janela=sort_window, sentido=sort_dir),
-        janelas=_build_janelas_meta(base_month_idx, snapshot),
+        janelas=_build_janelas_meta(base_month_idx, snapshot, comparison_mode=comparison_mode),
         parametros=ParametrosMeta(
             limite_base_baixa_quantidade=LOW_BASE_MIN_QUANTITY,
             limite_base_baixa_faturamento=LOW_BASE_MIN_REVENUE,

@@ -50,6 +50,58 @@ def test_window_pairs_with_year_turnover():
     assert [index_to_year_month(i) for i in prev_1m_nov] == [(2026, 10)]
 
 
+def test_window_pairs_point_and_average_modes():
+    """Valida janelas para os modos point (mês pontual) e average (média do período)."""
+    from src.modules.sales_trend.domain.month_windows import (
+        month_index,
+        window_pair,
+        index_to_year_month,
+    )
+
+    base_idx = month_index(2026, 10)  # out/26
+
+    # Modo point:
+    # 1m: out/26 vs set/26
+    c1, p1 = window_pair(base_idx, 1, mode="point")
+    assert [index_to_year_month(i) for i in c1] == [(2026, 10)]
+    assert [index_to_year_month(i) for i in p1] == [(2026, 9)]
+
+    # 3m: out/26 vs jul/26
+    c3, p3 = window_pair(base_idx, 3, mode="point")
+    assert [index_to_year_month(i) for i in c3] == [(2026, 10)]
+    assert [index_to_year_month(i) for i in p3] == [(2026, 7)]
+
+    # 6m: out/26 vs abr/26
+    c6, p6 = window_pair(base_idx, 6, mode="point")
+    assert [index_to_year_month(i) for i in c6] == [(2026, 10)]
+    assert [index_to_year_month(i) for i in p6] == [(2026, 4)]
+
+    # 12m: out/26 vs out/25
+    c12, p12 = window_pair(base_idx, 12, mode="point")
+    assert [index_to_year_month(i) for i in c12] == [(2026, 10)]
+    assert [index_to_year_month(i) for i in p12] == [(2025, 10)]
+
+    # Modo average:
+    # 3m: out/26 vs [jul, ago, set/26]
+    ca3, pa3 = window_pair(base_idx, 3, mode="average")
+    assert [index_to_year_month(i) for i in ca3] == [(2026, 10)]
+    assert [index_to_year_month(i) for i in pa3] == [(2026, 7), (2026, 8), (2026, 9)]
+
+    # 6m: out/26 vs [abr .. set/26]
+    ca6, pa6 = window_pair(base_idx, 6, mode="average")
+    assert [index_to_year_month(i) for i in ca6] == [(2026, 10)]
+    assert len(pa6) == 6
+    assert index_to_year_month(pa6[0]) == (2026, 4)
+    assert index_to_year_month(pa6[-1]) == (2026, 9)
+
+    # 12m: out/26 vs [out/25 .. set/26]
+    ca12, pa12 = window_pair(base_idx, 12, mode="average")
+    assert len(pa12) == 12
+    assert index_to_year_month(pa12[0]) == (2025, 10)
+    assert index_to_year_month(pa12[-1]) == (2026, 9)
+
+
+
 def test_days_in_span_leap_year():
     """Valida cálculo de dias em anos bissextos (fev/24 = 29 dias vs fev/25 = 28 dias)."""
     from src.modules.sales_trend.domain.month_windows import month_index, days_in_span

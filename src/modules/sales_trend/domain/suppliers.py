@@ -179,6 +179,7 @@ def get_suppliers_trend(
     q: Optional[str],
     min_volume: float,
     last_covered_day: datetime.date,
+    comparison_mode: str = "point",
 ) -> SuppliersRankingResult:
     """
     Calcula a lista de fornecedores com a variação percentual sobre a soma líquida de vendas.
@@ -217,6 +218,7 @@ def get_suppliers_trend(
                 metric=metric,
                 monthly_sales=monthly_sales,
                 last_covered_day=last_covered_day,
+                mode=comparison_mode,
             )
 
         rows_universe.append(
@@ -327,6 +329,7 @@ def get_supplier_detail(
     offset: int,
     last_covered_day: datetime.date,
     sort_window: int = 1,
+    comparison_mode: str = "point",
 ) -> SupplierDetailResult:
     """
     Retorna o detalhe de produtos de um fornecedor com a contribuição em p.p. e em valor.
@@ -349,6 +352,7 @@ def get_supplier_detail(
             metric=metric,
             monthly_sales=monthly_sales,
             last_covered_day=last_covered_day,
+            mode=comparison_mode,
         )
         for w in WINDOW_SIZES_MONTHS
     }
@@ -358,7 +362,7 @@ def get_supplier_detail(
     first_sale = monthly_sales.first_sale_date or datetime.date.min
     window_meta_info = {}
     for w in WINDOW_SIZES_MONTHS:
-        c_span, p_span = window_pair(base_month_index, w)
+        c_span, p_span = window_pair(base_month_index, w, mode=comparison_mode)
         c_cov_prev = covered_days(p_span, first_sale, last_covered_day)
         c_cov_curr = covered_days(c_span, first_sale, last_covered_day)
         c_days_prev = days_in_span(p_span)
@@ -367,7 +371,7 @@ def get_supplier_detail(
         window_meta_info[w] = (c_cov_curr, c_cov_prev, c_is_partial)
 
     # Identifica dias e cobertura para cálculo de contribuição
-    curr_span, prev_span = window_pair(base_month_index, sort_window)
+    curr_span, prev_span = window_pair(base_month_index, sort_window, mode=comparison_mode)
     cov_prev = covered_days(prev_span, monthly_sales.first_sale_date or datetime.date.min, last_covered_day)
     cov_curr = covered_days(curr_span, monthly_sales.first_sale_date or datetime.date.min, last_covered_day)
     days_prev = days_in_span(prev_span)
@@ -417,6 +421,7 @@ def get_supplier_detail(
                 metric=metric,
                 monthly_sales=monthly_sales,
                 last_covered_day=last_covered_day,
+                mode=comparison_mode,
             )
             s_w_cell = supplier_cells[w]
             w_cov_curr, w_cov_prev, w_is_partial = window_meta_info[w]

@@ -73,6 +73,7 @@ import { getDisplayErrorMessage } from '../../utils/trend-error';
           [loading]="store.status() === 'loading'"
           (groupByChange)="store.setGroupBy($event)"
           (metricChange)="store.setMetric($event)"
+          (comparisonModeChange)="store.setComparisonMode($event)"
           (baseMonthChange)="store.setBaseMonth($event)"
           (searchChange)="store.setSearch($event)"
           (minVolumeChange)="store.setMinVolume($event)"
@@ -120,6 +121,7 @@ import { getDisplayErrorMessage } from '../../utils/trend-error';
             [rows]="tableRows()"
             [groupBy]="store.query().groupBy || 'product'"
             [metric]="store.query().metric || 'revenue'"
+            [comparisonMode]="store.query().comparisonMode || 'point'"
             [sortWindow]="store.query().sortWindow || 3"
             [sortDir]="store.query().sortDir || 'desc'"
             [params]="store.currentMeta?.parametros"
@@ -167,6 +169,7 @@ import { getDisplayErrorMessage } from '../../utils/trend-error';
           <app-period-legend
             [windows]="columns()"
             [metric]="store.query().metric || 'revenue'"
+            [comparisonMode]="store.query().comparisonMode || 'point'"
             [lastCoveredDay]="store.currentMeta?.ultimoDiaCoberto || null"
           />
         }
@@ -278,10 +281,16 @@ export class SalesTrendPageComponent implements OnInit {
 
   readonly subtitleText = computed(() => {
     const meta = this.store.currentMeta;
-    if (meta && meta.mesBase) {
-      return `O que subiu e o que caiu: cada coluna compara os meses até ${meta.mesBase} com os meses imediatamente anteriores, de mesmo tamanho.`;
+    const mode = this.store.query().comparisonMode || 'point';
+    const base = meta?.mesBase;
+    if (mode === 'point') {
+      return base
+        ? `O que subiu e o que caiu: compara as vendas de ${base} pontualmente com o mês de 1, 3, 6 e 12 meses atrás.`
+        : 'Compara o mês-base pontualmente com o mês de 1, 3, 6 e 12 meses atrás.';
     }
-    return 'Compara períodos de 1, 3, 6 e 12 meses com os períodos imediatamente anteriores de mesmo tamanho.';
+    return base
+      ? `O que subiu e o que caiu: compara as vendas de ${base} com a média mensal dos períodos anteriores de 1, 3, 6 e 12 meses.`
+      : 'Compara o mês-base com a média mensal dos períodos anteriores de 1, 3, 6 e 12 meses.';
   });
 
   readonly columns = computed(() => this.store.currentMeta?.janelas || []);

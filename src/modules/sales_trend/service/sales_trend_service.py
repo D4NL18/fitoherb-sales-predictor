@@ -52,6 +52,7 @@ class SalesTrendServiceResult:
     view: str
     sort_window: int
     sort_dir: str
+    comparison_mode: str = "point"
 
 
 def get_sales_trend(
@@ -65,6 +66,7 @@ def get_sales_trend(
     min_volume: float = 0.0,
     limit: int = 50,
     offset: int = 0,
+    comparison_mode: str = "point",
 ) -> SalesTrendServiceResult:
     """
     Executa a consulta de tendência de vendas (por produto ou fornecedor).
@@ -111,6 +113,7 @@ def get_sales_trend(
             q=q,
             min_volume=min_volume,
             last_covered_day=snapshot.last_covered_day,
+            comparison_mode=comparison_mode,
         )
         paginated = paginate(res_suppliers.items, limit=limit, offset=offset)
         items = list(paginated.items)
@@ -127,6 +130,7 @@ def get_sales_trend(
             q=q,
             min_volume=min_volume,
             last_covered_day=snapshot.last_covered_day,
+            comparison_mode=comparison_mode,
         )
         paginated = paginate(res_products.items, limit=limit, offset=offset)
         items = list(paginated.items)
@@ -148,6 +152,7 @@ def get_sales_trend(
         view=view,
         sort_window=sort_window,
         sort_dir=sort_dir,
+        comparison_mode=comparison_mode,
     )
 
 
@@ -161,6 +166,7 @@ def get_supplier_products(
     limit: int = 20,
     offset: int = 0,
     sort_window: int = 1,
+    comparison_mode: str = "point",
 ) -> Tuple[SupplierDetailResult, SalesTrendSnapshot, int]:
     """
     Retorna a lista paginada de produtos de um fornecedor específico.
@@ -205,6 +211,7 @@ def get_supplier_products(
         offset=offset,
         last_covered_day=snapshot.last_covered_day,
         sort_window=sort_window,
+        comparison_mode=comparison_mode,
     )
 
     return detail_res, snapshot, base_month_idx

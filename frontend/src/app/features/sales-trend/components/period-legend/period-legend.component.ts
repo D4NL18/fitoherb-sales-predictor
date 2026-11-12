@@ -3,7 +3,7 @@
  */
 import { Component, input } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { TrendMetric, TrendWindowMeta } from '../../models/sales-trend.model';
+import { TrendComparisonMode, TrendMetric, TrendWindowMeta } from '../../models/sales-trend.model';
 import { formatWindowMonthSpan } from '../../utils/trend-format';
 import { formatIsoDate } from '../../utils/pt-br-format';
 
@@ -21,7 +21,7 @@ import { formatIsoDate } from '../../utils/pt-br-format';
             <span class="item-span">
               {{ formatWindowMonthSpan(w.atual) }}
               <span class="vs-text">vs</span>
-              {{ formatWindowMonthSpan(w.anterior) }}
+              {{ previousSpan(w) }}
             </span>
             @if (w.baseParcial) {
               <span class="legend-badge">Média diária</span>
@@ -106,8 +106,14 @@ import { formatIsoDate } from '../../utils/pt-br-format';
 export class PeriodLegendComponent {
   readonly windows = input.required<TrendWindowMeta[]>();
   readonly metric = input.required<TrendMetric>();
+  readonly comparisonMode = input<TrendComparisonMode>('point');
   readonly lastCoveredDay = input<string | null>(null);
 
   formatWindowMonthSpan = formatWindowMonthSpan;
   formatIsoDate = formatIsoDate;
+
+  previousSpan(w: TrendWindowMeta): string {
+    const span = formatWindowMonthSpan(w.anterior);
+    return this.comparisonMode() === 'average' && w.meses > 1 ? `média ${span}` : span;
+  }
 }

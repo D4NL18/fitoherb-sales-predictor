@@ -88,7 +88,7 @@ app.include_router(sales_trend_router, prefix="/api/v1")
 _dist_dir = Path(__file__).resolve().parent.parent / "frontend" / "dist" / "frontend" / "browser"
 if _dist_dir.exists():
     from starlette.exceptions import HTTPException as StarletteHTTPException
-    from fastapi.responses import FileResponse
+    from fastapi.responses import FileResponse, Response
 
     # Monta arquivos estáticos mantendo suporte a SPA
     app.mount("/static", StaticFiles(directory=str(_dist_dir)), name="static_assets")

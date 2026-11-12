@@ -87,6 +87,7 @@ def test_get_trend_products_contract_format():
         meta = json_data["meta"]
         assert meta["version"] == "1.0.0"
         assert meta["mesBase"] == "2026-10"
+        assert meta["modoComparacao"] == "point"
         assert "janelas" in meta
         assert isinstance(meta["janelas"], list)
         assert len(meta["janelas"]) == 4
@@ -98,6 +99,17 @@ def test_get_trend_products_contract_format():
         assert "parametros" in meta
         assert "total" in meta
         assert isinstance(meta["total"]["janelas"], list)
+
+
+def test_get_trend_products_average_mode():
+    """Valida endpoint com modo de comparação por média do período (comparisonMode=average)."""
+    snap = _setup_mock_snapshot()
+    with patch("src.modules.sales_trend.service.sales_trend_service.get_snapshot", return_value=snap):
+        response = client.get("/api/v1/sales-trend?baseMonth=2026-10&comparisonMode=average")
+        assert response.status_code == 200
+        json_data = response.json()
+        assert json_data["meta"]["modoComparacao"] == "average"
+        assert len(json_data["data"]) > 0
 
 
 def test_get_trend_suppliers_contract_format():

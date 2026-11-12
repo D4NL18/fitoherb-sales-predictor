@@ -4,6 +4,7 @@
  */
 import { Params } from '@angular/router';
 import {
+  TrendComparisonMode,
   TrendGroupBy,
   TrendMetric,
   TrendQueryParams,
@@ -17,6 +18,7 @@ const VALID_GROUP_BY: readonly TrendGroupBy[] = ['product', 'supplier'];
 const VALID_WINDOWS: readonly TrendSortWindow[] = [1, 3, 6, 12];
 const VALID_SORT_DIRS: readonly TrendSortDir[] = ['asc', 'desc'];
 const VALID_VIEWS: readonly TrendView[] = ['all', 'rising', 'falling', 'new'];
+const VALID_MODES: readonly TrendComparisonMode[] = ['point', 'average'];
 
 /**
  * Converte o estado da consulta para parâmetros de URL limpos (omite padrões).
@@ -32,6 +34,9 @@ export function stateToQueryParams(state: TrendQueryParams): Params {
   }
   if (state.groupBy && state.groupBy !== 'product') {
     params['groupBy'] = state.groupBy;
+  }
+  if (state.comparisonMode && state.comparisonMode !== 'point') {
+    params['comparisonMode'] = state.comparisonMode;
   }
   if (state.sortWindow && state.sortWindow !== 3) {
     params['sortWindow'] = state.sortWindow;
@@ -74,6 +79,9 @@ export function queryParamsToState(rawParams: Params): TrendQueryParams {
 
   if (typeof rawParams['groupBy'] === 'string' && VALID_GROUP_BY.includes(rawParams['groupBy'] as TrendGroupBy)) {
     result.groupBy = rawParams['groupBy'] as TrendGroupBy;
+  }
+  if (typeof rawParams['comparisonMode'] === 'string' && VALID_MODES.includes(rawParams['comparisonMode'] as TrendComparisonMode)) {
+    result.comparisonMode = rawParams['comparisonMode'] as TrendComparisonMode;
   }
 
   if (rawParams['sortWindow']) {
