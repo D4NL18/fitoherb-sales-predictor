@@ -60,28 +60,8 @@ export function getCellDisplayModel(
     }
   }
 
-  // Montagem de badges conforme regras P-076.5, P-077, P-079
+  // Montagem de badges conforme regras (devolução líquida)
   const badges: BadgeModel[] = [];
-
-  if (cell.baseParcial) {
-    badges.push({
-      text: 'Base parcial',
-      variant: 'info',
-      tooltip: 'Comparação calculada com base na média diária de vendas (período incompleto).',
-    });
-  }
-
-  if (cell.baseBaixa) {
-    const limitText =
-      metric === 'revenue'
-        ? `R$ ${params?.limiteBaseBaixaFaturamento ?? 500},00`
-        : `${params?.limiteBaseBaixaQuantidade ?? 10} un`;
-    badges.push({
-      text: 'Base baixa',
-      variant: 'warning',
-      tooltip: `Venda líquida anterior inferior a ${limitText}. A variação percentual pode ser desproporcional.`,
-    });
-  }
 
   if (cell.devolucaoLiquida) {
     badges.push({

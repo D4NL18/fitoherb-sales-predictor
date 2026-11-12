@@ -145,10 +145,7 @@ import { TrendSupplierGroupComponent } from '../trend-supplier-group/trend-suppl
       border-collapse: collapse;
 
       th {
-        position: sticky;
-        top: var(--navbar-height, 64px);
         background-color: var(--bg-table-header);
-        z-index: 2;
         border-bottom: 2px solid var(--border-default);
         vertical-align: bottom;
         padding: 0;

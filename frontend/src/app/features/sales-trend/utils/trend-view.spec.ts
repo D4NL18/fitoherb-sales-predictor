@@ -5,7 +5,7 @@ import { getCellDisplayModel, isAllSemBase } from './trend-view';
 import { TrendCell } from '../models/sales-trend.model';
 
 describe('trend-view utils (T-16)', () => {
-  it('gera modelo para célula VARIACAO com alta e badges', () => {
+  it('gera modelo para célula VARIACAO com alta e formatação monetária', () => {
     const cell: TrendCell = {
       meses: 1,
       atual: 1500,
@@ -23,39 +23,27 @@ describe('trend-view utils (T-16)', () => {
     expect(model.isNumeric).toBeTrue();
     expect(model.direction).toBe('up');
     expect(model.percentText).toBe('+50,0%');
-    expect(model.badges.length).toBe(1);
-    expect(model.badges[0].text).toBe('Base parcial');
+    expect(model.badges.length).toBe(0);
     expect(model.currentDailyText).toContain('/dia');
     expect(model.ariaLabel).toContain('alta de +50,0%');
   });
 
-  it('gera modelo para célula com base baixa e interpola parâmetros', () => {
+  it('gera badge para célula com devolução líquida', () => {
     const cell: TrendCell = {
       meses: 3,
-      atual: 400,
+      atual: 0,
       anterior: 200,
-      variacaoPct: 100.0,
+      variacaoPct: -100.0,
       status: 'VARIACAO',
       baseParcial: false,
-      baseBaixa: true,
-      devolucaoLiquida: false,
+      baseBaixa: false,
+      devolucaoLiquida: true,
       atualPorDia: null,
       anteriorPorDia: null,
     };
 
-    const params = {
-      limiteBaseBaixaQuantidade: 10,
-      limiteBaseBaixaFaturamento: 500,
-      coberturaMinimaAnterior: 0.5,
-      buscaMinCaracteres: 2,
-      buscaMinCaracteresNumerica: 1,
-      buscaMaxCaracteres: 60,
-      ttlCacheHoras: 6,
-    };
-
-    const model = getCellDisplayModel(cell, 'revenue', params);
-    expect(model.badges.some((b) => b.text === 'Base baixa')).toBeTrue();
-    expect(model.badges.find((b) => b.text === 'Base baixa')?.tooltip).toContain('R$ 500,00');
+    const model = getCellDisplayModel(cell, 'revenue');
+    expect(model.badges.some((b) => b.text === 'Devoluções > vendas')).toBeTrue();
   });
 
   it('gera modelo para célula NOVO', () => {

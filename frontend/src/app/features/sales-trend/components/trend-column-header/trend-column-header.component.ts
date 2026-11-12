@@ -37,8 +37,6 @@ import { formatWindowMonthSpan } from '../../utils/trend-format';
 
       @if (windowMeta().semBase) {
         <span class="window-badge badge-nobase">Sem base</span>
-      } @else if (windowMeta().baseParcial) {
-        <span class="window-badge badge-partial">Base parcial</span>
       }
     </button>
   `,

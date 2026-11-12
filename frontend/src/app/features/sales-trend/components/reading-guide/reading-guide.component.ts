@@ -31,12 +31,6 @@ import { CommonModule } from '@angular/common';
             <strong>Selo "Novo":</strong> produto que vendeu no período atual mas não teve nenhuma venda líquida no período anterior. Não calcula percentual para evitar divisões irreais.
           </li>
           <li>
-            <strong>Selo "Base baixa":</strong> a venda no período anterior foi inferior a 10 unidades ou R$ 500,00. Percentuais altos podem representar apenas poucas unidades vendidas.
-          </li>
-          <li>
-            <strong>Selo "Base parcial":</strong> quando o período atual ou anterior está incompleto (ex.: mês corrente em andamento), a comparação usa a média diária de vendas.
-          </li>
-          <li>
             <strong>Selo "Devoluções > vendas":</strong> devoluções abateram as vendas e o líquido resultou em valor negativo, ajustado para zero para o cálculo de variação.
           </li>
           <li>
