@@ -1,0 +1,93 @@
+<div class="drawer-backdrop" [class.open]="isOpen" (click)="close()"></div>
+
+<aside class="churn-drawer" [class.open]="isOpen" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
+  <div class="drawer-header">
+    <div class="header-titles">
+      <span class="subtitle">Diagnóstico de Retenção</span>
+      <h2 id="drawer-title">
+        Cliente #{{ customer?.customerCode || '...' }}
+      </h2>
+    </div>
+    <button type="button" class="close-btn" (click)="close()" aria-label="Fechar painel de detalhes (Esc)">
+      ✕
+    </button>
+  </div>
+
+  <div class="drawer-body" *ngIf="loading">
+    <div class="skeleton-line title"></div>
+    <div class="skeleton-card"></div>
+    <div class="skeleton-card"></div>
+  </div>
+
+  <div class="drawer-body" *ngIf="!loading && customer">
+    <!-- Status e Decomposição do Score -->
+    <div class="kpi-panel">
+      <div class="kpi-item">
+        <span class="label">Status Atual</span>
+        <span class="tag" [ngClass]="{
+          'tag-critical': customer.status === 'EM_RISCO',
+          'tag-warning': customer.status === 'ALERTA',
+          'tag-neutral': customer.status === 'SAUDAVEL' || customer.status === 'INATIVO_RECUPERACAO'
+        }">
+          {{ customer.status === 'INATIVO_RECUPERACAO' ? 'Inativo Antigo' : customer.status }}
+        </span>
+      </div>
+
+      <div class="kpi-item">
+        <span class="label">Score de Prioridade</span>
+        <span class="value-highlight mono">{{ formatCurrency(customer.scorePrioridade) }}</span>
+      </div>
+
+      <div class="kpi-item">
+        <span class="label">Último Pedido</span>
+        <span class="mono">{{ formatDate(customer.dataUltimoPedido) }} (há {{ customer.diasSemComprar }} dias)</span>
+      </div>
+
+      <div class="kpi-item">
+        <span class="label">Cadência Habitual</span>
+        <span class="mono" *ngIf="!customer.historicoCurto && customer.gapTipico">
+          Compra a cada {{ customer.gapTipico }} dias (Régua: {{ customer.diasReferencia }}d)
+        </span>
+        <span class="mono badge-short" *ngIf="customer.historicoCurto">
+          Histórico curto (&lt; 3 pedidos)
+        </span>
+      </div>
+    </div>
+
+    <!-- Variação Recente -->
+    <div class="section-box" *ngIf="customer.variacaoReceitaTrimestralPct !== null">
+      <h3>Tendência Recente de Faturamento</h3>
+      <p class="trend-text" [class.negative]="customer.variacaoReceitaTrimestralPct < 0">
+        Variação dos últimos 3 meses:
+        <strong>{{ customer.variacaoReceitaTrimestralPct > 0 ? '+' : '' }}{{ customer.variacaoReceitaTrimestralPct }}%</strong>
+        em relação ao trimestre anterior.
+      </p>
+    </div>
+
+    <!-- Produtos Perdidos Mais Relevantes -->
+    <div class="section-box">
+      <h3>Produtos Perdidos Mais Relevantes</h3>
+      <p class="description-sub">
+        Itens com alto faturamento histórico que não foram comprados nos últimos 60 dias.
+      </p>
+
+      <div class="lost-products-list" *ngIf="customer.produtosPerdidos.length > 0">
+        <div class="product-item" *ngFor="let prod of customer.produtosPerdidos">
+          <div class="prod-info">
+            <span class="prod-sku mono">#{{ prod.sku }}</span>
+            <span class="prod-desc">{{ prod.descricao }}</span>
+            <span class="prod-forn">{{ prod.fornecedor }}</span>
+          </div>
+          <div class="prod-metrics">
+            <span class="hist-rev mono">{{ formatCurrency(prod.faturamentoHistorico) }}</span>
+            <span class="last-date">Última compra: {{ formatDate(prod.dataUltimaCompra) }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="empty-products" *ngIf="customer.produtosPerdidos.length === 0">
+        Nenhum produto crítico descontinuado na compra recente.
+      </div>
+    </div>
+  </div>
+</aside>

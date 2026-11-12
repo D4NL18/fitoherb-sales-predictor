@@ -1,0 +1,192 @@
+<div class="churn-page-container">
+  <!-- Cabeçalho -->
+  <header class="page-header">
+    <div class="header-content">
+      <h1>Churn de Clientes</h1>
+      <p class="subtitle">
+        Clientes da carteira ordenados pelo Score de Retenção (Urgência Temporal × Faturamento Médio Mensal).
+      </p>
+    </div>
+
+    <!-- Botão de Ação: Exportar CSV -->
+    <div class="header-actions">
+      <button
+        type="button"
+        class="btn-export"
+        (click)="exportCsv()"
+        [disabled]="isExporting() || loading() || customers().length === 0"
+        aria-label="Exportar lista de clientes em risco para CSV">
+        <span *ngIf="!isExporting()">↓ Exportar Lista (CSV)</span>
+        <span *ngIf="isExporting()">Exportando...</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Painel de KPIs de Impacto Financeiro -->
+  <section class="kpi-banner" *ngIf="resumo()">
+    <div class="kpi-card highlight">
+      <span class="kpi-label">Receita Mensal em Risco</span>
+      <span class="kpi-value mono">{{ formatCurrency(resumo()!.receitaMensalEmRisco) }}</span>
+      <span class="kpi-sub">Faturamento médio somado dos clientes em risco</span>
+    </div>
+
+    <div class="kpi-card critical">
+      <span class="kpi-label">Clientes em Risco</span>
+      <span class="kpi-value mono">{{ resumo()!.totalEmRisco }}</span>
+      <span class="kpi-sub">≥ 60 dias ou ultrapassaram régua própria</span>
+    </div>
+
+    <div class="kpi-card warning">
+      <span class="kpi-label">Clientes em Alerta</span>
+      <span class="kpi-value mono">{{ resumo()!.totalAlerta }}</span>
+      <span class="kpi-sub">Entre 50% e 100% da cadência habitual</span>
+    </div>
+
+    <div class="kpi-card neutral">
+      <span class="kpi-label">Inativos Antigos</span>
+      <span class="kpi-value mono">{{ resumo()!.totalInativos }}</span>
+      <span class="kpi-sub">Parados há mais de 180 dias</span>
+    </div>
+  </section>
+
+  <!-- Filtros de Status (Pills) -->
+  <nav class="filter-bar" aria-label="Filtro de clientes por status de risco">
+    <button
+      type="button"
+      class="filter-pill"
+      [class.active]="statusFilter() === 'EM_RISCO'"
+      (click)="setFilter('EM_RISCO')">
+      Em Risco <span class="pill-badge" *ngIf="resumo()">({{ resumo()!.totalEmRisco }})</span>
+    </button>
+    <button
+      type="button"
+      class="filter-pill"
+      [class.active]="statusFilter() === 'ALERTA'"
+      (click)="setFilter('ALERTA')">
+      Em Alerta <span class="pill-badge" *ngIf="resumo()">({{ resumo()!.totalAlerta }})</span>
+    </button>
+    <button
+      type="button"
+      class="filter-pill"
+      [class.active]="statusFilter() === 'SAUDAVEL'"
+      (click)="setFilter('SAUDAVEL')">
+      Saudáveis <span class="pill-badge" *ngIf="resumo()">({{ resumo()!.totalSaudavel }})</span>
+    </button>
+    <button
+      type="button"
+      class="filter-pill"
+      [class.active]="statusFilter() === 'INATIVO_RECUPERACAO'"
+      (click)="setFilter('INATIVO_RECUPERACAO')">
+      Inativos Antigos (&gt; 180d)
+    </button>
+  </nav>
+
+  <!-- Erro -->
+  <div class="error-banner" *ngIf="error()">
+    <span class="error-icon">⚠️</span>
+    <span class="error-msg">{{ error() }}</span>
+    <button type="button" class="btn-retry" (click)="fetchData()">Tentar Novamente</button>
+  </div>
+
+  <!-- Loading Skeleton -->
+  <div class="table-skeleton" *ngIf="loading()">
+    <div class="skeleton-row header"></div>
+    <div class="skeleton-row" *ngFor="let i of [1, 2, 3, 4, 5, 6]"></div>
+  </div>
+
+  <!-- Tabela de Clientes (Ledger) -->
+  <div class="table-container" *ngIf="!loading() && !error() && customers().length > 0">
+    <table class="churn-table" aria-label="Tabela de clientes priorizados por churn">
+      <thead>
+        <tr>
+          <th scope="col">Cliente</th>
+          <th scope="col">Status</th>
+          <th scope="col">Dias Parado</th>
+          <th scope="col">Cadência Habitual</th>
+          <th scope="col" class="num-col">Faturamento Médio Mensal</th>
+          <th scope="col" class="num-col">Score Prioridade</th>
+          <th scope="col" class="action-col"><span class="sr-only">Ações</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr
+          *ngFor="let item of customers()"
+          (click)="openCustomerDetail(item)"
+          (keydown.enter)="openCustomerDetail(item)"
+          tabindex="0"
+          role="button"
+          [attr.aria-label]="'Abrir diagnóstico do cliente #' + item.customerCode">
+          <td class="code-cell">
+            <span class="customer-code mono">#{{ item.customerCode }}</span>
+            <span class="badge-short" *ngIf="item.historicoCurto" title="Cliente com menos de 3 pedidos de venda">
+              Histórico curto
+            </span>
+          </td>
+          <td>
+            <span class="tag" [ngClass]="{
+              'tag-critical': item.status === 'EM_RISCO',
+              'tag-warning': item.status === 'ALERTA',
+              'tag-neutral': item.status === 'SAUDAVEL' || item.status === 'INATIVO_RECUPERACAO'
+            }">
+              {{ item.status === 'INATIVO_RECUPERACAO' ? 'Inativo' : item.status }}
+            </span>
+          </td>
+          <td class="mono">
+            <strong>{{ item.diasSemComprar }} dias</strong>
+          </td>
+          <td>
+            <span *ngIf="item.gapTipico">{{ item.gapTipico }} dias <small class="text-muted">(ref: {{ item.diasReferencia }}d)</small></span>
+            <span *ngIf="!item.gapTipico" class="text-muted">—</span>
+          </td>
+          <td class="num-col mono">
+            {{ formatCurrency(item.faturamentoMedioMensal) }}
+          </td>
+          <td class="num-col mono score-cell">
+            <strong>{{ formatCurrency(item.scorePrioridade) }}</strong>
+          </td>
+          <td class="action-col">
+            <span class="chevron" aria-hidden="true">›</span>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Estado Vazio -->
+  <div class="empty-state" *ngIf="!loading() && !error() && customers().length === 0">
+    <div class="empty-icon">✓</div>
+    <h3>Nenhum cliente neste status</h3>
+    <p>Não há clientes classificados como {{ statusFilter() }} no momento.</p>
+  </div>
+
+  <!-- Paginação -->
+  <footer class="pagination-footer" *ngIf="!loading() && !error() && totalItems() > limit">
+    <div class="page-info">
+      Exibindo {{ offset() + 1 }}–{{ offset() + customers().length }} de {{ totalItems() }} clientes
+    </div>
+    <div class="page-controls">
+      <button
+        type="button"
+        class="btn-pager"
+        (click)="prevPage()"
+        [disabled]="offset() === 0">
+        ‹ Anterior
+      </button>
+      <button
+        type="button"
+        class="btn-pager"
+        (click)="nextPage()"
+        [disabled]="offset() + limit >= totalItems()">
+        Próxima ›
+      </button>
+    </div>
+  </footer>
+</div>
+
+<!-- Drawer Lateral de Diagnóstico -->
+<app-customer-churn-drawer
+  [customer]="selectedCustomer()"
+  [isOpen]="isDrawerOpen()"
+  [loading]="drawerLoading()"
+  (closeDrawer)="closeDrawer()">
+</app-customer-churn-drawer>

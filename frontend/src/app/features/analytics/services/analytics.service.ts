@@ -8,6 +8,11 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { AnalyticsHealthResponse, PageRequest } from '../models/analytics.model';
 import {
+  ChurnCustomersResponse,
+  CustomerChurnDetailResponse,
+  InactiveChurnResponse,
+} from '../models/churn.model';
+import {
   CustomerCrossSellResponse,
   ProductCrossSellResponse,
   ProductSearchResponse,
@@ -41,6 +46,27 @@ export class AnalyticsService {
   searchProducts(query: string, page: PageRequest): Observable<ProductSearchResponse> {
     return this.http.get<ProductSearchResponse>(`${this.baseUrl}/products/search`, {
       params: toPageParams(page).set('q', query),
+    });
+  }
+
+  /** Listagem priorizada de clientes por score de churn (P-123). */
+  getChurnCustomers(status: string | null, page: PageRequest): Observable<ChurnCustomersResponse> {
+    let params = toPageParams(page);
+    if (status) {
+      params = params.set('status', status);
+    }
+    return this.http.get<ChurnCustomersResponse>(`${this.baseUrl}/churn/customers`, { params });
+  }
+
+  /** Detalhe explicativo e diagnóstico do cliente em churn (P-126). */
+  getCustomerChurnDetail(customerCode: number): Observable<CustomerChurnDetailResponse> {
+    return this.http.get<CustomerChurnDetailResponse>(`${this.baseUrl}/churn/customers/${customerCode}`);
+  }
+
+  /** Fila especializada de clientes inativos antigos (P-125). */
+  getInactiveChurn(page: PageRequest): Observable<InactiveChurnResponse> {
+    return this.http.get<InactiveChurnResponse>(`${this.baseUrl}/churn/inactive`, {
+      params: toPageParams(page),
     });
   }
 }
