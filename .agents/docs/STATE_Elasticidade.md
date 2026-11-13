@@ -56,4 +56,29 @@
 - Commit `c58f1e9`: test(analytics): adiciona testes TDD de elasticidade de produto e cliente (P-095..P-101)
 - Commit `7656364`: feat(analytics): implementa estimador de elasticidade log-log, shrinkage bayesiano e simulador (P-095..P-104)
 - Commit `088a3bf`: feat(analytics): implementa aba de elasticidade com simulador reativo e 8 estados interativos (P-105)
+- Commit `788f4f4`: fix(analytics-ui): padronizar erros de contrato, modelos e helpers pt-BR da elasticidade
+- Commit `132096d`: style(analytics-ui): decompor componentes Papel e Tinta acessiveis para elasticidade F5
+- Commit `c7621f1`: fix(analytics-ui): otimizar ElasticityPage com OnPush, switchMap, paginacao e URL segura
+- Commit `b481dc1`: test(analytics-ui): expandir testes de concorrencia, contrato, acessibilidade e estados F5
+
+---
+
+## 4. Auditoria e Otimização UI/UX/Frontend
+
+- [x] **Design System Papel & Tinta (`styles.scss`, `_analytics-ui.scss`):**
+  - Eliminados ~118 hexadecimais Tailwind hardcoded/gradientes; aplicados tokens `--bg-*`, `--brand-*`, `--text-*`, `--border-*`, `--feedback-*-bg` (apenas com `--text-on-brand` ou como texto/borda em superfície clara), tipografia `Signika`/`Source Sans 3`/`Overpass Mono`, pipes `brl`/`ptDecimal`/`ptPercent` e alinhamento flush com `AnalyticsShellComponent`.
+  - Design Plan `.agents/docs/design/plans/analytics-elasticidade.md` alinhado aos tokens reais.
+- [x] **Bugs Funcionais, Contrato e Performance Angular:**
+  - `ElasticityPageComponent` e filhos migrados para `ChangeDetectionStrategy.OnPush` com `switchMap`, debounce de `180ms` no slider e `takeUntilDestroyed(destroyRef)` eliminando race conditions e vazamentos.
+  - Paginação corrigida para server-side via `<app-list-pager>` + `meta.totalItems` / `meta.totalPages` (`DEFAULT_PAGE_LIMIT = 50`), preservando página atual em caso de erro de página.
+  - Integrada consulta de detalhe individual por cliente (`GET /elasticity/products/{sku}/customers/{customerCode}`) com card shrinkage e limpeza automática de seleção ao trocar de SKU.
+  - Adicionado preset `0% (Atual)`, escala geométrica precisa (`0%` em `33,33%`), exibição de `projectedPrice` e `appliedElasticity`, formatação pt-BR com sinais e busca com autocomplete por descrição (`CodeSearchFormComponent`).
+  - Isolamento estrito de erros via `analytics-error.ts` + `<app-error-banner>` (zero vazamento de `detail` técnico, zero fabricação de `ELA-001` em erro 500/rede) e compatibilidade integral preservada nos fluxos de Cross-sell.
+- [x] **Acessibilidade (WCAG AA) e LGPD:**
+  - Região `p.sr-only[role="status"][aria-live="polite"]`, `role="alert"`, `role="note"`, `aria-sort`, `aria-pressed`, `aria-invalid`, `<label>` no input numérico, ícones SVG direcionais (sem depender apenas de cor), slider nunca desabilitado mid-drag e responsividade `< 640px` com alvos `>= 40px`.
+  - Sincronização de URL restrita a `?sku=` (LGPD: `customerCode` nunca vai para URL ou Storage).
+- [x] **Validação Pós-Otimização:**
+  - Frontend Karma (`npm test -- --watch=false --browsers=ChromeHeadless`): **128/128 SUCCESS**
+  - Angular Build (`npm run build`): **exit code 0** (chunk inicial reduzido para `530.67 kB`; aviso pré-existente de orçamento de `512.00 kB` sem novos erros nem warnings de estilo)
+  - Backend Pytest (`python -m pytest tests/analytics/test_elasticity_api.py tests/analytics/test_elasticity_domain.py`): **14/14 passed**
 

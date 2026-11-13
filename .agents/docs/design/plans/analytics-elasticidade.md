@@ -3,70 +3,66 @@
 > **Localização Mandatória:** `.agents/docs/design/plans/analytics-elasticidade.md`
 > **Responsável:** Designer (`designer`) / `uiux-expert`
 > **Auditor:** UX Reviewer (`ux_reviewer`)
-> **Status:** Aprovado para Implementação (Etapa 2)
-> **Alinhamento:** `DESIGN_SYSTEM.md` e regras anti-pattern (`frontend-ui-anti-patterns.md`)
+> **Status:** Atualizado pós-revisão UI/UX (Design System Papel & Tinta)
+> **Alinhamento:** `frontend/src/styles.scss`, `frontend/src/app/features/analytics/styles/_analytics-ui.scss` e `frontend-ui-anti-patterns.md`
 
 ---
 
-## 1. Visão Geral e Filosofia Visual
+## 1. Visão Geral e Filosofia Visual (Papel & Tinta)
 
-A funcionalidade de Elasticidade-Preço entrega transparência analítica para tomadores de decisão comercial. O design segue o conceito **Soft SaaS Premium**:
-- Evita gráficos genéricos e gradientes artificiais.
-- Apresenta métricas claras: Coeficiente $\beta$, Classificação (`ELÁSTICO` vs `INELÁSTICO`), Intervalo de Confiança e Simulação Reativa.
-- Oferece um simulador interativo onde o usuário ajusta um controle deslizante de preço e observa em tempo real o impacto em Volume, Receita e Margem em R$.
+A funcionalidade de Elasticidade-Preço entrega transparência analítica para tomadores de decisão comercial dentro da shell compartilhada de Analytics (`AnalyticsShellComponent`), seguindo integralmente o sistema visual **Papel & Tinta** (editorial, orgânico, sem gradientes genéricos nem cores Tailwind hardcoded):
+- Superfícies em papel quente (`--bg-canvas: #F5F2EB`, `--bg-surface: #FFFFFF`, `--bg-subtle: #ECE7DC`, `--bg-muted: #E2DDD0`), tinta vegetal escura (`--text-primary: #181D19`) e verde botânico (`--brand-primary: #1D4528`).
+- Métricas econômicas claras: Coeficiente Beta ($\beta$), Classificação (`ELASTICO` vs `INELASTICO`), Intervalo de Confiança 95%, Peso Bayesiano (*Shrinkage*) por cliente e Simulação Reativa.
+- Tipografia alinhada ao sistema: títulos em `Signika` (`--font-display`), corpo em `Source Sans 3` (`--font-sans`) e métricas numéricas / códigos em `Overpass Mono` (`--font-mono`) com `tabular-nums` e formatação brasileira (`BrlPipe`, `PtDecimalPipe`, `PtPercentPipe`).
 
 ---
 
-## 2. Macroestrutura da Tela (`/analytics/elasticity`)
+## 2. Macroestrutura da Tela (`/analytics/elasticidade`)
 
-A página é composta por 4 blocos visuais ordenados logicamente:
+Fluxo flush dentro da largura do `AnalyticsShellComponent`, composto por 4 blocos ordenados e componetizados com `ChangeDetectionStrategy.OnPush`:
 
-1. **Barra de Busca e Seleção de Produto (Hero Search):**
-   - Campo de entrada com busca reativa por código ou descrição.
-   - Dropdown de autocomplete com código, descrição e fornecedor.
-2. **Card de Diagnóstico de Elasticidade do Produto:**
-   - Badge principal de sensibilidade: `ELÁSTICO` (Teal suave / Amber sutil) ou `INELÁSTICO` (Emerald suave).
-   - Badge de confiança estatística: `CONFIANÇA ALTA` (Emerald), `CONFIANÇA MÉDIA` (Amber), `BAIXA CONFIANÇA / HISTÓRICO CURTO` (Neutro/Cinza).
-   - Métricas em grid editorial: Coeficiente de Elasticidade, Intervalo 95%, $R^2$ e Observações Válidas.
-   - Mensagem de insight em linguagem natural de negócios.
-3. **Painel do Simulador de Reajuste de Preço:**
-   - Slider com controle de -50% a +100% com marcações em 0%, +5%, +10%, +20%.
-   - Input numérico sincronizado para ajuste fino.
-   - Cards de impacto em 3 colunas:
-     - **Volume:** Unidades atuais vs projetadas e $\Delta\%$.
-     - **Receita:** Faturamento atual vs projetado e $\Delta$ R$.
-     - **Margem de Contribuição:** Margem atual vs projetada e $\Delta$ R$ com destaque de rentabilidade.
-4. **Tabela de Clientes do Produto com Elasticidade Individual:**
-   - Listagem com paginação e busca rápida por `customerCode`.
-   - Colunas: Código do Cliente, Total de Pedidos, Unidades Totais, Elasticidade Empírica, Elasticidade Suavizada (Shrinkage) e Ação de Simular Individualmente.
+1. **Busca de Produto (`CodeSearchFormComponent` compartilhado):**
+   - Campo unificado com autocomplete por código SKU ou descrição (`[enableProductSearch]="true"`).
+   - Sincronização bidirecional segura apenas com `?sku=` na URL (LGPD: `customerCode` nunca vai para URL, `localStorage` ou `sessionStorage`).
+2. **Card de Diagnóstico (`ElasticityDiagnosticCardComponent`):**
+   - Badges semânticos usando `.tag` globais (`tag-warning` / `tag-positive` / `tag-info` / `tag-neutral`) acompanhados de ícones SVG direcionais (nunca depender só de cor).
+   - 4 tiles com `Overpass Mono`: Coeficiente Beta, Intervalo de Confiança 95% + Erro Padrão, $R^2$ + Meses Válidos e Preço/Custo/Estoque atuais.
+   - Aviso `role="note"` quando `fallbackApplied=true` (estimador defensivo `-1,20`) ou `isReliable=false` (baixa confiabilidade estatística).
+3. **Painel do Simulador de Reajuste (`ElasticitySimulatorPanelComponent`):**
+   - Header com atalhos rápidos (`-10%`, `-5%`, `0% (Atual)`, `+5%`, `+10%`, `+20%`) com `min-height: 40px` (`$touch-target`).
+   - Quando um cliente é selecionado/consultado, card dedicado de detalhe individual (`GET /elasticity/products/{sku}/customers/{customerCode}`) exibindo Elasticidade do Produto vs Empírica vs Shrinkage e peso histórico (`shrinkageWeight`), com botão de retorno à visão geral.
+   - Slider (`-50%` a `+100%`) com marcas posicionadas geometricamente (`0%` em `33.33%`), debounce de `180ms` + `switchMap`, **sem jamais desabilitar o slider durante arrasto** (apenas trava atalhos e sinaliza `aria-busy="true"` nos cards), sincronizado com input numérico rotulado.
+   - Barra de comparação Preço Atual $\rightarrow$ Preço Projetado (`projectedPrice`) + Elasticidade Aplicada (`appliedElasticity`), seguida de 3 cards de impacto (Volume, Faturamento, Margem de Contribuição) com ícones SVG de tendência, deltas assinados pt-BR (`-R$ 232,21`, `+5,0%`) e barra de recomendação adaptativa.
+4. **Tabela de Clientes Paginada (`ElasticityCustomersTableComponent`):**
+   - Filtro local na página + consulta direta de código exato na API (`GET .../customers/{customerCode}` com isolamento `ELA-002`), botão limpar e ordenação acessível (`aria-sort`) por Código, Pedidos, Volume e Elasticidade Ajustada.
+   - Paginação server-side via `<app-list-pager>` (`DEFAULT_PAGE_LIMIT = 50`, usando `meta.totalItems` / `meta.totalPages`), preservando a página atual em caso de erro de troca de página.
+   - Abaixo de `$bp-mobile` (`639.98px`), tabela converte-se em cards empilhados com `data-label` sem overflow horizontal.
 
 ---
 
 ## 3. Os 8 Estados Interativos Mandatórios
 
-| Estado | Descrição da Experiência Visual |
+| Estado | Experiência Implementada |
 | :--- | :--- |
-| **1. Initial / Idle** | Campo de busca focado com placeholder amigável; área de conteúdo com banner convidativo e instrução clara ("Busque um produto por código ou nome para analisar sua sensibilidade de preço"). |
-| **2. Loading** | Skeleton loader no formato dos cards de métricas e tabela de clientes, com shimmer sutil de 1.5s, prevenindo Cumulative Layout Shift (CLS). |
-| **3. Success** | Dados renderizados com transições suaves (fade-in 200ms); números formatados no padrão brasileiro (`pt-BR`). |
-| **4. Empty** | Estado vazio ilustrado quando o produto não possui clientes com mais de um pedido, com texto orientativo claro. |
-| **5. Error** | Banner de alerta estilizado no padrão do Design System (`--color-danger-bg`), exibindo código semântico (`ELA-001`, `ELA-003`) e botão de ação "Tentar Novamente". |
-| **6. Disabled** | Controles de slider e botões desabilitados com opacidade 0.6 e cursor `not-allowed` durante chamadas ativas de API. |
-| **7. Invalid** | Feedback de validação inline caso o usuário digite um percentual fora de [-50%, +100%], com borda vermelha suave e mensagem abaixo do input. |
-| **8. Partial / Low-Confidence** | Card com badge âmbar sutil informando "Baixa Variação Histórica de Preço", explicando de forma didática que a elasticidade de -1.2 foi aplicada como estimador canônico defensivo. |
+| **1. Initial / Idle** | `<app-result-state>` (`buildElasticityInitialState`) sem chamada automática de API até que o usuário busque ou abra URL com `?sku=`. Botão de ação foca o input de busca. |
+| **2. Loading** | `<app-elasticity-skeleton>` fiel à geometria do diagnóstico, simulador e tabela com `aria-busy="true"` e `@include ui.reduced-motion`. |
+| **3. Success** | Dados renderizados em `pt-BR` via `BrlPipe`, `PtDecimalPipe`, `PtPercentPipe` e região `p.sr-only[role="status"][aria-live="polite"]` anunciando produto e simulação. |
+| **4. Empty** | Produto sem clientes individuais exibe `<app-result-state>` específico na tabela sem ocultar diagnóstico/simulador; filtro sem correspondência exibe botão "Limpar filtro". |
+| **5. Error** | `<app-error-banner>` amigável via `analytics-error.ts` (`ELA-001`..`ANL-002` mapeados; 500/rede caem no fallback genérico sem expor `detail` ou fabricar códigos falsos) + retry. `ELA-003` renderiza estado de histórico insuficiente. |
+| **6. Busy / Disabled** | Durante simulação em voo, slider permanece manipulável (não perde foco/ponteiro); atalhos e ações de linha ficam desabilitados e a grade de projeção recebe `aria-busy="true"`. |
+| **7. Invalid** | Percentual fora de `[-50, 100]` ou SKU inválido marcam `aria-invalid="true"`, exibem alerta inline e bloqueiam chamadas HTTP inválidas. |
+| **8. Partial / Low-Confidence** | Bloco `role="note"` com destaque visual de alerta contrastante explicando fallback `-1,20` (`fallbackApplied`) ou baixa confiabilidade amostral (`!isReliable`). |
 
 ---
 
-## 4. Tokens e Estilos Aplicados
+## 4. Tokens, Contraste WCAG AA e Acessibilidade
 
-- **Cores:**
-  - Primária: `--color-primary` (`#0D9488`) para botões de ação e tabs ativas.
-  - Alerta/Atenção: `--color-warning` (`#F59E0B`) para produtos elásticos e avisos de confiança média.
-  - Sucesso/Inelástico: `--color-success` (`#10B981`) para produtos inelásticos de oportunidade.
-  - Superfícies: Cartões com borda `--color-neutral-200` (`#E2E8F0`), fundo `#FFFFFF` e sombra suave `0 1px 3px rgba(0,0,0,0.05)`.
-- **Tipografia:**
-  - Títulos: Inter / Sans-serif 600 com tracking -0.01em.
-  - Números e métricas: Tabular figures para alinhamento perfeito de decimais.
+- **Tokens Papel & Tinta obrigatórios (`frontend/src/styles.scss`):**
+  - `--bg-canvas`, `--bg-surface`, `--bg-subtle`, `--bg-muted`, `--bg-table-header`, `--bg-table-row-hover`, `--bg-table-row-zebra`.
+  - `--brand-primary`, `--brand-primary-hover`, `--brand-primary-subtle`, `--brand-secondary`, `--brand-secondary-subtle`.
+  - `--text-primary`, `--text-secondary`, `--text-muted`, `--text-on-brand`, `--border-default`, `--border-strong`, `--border-focus`.
+  - `--feedback-positive-bg` (`#185A2E`), `--feedback-warning-bg` (`#7A4607`), `--feedback-critical-bg` (`#8F1B1B`), `--feedback-info-bg` (`#1B4B7A`), `--feedback-neutral-bg` (`#3B423C`): usados apenas com texto branco `--text-on-brand`, ou como cor de texto/borda sobre superfícies claras.
+  - Sobre `--bg-subtle`, usar `--text-secondary` ou `--text-primary` (nunca `--text-muted`, evitando contraste < 4.5:1).
 - **Acessibilidade:**
-  - Todos os elementos interativos possuem `:focus-visible` com outline contrastante.
-  - Controles de slider possuem atributos `aria-valuemin`, `aria-valuemax` e `aria-valuenow`.
+  - Região `aria-live="polite"` exclusiva da página para resultado de busca e simulação.
+  - Inputs com `<label>` explícito, `aria-invalid`, `aria-describedby`, `role="alert"` em erros, `aria-pressed` em presets e seleção de cliente, `aria-sort` em colunas ordenáveis, `aria-valuemin`/`aria-valuemax`/`aria-valuenow`/`aria-valuetext` no slider e área de toque mínima de `40px` (`$touch-target`).
