@@ -43,7 +43,7 @@ export interface SeasonalityData {
   forca: SeasonalityStrength;
   motivoInsuficiencia: SeasonalityReason;
   amplitude: number;
-  correlacaoYoY: number | null;
+  correlacaoYoy: number | null;
   pico: SeasonalityPeakValley;
   vale: SeasonalityPeakValley;
   serieMensal: MonthlySeasonalityPoint[];
@@ -69,4 +69,14 @@ export interface SeasonalityRankingItem {
 export interface SeasonalityRankingResponse {
   data: SeasonalityRankingItem[];
   meta: PagedMeta;
+}
+
+/** Códigos de erro do contrato de sazonalidade (P-116) e infraestrutura do módulo Analytics. */
+export const SEASONALITY_ERROR_CODES = ['SEA-001', 'SEA-002', 'SEA-003', 'ANL-001', 'ANL-002'] as const;
+export type SeasonalityErrorCode = (typeof SEASONALITY_ERROR_CODES)[number];
+
+export interface SeasonalityApiError {
+  code: SeasonalityErrorCode;
+  message: string;
+  fields: string[];
 }

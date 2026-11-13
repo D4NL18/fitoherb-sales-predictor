@@ -35,7 +35,7 @@ export class SeasonalityService {
   /** Busca rápida de produto no catálogo ativo para autocomplete (P-115). */
   searchProducts(query: string, page: PageRequest = { limit: 20, offset: 0 }): Observable<ProductSearchResponse> {
     const params = new HttpParams()
-      .set('q', query)
+      .set('q', query.trim())
       .set('limit', page.limit)
       .set('offset', page.offset);
     return this.http.get<ProductSearchResponse>(`${this.baseUrl}/products/search`, { params });
