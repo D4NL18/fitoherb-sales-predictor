@@ -163,3 +163,153 @@ def test_supplier_not_found_tnd003():
         )
     assert exc_info.value.code == "TND-003"
     assert "supplierKey" in exc_info.value.fields
+
+
+def test_supplier_detail_average_mode_contribution_closure():
+    """Garante fecho exato de contribuicao_pp no modo average para janelas > 1."""
+    from datetime import date
+    from fractions import Decimal
+    from src.modules.sales_trend.domain.month_windows import month_index
+    from src.modules.sales_trend.domain.rounding import round_fraction_half_up
+    from src.modules.sales_trend.domain.sales_trend import (
+        TrendCatalogEntry,
+        build_monthly_sales,
+    )
+    from src.modules.sales_trend.domain.search_text import normalize_text
+    from src.modules.sales_trend.domain.suppliers import (
+        build_supplier_index,
+        get_supplier_detail,
+        get_suppliers_trend,
+    )
+
+    catalog = {
+        2001: TrendCatalogEntry(2001, "PROD A", "LAB TESTE", normalize_text("PROD A")),
+        2002: TrendCatalogEntry(2002, "PROD B", "LAB TESTE", normalize_text("PROD B")),
+        2003: TrendCatalogEntry(2003, "PROD NOVO", "LAB TESTE", normalize_text("PROD NOVO")),
+    }
+    rows = [
+        # 2001: jul-set = 10+20+30 = 60 (media 20), out = 45 -> +25
+        (2001, 202607, Decimal("1"), Decimal("10.00")),
+        (2001, 202608, Decimal("2"), Decimal("20.00")),
+        (2001, 202609, Decimal("3"), Decimal("30.00")),
+        (2001, 202610, Decimal("4"), Decimal("45.00")),
+        # 2002: jul-set = 30+30+60 = 120 (media 40), out = 30 -> -10
+        (2002, 202607, Decimal("3"), Decimal("30.00")),
+        (2002, 202608, Decimal("3"), Decimal("30.00")),
+        (2002, 202609, Decimal("6"), Decimal("60.00")),
+        (2002, 202610, Decimal("3"), Decimal("30.00")),
+        # 2003: vendido apenas em out/26 (+15 NOVO) -> soma out/26 = 90 vs media ant = 60 -> +50.0%
+        (2003, 202610, Decimal("1"), Decimal("15.00")),
+    ]
+    ms = build_monthly_sales(rows, set(catalog.keys()), first_sale_date=date(2025, 1, 1))
+    s_idx = build_supplier_index(catalog)
+    base_idx = month_index(2026, 10)
+    last_day = date(2026, 10, 31)
+
+    sup_list = get_suppliers_trend(
+        supplier_index=s_idx,
+        catalog=catalog,
+        monthly_sales=ms,
+        base_month_index=base_idx,
+        metric="revenue",
+        sort_window=3,
+        sort_dir="desc",
+        view="all",
+        q=None,
+        min_volume=0.0,
+        comparison_mode="average",
+        last_covered_day=last_day,
+    )
+    assert len(sup_list.items) == 1
+    assert sup_list.items[0].janelas[3].variacao_pct == 50.0
+
+    detail = get_supplier_detail(
+        supplier_key=sup_list.items[0].supplier_key,
+        supplier_index=s_idx,
+        catalog=catalog,
+        monthly_sales=ms,
+        base_month_index=base_idx,
+        metric="revenue",
+        sort_by="contribution",
+        sort_dir="desc",
+        sort_window=3,
+        q=None,
+        limit=20,
+        offset=0,
+        comparison_mode="average",
+        last_covered_day=last_day,
+    )
+    by_sku = {item.sku: item for item in detail.items}
+    assert by_sku[2001].contribuicao_pp == 41.7   # +25 / 60
+    assert by_sku[2003].contribuicao_pp == 25.0   # +15 / 60
+    assert by_sku[2002].contribuicao_pp == -16.7  # -10 / 60
+    assert round_fraction_half_up(sum(i.contribuicao_fracao for i in detail.items), 1) == 50.0
+    assert sum(i.contribuicao_valor for i in detail.items) == pytest.approx(30.0)
+
+
+def test_supplier_detail_sort_by_variation_keeps_status_groups():
+    """Ordenacao por variation mantem VARIACAO antes de NOVO (sem injetar None como 0%)."""
+    from datetime import date
+    from decimal import Decimal
+    from src.modules.sales_trend.domain.month_windows import month_index
+    from src.modules.sales_trend.domain.sales_trend import (
+        TrendCatalogEntry,
+        build_monthly_sales,
+    )
+    from src.modules.sales_trend.domain.search_text import normalize_text
+    from src.modules.sales_trend.domain.suppliers import (
+        build_supplier_index,
+        get_supplier_detail,
+    )
+
+    catalog = {
+        3001: TrendCatalogEntry(3001, "ALTA", "LAB ORDEM", normalize_text("ALTA")),
+        3002: TrendCatalogEntry(3002, "QUEDA", "LAB ORDEM", normalize_text("QUEDA")),
+        3003: TrendCatalogEntry(3003, "LANCAMENTO", "LAB ORDEM", normalize_text("LANCAMENTO")),
+    }
+    rows = [
+        (3001, 202609, Decimal("10"), Decimal("100.00")),
+        (3001, 202610, Decimal("15"), Decimal("150.00")),  # +50%
+        (3002, 202609, Decimal("10"), Decimal("100.00")),
+        (3002, 202610, Decimal("8"), Decimal("80.00")),    # -20%
+        (3003, 202610, Decimal("5"), Decimal("50.00")),    # NOVO
+    ]
+    ms = build_monthly_sales(rows, set(catalog.keys()), first_sale_date=date(2025, 1, 1))
+    s_idx = build_supplier_index(catalog)
+    key = next(iter(s_idx.keys()))
+    base_idx = month_index(2026, 10)
+    last_day = date(2026, 10, 31)
+
+    desc_res = get_supplier_detail(
+        supplier_key=key,
+        supplier_index=s_idx,
+        catalog=catalog,
+        monthly_sales=ms,
+        base_month_index=base_idx,
+        metric="revenue",
+        sort_by="variation",
+        sort_dir="desc",
+        sort_window=1,
+        q=None,
+        limit=20,
+        offset=0,
+        last_covered_day=last_day,
+    )
+    assert [i.sku for i in desc_res.items] == [3001, 3002, 3003]
+
+    asc_res = get_supplier_detail(
+        supplier_key=key,
+        supplier_index=s_idx,
+        catalog=catalog,
+        monthly_sales=ms,
+        base_month_index=base_idx,
+        metric="revenue",
+        sort_by="variation",
+        sort_dir="asc",
+        sort_window=1,
+        q=None,
+        limit=20,
+        offset=0,
+        last_covered_day=last_day,
+    )
+    assert [i.sku for i in asc_res.items] == [3002, 3001, 3003]

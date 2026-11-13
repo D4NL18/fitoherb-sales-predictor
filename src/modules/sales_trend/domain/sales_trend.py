@@ -259,8 +259,9 @@ def compute_cell(
     places = 2 if metric == "revenue" else 3
     atual_float = round_scaled_half_up(curr_effective, places, VALUE_SCALE)
     if mode == "average" and size > 1:
-        prev_scaled_display = prev_effective // size
-        anterior_float = round_scaled_half_up(prev_scaled_display, places, VALUE_SCALE)
+        anterior_float = round_fraction_half_up(
+            Fraction(prev_effective, size * VALUE_SCALE), places
+        )
     else:
         anterior_float = round_scaled_half_up(prev_effective, places, VALUE_SCALE)
 

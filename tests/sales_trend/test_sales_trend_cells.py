@@ -196,3 +196,40 @@ def test_precedence_and_invariants():
     assert cell_sem_base.base_parcial is False
     assert cell_sem_base.base_baixa is False
     assert cell_sem_base.devolucao_liquida is False
+
+
+def test_average_mode_anterior_uses_exact_half_up_rounding():
+    """Evita truncamento inteiro em anterior no modo average (ex.: 2/3 -> 0.667)."""
+    from datetime import date
+    from decimal import Decimal
+    from src.modules.sales_trend.domain.month_windows import month_index
+    from src.modules.sales_trend.domain.sales_trend import build_monthly_sales, compute_cell
+
+    rows = [
+        (9001, 202607, Decimal("2"), Decimal("0.60")),
+        (9001, 202608, Decimal("0"), Decimal("0.60")),
+        (9001, 202609, Decimal("0"), Decimal("0.60")),
+        (9001, 202610, Decimal("1"), Decimal("1.00")),
+    ]
+    ms = build_monthly_sales(rows, {9001}, first_sale_date=date(2025, 1, 1))
+    base_idx = month_index(2026, 10)
+    last_day = date(2026, 10, 31)
+
+    cell_qty = compute_cell(
+        ms.series[9001], base_idx, 3, "quantity", ms, last_day, mode="average"
+    )
+    # 2 un / 3 meses = 0.6666... -> half-up 3 casas = 0.667 (antes truncava para 0.666)
+    assert cell_qty.anterior == 0.667
+    assert cell_qty.variacao_pct == 50.0  # (1 - 2/3) / (2/3) = +50.0%
+
+    # 1.86 / 12 meses = 0.155 -> half-up 2 casas = 0.16
+    rows_rev = [
+        (9002, 202510, Decimal("1"), Decimal("1.86")),
+        (9002, 202610, Decimal("1"), Decimal("0.31")),
+    ]
+    ms_rev = build_monthly_sales(rows_rev, {9002}, first_sale_date=date(2024, 1, 1))
+    cell_rev = compute_cell(
+        ms_rev.series[9002], base_idx, 12, "revenue", ms_rev, last_day, mode="average"
+    )
+    assert cell_rev.anterior == 0.16
+    assert cell_rev.variacao_pct == 100.0  # (0.31 - 0.155) / 0.155 = +100.0%

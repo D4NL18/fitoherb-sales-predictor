@@ -435,15 +435,17 @@ def get_supplier_detail(
             w_c_frac: Fraction = Fraction(0)
 
             if s_w_cell.status != "SEM_BASE" and s_w_cell.anterior_bruto_escalado > 0:
-                if w_is_partial:
-                    p_curr_r = Fraction(max(0, prod_w_cell.atual_bruto_escalado), max(1, w_cov_curr) * VALUE_SCALE)
-                    p_prev_r = Fraction(max(0, prod_w_cell.anterior_bruto_escalado), max(1, w_cov_prev) * VALUE_SCALE)
-                    d_rate = p_curr_r - p_prev_r
-                    s_prev_r = Fraction(max(1, s_w_cell.anterior_bruto_escalado), max(1, w_cov_prev) * VALUE_SCALE)
-                    w_c_frac = (d_rate / s_prev_r) * 100
-                else:
-                    d_esc = max(0, prod_w_cell.atual_bruto_escalado) - max(0, prod_w_cell.anterior_bruto_escalado)
-                    w_c_frac = Fraction(d_esc, s_w_cell.anterior_bruto_escalado) * 100
+                curr_div = max(1, w_cov_curr) if w_is_partial else 1
+                prev_div = (
+                    max(1, w_cov_prev)
+                    if w_is_partial
+                    else (w if (comparison_mode == "average" and w > 1) else 1)
+                )
+                p_curr_r = Fraction(max(0, prod_w_cell.atual_bruto_escalado), curr_div * VALUE_SCALE)
+                p_prev_r = Fraction(max(0, prod_w_cell.anterior_bruto_escalado), prev_div * VALUE_SCALE)
+                d_rate = p_curr_r - p_prev_r
+                s_prev_r = Fraction(max(1, s_w_cell.anterior_bruto_escalado), prev_div * VALUE_SCALE)
+                w_c_frac = (d_rate / s_prev_r) * 100
                 w_c_pp = round_fraction_half_up(w_c_frac, 1)
 
             prod_detail_cells[w] = SupplierProductDetailCell(
@@ -475,17 +477,22 @@ def get_supplier_detail(
         )
 
     # Ordenação do detalhe (sortBy: contribution | variation)
+    status_order = {"VARIACAO": 0, "NOVO": 1, "SEM_BASE": 2, "SEM_MOVIMENTO": 3}
+
     def detail_sort_key(item: SupplierProductItem):
         if sort_by == "variation":
-            var_f = Fraction(int((item.variacao_pct or 0.0) * 10), 10)
-            if sort_dir == "desc":
-                return (-var_f, item.sku)
-            return (var_f, item.sku)
-        else:  # contribution
-            c_f = item.contribuicao_fracao
-            if sort_dir == "desc":
-                return (-c_f, item.sku)
-            return (c_f, item.sku)
+            cell = item.janelas[sort_window].cell
+            var_f = (
+                cell.variacao_fracao
+                if (item.status == "VARIACAO" and cell.variacao_fracao is not None)
+                else Fraction(max(0, cell.atual_bruto_escalado), VALUE_SCALE)
+            )
+            primary = -var_f if sort_dir == "desc" else var_f
+            return (status_order.get(item.status, 9), primary, item.sku)
+        c_f = item.contribuicao_fracao
+        if sort_dir == "desc":
+            return (-c_f, item.sku)
+        return (c_f, item.sku)
 
     product_items.sort(key=detail_sort_key)
 
