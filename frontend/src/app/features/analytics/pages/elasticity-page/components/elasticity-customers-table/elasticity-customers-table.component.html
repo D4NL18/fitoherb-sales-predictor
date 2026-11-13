@@ -1,0 +1,235 @@
+<section class="customers-panel" aria-labelledby="customers-section-title">
+  <header class="customers-header">
+    <div>
+      <span class="section-eyebrow">Detalhamento de clientes</span>
+      <h2 id="customers-section-title" class="section-title">Elasticidade por cliente</h2>
+      <p class="section-subtitle">
+        Selecione um cliente para visualizar o cálculo bayesiano individual e simular um reajuste específico.
+      </p>
+    </div>
+
+    <span class="client-count-pill">
+      <svg aria-hidden="true" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+        <circle cx="9" cy="7" r="4"/>
+        <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
+        <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+      </svg>
+      <span>{{ totalClients() | ptDecimal: 0 }} {{ totalClients() === 1 ? 'cliente analisado' : 'clientes analisados' }}</span>
+    </span>
+  </header>
+
+  @if (customers().length > 0) {
+    <form class="customers-toolbar" (submit)="onLookupSubmit($event)" novalidate>
+      <div class="lookup-field">
+        <label for="customer-code-filter" class="lookup-label">
+          Filtrar nesta página ou consultar código exato
+        </label>
+        <div class="lookup-controls">
+          <div class="lookup-input-wrap">
+            <svg class="lookup-icon" aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"/>
+              <path d="m21 21-4.3-4.3"/>
+            </svg>
+            <input
+              id="customer-code-filter"
+              type="text"
+              inputmode="numeric"
+              class="lookup-input"
+              placeholder="Ex.: 1042"
+              [value]="filterQuery()"
+              [attr.aria-invalid]="displayedLookupError() ? 'true' : null"
+              [attr.aria-describedby]="displayedLookupError() ? 'customer-lookup-error' : null"
+              (input)="onFilterInput($event)"
+            />
+            @if (hasFilter()) {
+              <button
+                type="button"
+                class="clear-filter-btn"
+                aria-label="Limpar filtro de cliente"
+                (click)="onClearFilter()"
+              >
+                <svg aria-hidden="true" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M18 6 6 18"/>
+                  <path d="m6 6 12 12"/>
+                </svg>
+              </button>
+            }
+          </div>
+
+          <button type="submit" class="lookup-submit-btn" [disabled]="isBusy()">
+            Consultar cliente
+          </button>
+        </div>
+
+        @if (displayedLookupError(); as lookupErr) {
+          <p id="customer-lookup-error" class="lookup-error" role="alert">
+            {{ lookupErr }}
+          </p>
+        }
+      </div>
+    </form>
+  }
+
+  @if (pageLoadError(); as pageErr) {
+    <div class="page-error-wrap">
+      <app-error-banner [message]="pageErr" (retry)="retryPage.emit()" />
+    </div>
+  }
+
+  @if (customers().length === 0 && totalClients() === 0) {
+    <app-result-state
+      [view]="emptyCustomersState"
+      (action)="newSearch.emit()"
+    />
+  } @else if (visibleCustomers().length === 0) {
+    <div class="filter-empty-state" role="status">
+      <p class="filter-empty-title">Nenhum cliente desta página corresponde a "{{ filterQuery().trim() }}".</p>
+      <p class="filter-empty-text">
+        Você pode limpar o filtro para ver os {{ customers().length | ptDecimal: 0 }} clientes desta página ou clicar em "Consultar cliente" para buscar o código exato em toda a base.
+      </p>
+      <button type="button" class="filter-empty-clear-btn" (click)="onClearFilter()">
+        Limpar filtro
+      </button>
+    </div>
+  } @else {
+    <div class="table-wrap" [attr.aria-busy]="isBusy() ? 'true' : null">
+      <table class="customers-table">
+        <thead>
+          <tr>
+            <th scope="col" [attr.aria-sort]="ariaSortFor('customerCode')">
+              <button type="button" class="sort-btn" (click)="toggleSort('customerCode')">
+                <span>Código</span>
+                <span class="sort-indicator" aria-hidden="true">
+                  @if (sortKey() === 'customerCode') {
+                    {{ sortDir() === 'asc' ? '↑' : '↓' }}
+                  } @else {
+                    ↕
+                  }
+                </span>
+              </button>
+            </th>
+            <th scope="col" class="num-col" [attr.aria-sort]="ariaSortFor('ordersCount')">
+              <button type="button" class="sort-btn sort-btn-right" (click)="toggleSort('ordersCount')">
+                <span>Pedidos</span>
+                <span class="sort-indicator" aria-hidden="true">
+                  @if (sortKey() === 'ordersCount') {
+                    {{ sortDir() === 'asc' ? '↑' : '↓' }}
+                  } @else {
+                    ↕
+                  }
+                </span>
+              </button>
+            </th>
+            <th scope="col" class="num-col" [attr.aria-sort]="ariaSortFor('totalUnits')">
+              <button type="button" class="sort-btn sort-btn-right" (click)="toggleSort('totalUnits')">
+                <span>Volume (Un)</span>
+                <span class="sort-indicator" aria-hidden="true">
+                  @if (sortKey() === 'totalUnits') {
+                    {{ sortDir() === 'asc' ? '↑' : '↓' }}
+                  } @else {
+                    ↕
+                  }
+                </span>
+              </button>
+            </th>
+            <th scope="col" class="num-col">Peso cliente</th>
+            <th scope="col" class="num-col">Empírica</th>
+            <th scope="col" class="num-col" [attr.aria-sort]="ariaSortFor('shrinkageElasticity')">
+              <button type="button" class="sort-btn sort-btn-right" (click)="toggleSort('shrinkageElasticity')">
+                <span>Ajustada</span>
+                <span class="sort-indicator" aria-hidden="true">
+                  @if (sortKey() === 'shrinkageElasticity') {
+                    {{ sortDir() === 'asc' ? '↑' : '↓' }}
+                  } @else {
+                    ↕
+                  }
+                </span>
+              </button>
+            </th>
+            <th scope="col">Classificação</th>
+            <th scope="col" class="action-col">Ação</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (c of visibleCustomers(); track c.customerCode) {
+            @let isSelected = selectedCustomerCode() === c.customerCode;
+            @let clsMeta = classificationMeta(c.classification);
+            <tr [class.is-selected]="isSelected">
+              <td data-label="Código" class="code-cell">
+                #{{ c.customerCode }}
+              </td>
+              <td data-label="Pedidos" class="num-cell">
+                {{ c.ordersCount | ptDecimal: 0 }}
+              </td>
+              <td data-label="Volume (Un)" class="num-cell">
+                {{ unitsLabel(c.totalUnits) }}
+              </td>
+              <td data-label="Peso cliente" class="num-cell">
+                {{ c.shrinkageWeight | ptPercent: 0 }}
+              </td>
+              <td data-label="Empírica" class="num-cell muted-num">
+                {{ c.empiricalElasticity | ptDecimal: 2 }}
+              </td>
+              <td data-label="Ajustada" class="num-cell strong-num">
+                {{ c.shrinkageElasticity | ptDecimal: 2 }}
+              </td>
+              <td data-label="Classificação" class="tag-cell">
+                <span [class]="'tag ' + clsMeta.tagClass">
+                  @if (clsMeta.icon === 'elastic') {
+                    <svg aria-hidden="true" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M7 17 17 7"/>
+                      <path d="M7 7h10v10"/>
+                    </svg>
+                  } @else {
+                    <svg aria-hidden="true" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M5 12h14"/>
+                      <path d="m12 5 7 7-7 7"/>
+                    </svg>
+                  }
+                  <span>{{ clsMeta.shortLabel }}</span>
+                </span>
+              </td>
+              <td data-label="Ação" class="action-cell">
+                <button
+                  type="button"
+                  class="row-select-btn"
+                  [class.is-selected]="isSelected"
+                  [attr.aria-pressed]="isSelected ? 'true' : 'false'"
+                  [attr.aria-label]="
+                    isSelected
+                      ? 'Cliente ' + c.customerCode + ' selecionado; clique para voltar à visão geral do produto'
+                      : 'Simular impacto de preço para cliente ' + c.customerCode
+                  "
+                  [disabled]="isBusy()"
+                  (click)="onSelectRow(c.customerCode)"
+                >
+                  @if (isSelected) {
+                    <svg aria-hidden="true" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M20 6 9 17l-5-5"/>
+                    </svg>
+                    <span>Selecionado</span>
+                  } @else {
+                    <span>Simular</span>
+                  }
+                </button>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <div class="pager-wrap">
+      <app-list-pager
+        [page]="currentPage()"
+        [totalPages]="totalPages()"
+        [totalItems]="totalClients()"
+        [offset]="pageOffset()"
+        [itemCount]="customers().length"
+        [disabled]="isBusy()"
+        (pageChange)="pageChange.emit($event)"
+      />
+    </div>
+  }
+</section>

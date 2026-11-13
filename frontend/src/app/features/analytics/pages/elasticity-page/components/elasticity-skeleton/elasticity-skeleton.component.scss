@@ -1,0 +1,114 @@
+@use '../../../../styles/analytics-ui' as ui;
+
+:host {
+  display: block;
+}
+
+.skeleton-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.sr-only {
+  @include ui.sr-only;
+}
+
+.skeleton-panel {
+  @include ui.panel;
+  padding: var(--space-5) var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+
+  @media (max-width: ui.$bp-mobile) {
+    padding: var(--space-4);
+  }
+}
+
+.skeleton-line,
+.skeleton-box {
+  display: block;
+
+  @include ui.reduced-motion {
+    animation: none;
+  }
+}
+
+.skeleton-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.skeleton-header-meta {
+  flex: 1;
+  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.skeleton-badges {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.bar-sku { width: 88px; height: 1.1rem; }
+.bar-title { width: 58%; height: 1.5rem; }
+.bar-subtitle { width: 38%; height: 0.88rem; }
+.bar-section-title { width: 42%; height: 1.25rem; }
+.bar-tag { width: 132px; height: 26px; }
+.bar-presets { width: 240px; height: 40px; }
+.bar-slider { width: 100%; height: 64px; }
+
+.skeleton-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: var(--space-3);
+}
+
+.skeleton-sim-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: var(--space-3);
+}
+
+.skeleton-tile {
+  padding: var(--space-4);
+  background: var(--bg-table-row-zebra);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.bar-label { width: 65%; height: 0.78rem; }
+.bar-value { width: 48%; height: 1.4rem; }
+.bar-sub { width: 78%; height: 0.72rem; }
+
+.skeleton-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.skeleton-row {
+  display: grid;
+  grid-template-columns: 110px 1fr 1fr 110px 96px;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--border-subtle);
+
+  @media (max-width: ui.$bp-mobile) {
+    grid-template-columns: 1fr auto;
+  }
+}
+
+.bar-cell-code { width: 72px; height: 1rem; }
+.bar-cell-num { width: 64px; height: 1rem; }
+.bar-cell-tag { width: 88px; height: 24px; }
+.bar-cell-btn { width: 88px; height: 40px; }

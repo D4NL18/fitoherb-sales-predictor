@@ -1,0 +1,318 @@
+<section #simulatorRoot class="simulator-card" aria-labelledby="simulator-title">
+  <header class="simulator-header">
+    <div class="simulator-heading">
+      <h3 id="simulator-title" class="simulator-title">Simulador de Impacto Financeiro</h3>
+      <p class="simulator-subtitle">
+        Ajuste o percentual de preço para projetar volume, faturamento e margem de contribuição.
+      </p>
+    </div>
+
+    <div class="quick-adjust-group" role="group" aria-label="Atalhos rápidos de reajuste">
+      <span class="quick-label">Atalhos:</span>
+      @for (preset of presets; track preset) {
+        <button
+          type="button"
+          class="btn-quick"
+          [class.is-active]="priceChangePct() === preset && !localValidationError()"
+          [attr.aria-pressed]="priceChangePct() === preset && !localValidationError() ? 'true' : 'false'"
+          [disabled]="isSimulating()"
+          (click)="selectPreset(preset)"
+        >
+          {{ formatPresetLabel(preset) }}
+        </button>
+      }
+    </div>
+  </header>
+
+  @if (selectedCustomerCode(); as customerCode) {
+    <div class="customer-scope-card" aria-live="polite">
+      <div class="customer-scope-top">
+        <div class="customer-scope-identity">
+          <span class="customer-scope-badge">Cliente #{{ customerCode }}</span>
+          <h4 #customerFocusTarget tabindex="-1" class="customer-scope-title">
+            Simulação individualizada por cliente
+          </h4>
+        </div>
+        <button
+          type="button"
+          class="btn-clear-customer"
+          [attr.aria-label]="'Remover cliente #' + customerCode + ' e voltar à visão geral do produto'"
+          [disabled]="isSimulating()"
+          (click)="clearCustomer.emit()"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+            stroke-linecap="round" aria-hidden="true">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+          <span>Voltar à visão do produto</span>
+        </button>
+      </div>
+
+      @if (isCustomerLoading()) {
+        <p class="customer-scope-loading" role="status">Calculando elasticidade individual do cliente…</p>
+      } @else {
+        @if (customerError(); as cErr) {
+          <p class="customer-scope-error" role="alert">{{ cErr }}</p>
+        } @else {
+          @if (customerDetail(); as detail) {
+            <div class="customer-detail-row">
+              <div class="customer-detail-tags">
+                @if (customerClassMeta(); as clsMeta) {
+                  <span class="tag" [class]="clsMeta.tagClass">{{ clsMeta.label }}</span>
+                }
+                @if (customerConfidenceMeta(); as confMeta) {
+                  <span class="tag" [class]="confMeta.tagClass">{{ confMeta.label }}</span>
+                }
+              </div>
+
+              <dl class="customer-shrinkage-stats">
+                <div class="shrinkage-stat">
+                  <dt>Elasticidade do produto</dt>
+                  <dd>{{ detail.productElasticity | ptDecimal:2 }}</dd>
+                </div>
+                <div class="shrinkage-stat">
+                  <dt>Empírica do cliente</dt>
+                  <dd>{{ detail.customerEmpiricalElasticity | ptDecimal:2 }}</dd>
+                </div>
+                <div class="shrinkage-stat shrinkage-stat-highlight">
+                  <dt>Shrinkage aplicada</dt>
+                  <dd>{{ detail.customerElasticity | ptDecimal:2 }}</dd>
+                </div>
+                <div class="shrinkage-stat">
+                  <dt>Peso do cliente (n={{ detail.ordersCount | ptDecimal }})</dt>
+                  <dd>{{ detail.shrinkageWeight | ptPercent:0 }} · {{ formatQty(detail.totalUnits) }} un.</dd>
+                </div>
+              </dl>
+            </div>
+            <p class="customer-insight">{{ detail.insightMessage }}</p>
+          }
+        }
+      }
+    </div>
+  }
+
+  <div class="slider-control-row" [class.has-invalid]="localValidationError() !== null">
+    <div class="slider-header-inline">
+      <label for="price-slider" class="slider-label">Variação de preço pretendida</label>
+      <span class="slider-current-badge">{{ formatSignedPct(priceChangePct()) }}</span>
+    </div>
+
+    <div class="slider-controls-flex">
+      <div class="slider-wrapper">
+        <input
+          id="price-slider"
+          type="range"
+          [min]="minPct"
+          [max]="maxPct"
+          step="1"
+          class="price-slider"
+          [value]="priceChangePct()"
+          (input)="onSliderInput($event)"
+          [attr.aria-valuemin]="minPct"
+          [attr.aria-valuemax]="maxPct"
+          [attr.aria-valuenow]="priceChangePct()"
+          [attr.aria-valuetext]="sliderValueText()"
+        />
+        <div class="slider-marks" aria-hidden="true">
+          @for (mark of scaleMarks; track mark.value) {
+            <span
+              class="slider-mark"
+              [class.mark-zero]="mark.value === 0"
+              [class.mark-align-start]="mark.align === 'start'"
+              [class.mark-align-center]="mark.align === 'center'"
+              [class.mark-align-end]="mark.align === 'end'"
+              [style.left.%]="mark.leftPct"
+            >
+              {{ mark.label }}
+            </span>
+          }
+        </div>
+      </div>
+
+      <div class="slider-input-group">
+        <label for="price-percent-input" class="sr-only">Percentual exato de variação de preço</label>
+        <input
+          id="price-percent-input"
+          type="number"
+          class="slider-number-input"
+          [value]="inputText()"
+          (input)="onNumberInput($event)"
+          (change)="onNumberCommit()"
+          (keyup.enter)="onNumberCommit()"
+          [min]="minPct"
+          [max]="maxPct"
+          step="0.5"
+          [attr.aria-invalid]="localValidationError() !== null ? 'true' : null"
+          [attr.aria-describedby]="displayedError() !== null ? 'sim-validation-error' : null"
+        />
+        <span class="percent-symbol" aria-hidden="true">%</span>
+      </div>
+    </div>
+
+    @if (displayedError(); as errorMsg) {
+      <div id="sim-validation-error" class="simulation-error" role="alert">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="8" x2="12" y2="12"></line>
+          <line x1="12" y1="16" x2="12.01" y2="16"></line>
+        </svg>
+        <span>{{ errorMsg }}</span>
+        @if (simulationError() && !localValidationError()) {
+          <button type="button" class="btn-retry-inline" (click)="retrySimulation.emit()">Tentar novamente</button>
+        }
+      </div>
+    }
+  </div>
+
+  @if (simulationResult(); as sim) {
+    <div class="simulation-summary-strip" [attr.aria-busy]="isSimulating() ? 'true' : null">
+      <div class="price-projection-summary">
+        <span class="summary-chip">
+          Preço atual: <strong>{{ sim.currentPrice | brl }}</strong>
+        </span>
+        <span class="summary-arrow" aria-hidden="true">→</span>
+        <span class="summary-chip summary-chip-accent">
+          Preço projetado: <strong>{{ sim.projectedPrice | brl }}</strong>
+          ({{ formatSignedPct(sim.priceChangePct) }})
+        </span>
+        <span class="summary-chip">
+          Elasticidade aplicada: <strong>{{ sim.appliedElasticity | ptDecimal:2 }}</strong>
+        </span>
+      </div>
+
+      @if (isSimulating()) {
+        <span class="simulating-status" role="status">
+          <span class="spinner" aria-hidden="true"></span>
+          <span>Atualizando projeção…</span>
+        </span>
+      }
+    </div>
+
+    <div class="simulation-results-grid" [class.is-updating]="isSimulating()" [attr.aria-busy]="isSimulating() ? 'true' : null">
+      <article class="sim-card">
+        <span class="sim-card-title">Volume Projetado</span>
+        <div class="sim-main-val">
+          {{ formatQty(sim.projectedVolume) }} <span class="unit-label">un.</span>
+        </div>
+        <div class="sim-delta" [class]="'tone-' + volumeTone()">
+          @switch (volumeTone()) {
+            @case ('positive') {
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline>
+                <polyline points="16 7 22 7 22 13"></polyline>
+              </svg>
+            }
+            @case ('negative') {
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="22 17 13.5 8.5 8.5 13.5 2 7"></polyline>
+                <polyline points="16 17 22 17 22 11"></polyline>
+              </svg>
+            }
+            @default {
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+                stroke-linecap="round" aria-hidden="true">
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+            }
+          }
+          <span>{{ formatSignedPct(sim.volumeChangePct) }} · Atual: {{ formatQty(sim.currentVolume) }} un.</span>
+        </div>
+      </article>
+
+      <article class="sim-card">
+        <span class="sim-card-title">Faturamento Projetado</span>
+        <div class="sim-main-val">{{ sim.projectedRevenue | brl }}</div>
+        <div class="sim-delta" [class]="'tone-' + revenueTone()">
+          @switch (revenueTone()) {
+            @case ('positive') {
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline>
+                <polyline points="16 7 22 7 22 13"></polyline>
+              </svg>
+            }
+            @case ('negative') {
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="22 17 13.5 8.5 8.5 13.5 2 7"></polyline>
+                <polyline points="16 17 22 17 22 11"></polyline>
+              </svg>
+            }
+            @default {
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+                stroke-linecap="round" aria-hidden="true">
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+            }
+          }
+          <span>{{ formatSignedBrl(sim.revenueChangeAbs) }} ({{ formatSignedPct(sim.revenueChangePct) }})</span>
+        </div>
+        <span class="sim-baseline">Atual: {{ sim.currentRevenue | brl }}</span>
+      </article>
+
+      <article class="sim-card sim-card-highlight">
+        <span class="sim-card-title">Margem de Contribuição</span>
+        <div class="sim-main-val">{{ sim.projectedMargin | brl }}</div>
+        <div class="sim-delta" [class]="'tone-' + marginTone()">
+          @switch (marginTone()) {
+            @case ('positive') {
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline>
+                <polyline points="16 7 22 7 22 13"></polyline>
+              </svg>
+            }
+            @case ('negative') {
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="22 17 13.5 8.5 8.5 13.5 2 7"></polyline>
+                <polyline points="16 17 22 17 22 11"></polyline>
+              </svg>
+            }
+            @default {
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+                stroke-linecap="round" aria-hidden="true">
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+            }
+          }
+          <span>{{ formatSignedBrl(sim.marginChangeAbs) }} ({{ formatSignedPct(sim.marginChangePct) }})</span>
+        </div>
+        <span class="sim-baseline">Atual: {{ sim.currentMargin | brl }}</span>
+      </article>
+    </div>
+
+    <div class="simulation-recommendation-bar" [class]="'rec-tone-' + marginTone()">
+      @switch (marginTone()) {
+        @case ('positive') {
+          <svg class="rec-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="9"></circle>
+            <polyline points="8.5 12.5 11 15 16 9.5"></polyline>
+          </svg>
+        }
+        @case ('negative') {
+          <svg class="rec-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path>
+            <line x1="12" y1="9" x2="12" y2="13"></line>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
+        }
+        @default {
+          <svg class="rec-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="9"></circle>
+            <line x1="12" y1="16" x2="12" y2="12"></line>
+            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+          </svg>
+        }
+      }
+      <p class="rec-text">{{ sim.recommendation }}</p>
+    </div>
+  }
+</section>

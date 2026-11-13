@@ -1,0 +1,65 @@
+<div class="skeleton-wrapper" role="status" aria-busy="true" aria-label="Carregando dados de elasticidade">
+  <span class="sr-only">Consultando histórico de preços e estimando elasticidade…</span>
+
+  <section class="skeleton-panel" aria-hidden="true">
+    <div class="skeleton-header">
+      <div class="skeleton-header-meta">
+        <span class="skeleton-line bar-sku"></span>
+        <span class="skeleton-line bar-title"></span>
+        <span class="skeleton-line bar-subtitle"></span>
+      </div>
+      <div class="skeleton-badges">
+        <span class="skeleton-box bar-tag"></span>
+        <span class="skeleton-box bar-tag"></span>
+      </div>
+    </div>
+
+    <div class="skeleton-metrics-grid">
+      @for (item of metricPlaceholders; track item) {
+        <div class="skeleton-tile">
+          <span class="skeleton-line bar-label"></span>
+          <span class="skeleton-line bar-value"></span>
+          <span class="skeleton-line bar-sub"></span>
+        </div>
+      }
+    </div>
+  </section>
+
+  <section class="skeleton-panel" aria-hidden="true">
+    <div class="skeleton-header">
+      <div class="skeleton-header-meta">
+        <span class="skeleton-line bar-section-title"></span>
+        <span class="skeleton-line bar-subtitle"></span>
+      </div>
+      <span class="skeleton-box bar-presets"></span>
+    </div>
+    <span class="skeleton-box bar-slider"></span>
+    <div class="skeleton-sim-grid">
+      @for (item of simPlaceholders; track item) {
+        <div class="skeleton-tile">
+          <span class="skeleton-line bar-label"></span>
+          <span class="skeleton-line bar-value"></span>
+          <span class="skeleton-line bar-sub"></span>
+        </div>
+      }
+    </div>
+  </section>
+
+  <section class="skeleton-panel" aria-hidden="true">
+    <div class="skeleton-header">
+      <span class="skeleton-line bar-section-title"></span>
+      <span class="skeleton-box bar-tag"></span>
+    </div>
+    <div class="skeleton-rows">
+      @for (row of rowPlaceholders; track row) {
+        <div class="skeleton-row">
+          <span class="skeleton-line bar-cell-code"></span>
+          <span class="skeleton-line bar-cell-num"></span>
+          <span class="skeleton-line bar-cell-num"></span>
+          <span class="skeleton-box bar-cell-tag"></span>
+          <span class="skeleton-box bar-cell-btn"></span>
+        </div>
+      }
+    </div>
+  </section>
+</div>

@@ -1,0 +1,124 @@
+<section class="diagnostic-card" aria-labelledby="product-title">
+  <header class="diagnostic-header">
+    <div class="product-identity">
+      <span class="product-sku-badge">SKU #{{ product().code }}</span>
+      <h3 id="product-title" class="product-description">{{ product().description }}</h3>
+      <p class="product-supplier">Fornecedor: {{ product().supplier }}</p>
+    </div>
+
+    <div class="product-badges">
+      <span class="tag badge-elasticity" [class]="classificationMeta().tagClass">
+        @if (classificationMeta().icon === 'elastic') {
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="22 17 13.5 8.5 8.5 13.5 2 7"></polyline>
+            <polyline points="16 17 22 17 22 11"></polyline>
+          </svg>
+        } @else {
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+            <polyline points="9 12 11 14 15 10"></polyline>
+          </svg>
+        }
+        <span>{{ classificationMeta().label }}</span>
+      </span>
+
+      <span class="tag badge-confidence" [class]="confidenceMeta().tagClass">
+        @switch (confidenceMeta().icon) {
+          @case ('high') {
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="9"></circle>
+              <polyline points="8.5 12.5 11 15 16 9.5"></polyline>
+            </svg>
+          }
+          @case ('medium') {
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="9"></circle>
+              <line x1="12" y1="8" x2="12" y2="12"></line>
+              <line x1="12" y1="16" x2="12.01" y2="16"></line>
+            </svg>
+          }
+          @default {
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path>
+              <line x1="12" y1="9" x2="12" y2="13"></line>
+              <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
+          }
+        }
+        <span>{{ confidenceMeta().label }}</span>
+      </span>
+    </div>
+  </header>
+
+  @if (elasticity().fallbackApplied) {
+    <div class="low-confidence-notice" role="note">
+      <svg class="notice-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path>
+        <line x1="12" y1="9" x2="12" y2="13"></line>
+        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+      </svg>
+      <p class="notice-text">
+        <strong>Estimador canônico defensivo (-1,20):</strong> o histórico apresentou preço constante ou dispersão
+        insuficiente para regressão formal. Aplicamos o parâmetro conservador B2B para evitar projeções distorcidas.
+      </p>
+    </div>
+  } @else if (!elasticity().isReliable) {
+    <div class="low-confidence-notice" role="note">
+      <svg class="notice-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path>
+        <line x1="12" y1="9" x2="12" y2="13"></line>
+        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+      </svg>
+      <p class="notice-text">
+        <strong>Baixa confiabilidade estatística:</strong> a dispersão amostral limita a precisão do coeficiente. Utilize a simulação como referência inicial.
+      </p>
+    </div>
+  }
+
+  <div class="metrics-grid">
+    <article class="metric-card">
+      <span class="metric-label">Coeficiente Beta (Elasticidade)</span>
+      <span class="metric-value">{{ elasticity().coefficient | ptDecimal:2 }}</span>
+      <span class="metric-sub">Variação % no volume por 1% de ajuste no preço</span>
+    </article>
+
+    <article class="metric-card">
+      <span class="metric-label">Intervalo de Confiança 95%</span>
+      <span class="metric-value">
+        [{{ elasticity().confidenceInterval[0] | ptDecimal:2 }} ; {{ elasticity().confidenceInterval[1] | ptDecimal:2 }}]
+      </span>
+      <span class="metric-sub">Erro padrão: ±{{ elasticity().standardError | ptDecimal:2 }}</span>
+    </article>
+
+    <article class="metric-card">
+      <span class="metric-label">Aderência (R²) e Amostra</span>
+      <span class="metric-value">{{ elasticity().rSquared | ptPercent:1 }}</span>
+      <span class="metric-sub">{{ elasticity().observationsCount | ptDecimal }} meses com volume líquido positivo</span>
+    </article>
+
+    <article class="metric-card">
+      <span class="metric-label">Preço e Custo Atuais</span>
+      <span class="metric-value">{{ product().currentPrice | brl }}</span>
+      <span class="metric-sub">
+        Custo: {{ product().costPrice | brl }} · Estoque: {{ formattedStock() }} un.
+      </span>
+    </article>
+  </div>
+
+  <div class="insight-box">
+    <svg class="insight-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="9"></circle>
+      <line x1="12" y1="16" x2="12" y2="12"></line>
+      <line x1="12" y1="8" x2="12.01" y2="8"></line>
+    </svg>
+    <p class="insight-text">{{ elasticity().insightMessage }}</p>
+  </div>
+</section>
