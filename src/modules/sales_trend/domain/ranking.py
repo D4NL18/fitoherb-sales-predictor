@@ -258,7 +258,7 @@ def filter_and_rank_products(
 
         if view == "new":
             # view=new ignora sortDir e ordena por maior valor atual, desempate código
-            return (0, -cell.atual, row.sku)
+            return (0, Fraction(0), -cell.atual, row.sku)
 
         # Ordem de grupos: 0=VARIACAO, 1=NOVO, 2=SEM_BASE, 3=SEM_MOVIMENTO
         group = 0

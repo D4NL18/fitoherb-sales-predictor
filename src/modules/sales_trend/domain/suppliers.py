@@ -285,7 +285,7 @@ def get_suppliers_trend(
     def sort_key(row: SupplierTrendRow):
         cell = row.janelas[sort_window]
         if view == "new":
-            return (0, -cell.atual, row.fornecedor)
+            return (0, Fraction(0), -cell.atual, row.fornecedor)
 
         group = 0
         if cell.status == "NOVO":
@@ -491,8 +491,8 @@ def get_supplier_detail(
             return (status_order.get(item.status, 9), primary, item.sku)
         c_f = item.contribuicao_fracao
         if sort_dir == "desc":
-            return (-c_f, item.sku)
-        return (c_f, item.sku)
+            return (0, -c_f, item.sku)
+        return (0, c_f, item.sku)
 
     product_items.sort(key=detail_sort_key)
 

@@ -31,7 +31,10 @@ export function formatDecimal(val: number | null | undefined, decimals = 0): str
   const absVal = Math.abs(rounded);
 
   const parts = absVal.toFixed(decimals).split('.');
-  const intPart = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  const intPart = Intl.NumberFormat('pt-BR', {
+    useGrouping: true,
+    maximumFractionDigits: 0,
+  }).format(Number(parts[0]));
   const decPart = parts.length > 1 ? `,${parts[1]}` : '';
 
   const prefix = isNegative ? MINUS_SIGN : '';

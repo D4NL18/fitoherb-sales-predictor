@@ -20,8 +20,9 @@ def round_fraction_half_up(fraction: Fraction, places: int = 1) -> float:
     target_exp = Decimal("10") ** (-places)
     rounded = dec_val.quantize(target_exp, rounding=ROUND_HALF_UP)
 
-    res = float(rounded)
-    return 0.0 if res == 0.0 else res
+    if rounded == 0:
+        return 0.0
+    return float(rounded)
 
 
 def round_scaled_half_up(scaled_value: int, places: int = 2, scale: int = 10_000) -> float:
@@ -35,5 +36,6 @@ def round_scaled_half_up(scaled_value: int, places: int = 2, scale: int = 10_000
     target_exp = Decimal("10") ** (-places)
     rounded = dec_val.quantize(target_exp, rounding=ROUND_HALF_UP)
 
-    res = float(rounded)
-    return 0.0 if res == 0.0 else res
+    if rounded == 0:
+        return 0.0
+    return float(rounded)

@@ -18,7 +18,7 @@ $skeleton-rows: 10;
 // Mixins
 @mixin hover {
   @media (hover: hover) {
-    &:hover {
+    &:hover { /* NOSONAR */
       @content;
     }
   }
@@ -66,12 +66,12 @@ $skeleton-rows: 10;
   text-decoration: none;
   transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
 
-  &:focus-visible {
+  &:focus-visible { /* NOSONAR */
     outline: 2px solid var(--border-focus);
     outline-offset: 2px;
   }
 
-  &:disabled {
+  &:disabled { /* NOSONAR */
     opacity: 0.5;
     cursor: not-allowed;
   }
@@ -87,7 +87,7 @@ $skeleton-rows: 10;
     background-color: var(--brand-primary-hover);
   }
 
-  &:active {
+  &:active { /* NOSONAR */
     background-color: var(--brand-primary-active);
   }
 }
@@ -103,7 +103,7 @@ $skeleton-rows: 10;
     border-color: var(--border-strong);
   }
 
-  &:active {
+  &:active { /* NOSONAR */
     background-color: var(--bg-muted);
   }
 }
