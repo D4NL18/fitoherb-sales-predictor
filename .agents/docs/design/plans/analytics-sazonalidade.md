@@ -45,13 +45,13 @@
 
 | Categoria | Tokens Utilizados (`styles.scss`) | Aplicação nesta Tela |
 | :--- | :--- | :--- |
-| **Superfícies** | `--bg-canvas` (`#F5F2EB`), `--bg-surface` (`#FFFFFF`), `--bg-subtle` (`#ECE7DC`), `--bg-table-row-hover` (`#F7F5EE`) | Fundo da tela, cards de KPI, barras e tabelas |
-| **Tipografia** | `--font-family-headline`, `--font-family-body`, `--font-family-mono` | Títulos, textos e dados numéricos |
-| **Texto** | `--text-primary` (`#181D19`), `--text-secondary` (`#434B44`), `--text-muted` (`#666F67`) | Rótulos, explicações e legendas |
-| **Marca / Ações** | `--brand-primary` (`#1F4D36`), `--brand-primary-hover` (`#163827`), `--brand-primary-subtle` (`#E8F0EB`) | Destaque do mês de pico, botões e barras ativas |
-| **Feedback / Badges** | `.tag-success` (Pico / Alta Confiança), `.tag-warning` (Vale / Média Confiança), `.tag-neutral` (Neutro), `.tag-critical` (Baixa Confiança / Insuficiente) | Badges de diagnóstico e alertas |
-| **Bordas** | `--border-subtle` (`#DDD7C8`), `--border-default` (`#C8C1AF`), `--border-focus` (`#1F4D36`) | Contorno de cards, inputs e divisores |
-| **Espaçamento** | `--space-2` (8px), `--space-3` (12px), `--space-4` (16px), `--space-6` (24px), `--space-8` (32px) | Grid modular e respiros |
+| **Superfícies** | `--bg-canvas` (`#F5F2EB`), `--bg-surface` (`#FFFFFF`), `--bg-subtle` (`#ECE7DC`), `--bg-table-header` (`#F0ECE1`), `--bg-table-row-hover` (`#F7F5EE`), `--bg-table-row-zebra` (`#FAF8F4`) | Fundo da tela, cards de KPI, inspetor mensal e tabelas |
+| **Tipografia** | `--font-family-headline`, `--font-family-body`, `--font-family-mono` | Títulos (`Signika`), textos (`Source Sans 3`) e códigos/índices (`Overpass Mono` com `tabular-nums`) |
+| **Texto** | `--text-primary` (`#181D19`), `--text-secondary` (`#434B44`), `--text-muted` (`#666F67`), `--text-on-brand` (`#FFFFFF`) | Rótulos, explicações, legendas e contraste AA sobre fundos sólidos |
+| **Marca / Ações** | `--brand-primary` (`#1D4528`), `--brand-primary-hover` (`#14321C`), `--brand-primary-subtle` (`#E5EFE7`), `--brand-secondary` (`#8A4B14`), `--brand-secondary-subtle` (`#F9EFE5`) | Barras de pico (verde sólido), barras de vale (areia tracejada), botões e destaques ativos |
+| **Feedback / Badges** | `.tag-positive` (`--feedback-positive-bg` `#185A2E`), `.tag-info` (`--feedback-info-bg` `#1B4B7A`), `.tag-warning` (`--feedback-warning-bg` `#7A4607`), `.tag-neutral` (`--feedback-neutral-bg` `#3B423C`), `.tag-critical` (`--feedback-critical-bg` `#8F1B1B`) | Badges sólidos de força/confiança com texto branco `--text-on-brand` e ícones auxiliares |
+| **Bordas** | `--border-subtle` (`#DFD9CC`), `--border-default` (`#CBC3B2`), `--border-strong` (`#9E9686`), `--border-focus` (`#1D4528`) | Contorno de painéis, combobox, divisores e anel de foco acessível |
+| **Espaçamento** | `--space-1` (4px), `--space-2` (8px), `--space-3` (12px), `--space-4` (16px), `--space-5` (20px), `--space-6` (24px), `--space-8` (32px) | Grid modular, alvos táteis `>= 40px` (`ui.$touch-target`) e respiros |
 
 ---
 

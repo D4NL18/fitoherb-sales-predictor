@@ -33,9 +33,9 @@
 | `ai_specialist` | **Bypass** | Algoritmo determinístico ano a ano com detrend linear; sem modelos de IA/ML ou bibliotecas pesadas externas. |
 | `privacy_officer` | **Bypass** | Operação estritamente sobre SKU/Produto; sem dados pessoais ou identificação de cliente. |
 | `tester` | **Concluído** | TDD First com suíte `tests/analytics/test_seasonality_*.py` (17/17 aprovados). |
-| `developer` | **Concluído** | Implementação backend e frontend Angular (`ng build` concluído, 100/100 specs Karma aprovados). |
-| `reviewer` | **Concluído** | Quality Gate 360, Clean Code, ausência de `any`. |
-| `ux_reviewer` | **Concluído** | Validação de Design System, 8 estados interativos e acessibilidade WCAG AA. |
+| `developer` | **Concluído** | Implementação backend e frontend Angular (`ng build` concluído, 112/112 specs Karma aprovados). |
+| `reviewer` | **Concluído** | Quality Gate 360, Clean Code, contrato `correlacaoYoy`, ausência de `any` e pipeline RxJS (`switchMap` + `takeUntilDestroyed`). |
+| `ux_reviewer` | **Concluído** | Auditoria profunda Papel & Tinta (`styles.scss` + `_analytics-ui.scss`), ARIA combobox, inspetor interativo do gráfico e acessibilidade WCAG AA. |
 
 ---
 
@@ -46,12 +46,13 @@
 - [x] **Etapa 2 — Arquitetura e Design (`architect` + `designer`)**
   - [x] `adr/ADR-005-sazonalidade-produto.md`
   - [x] `api_contracts/analytics-sazonalidade.md`
-  - [x] `design/plans/analytics-sazonalidade.md`
+  - [x] `design/plans/analytics-sazonalidade.md` (tokens alinhados a `styles.scss`)
 - [x] **Etapa 3 — TDD e Implementação (`tester` + `developer`)**
   - [x] Testes TDD: `tests/analytics/test_seasonality_*.py` (17/17 aprovados)
   - [x] Backend: domínio `seasonality.py`, `get_seasonality_index` exportada, schemas, service, cache, repository e router
-  - [x] Frontend: aba sazonalidade, autocomplete, gráfico de 12 meses, cards de pico/vale, tabelas de ranking
+  - [x] Frontend: aba sazonalidade (`OnPush`, `switchMap`, ARIA combobox, inspetor mensal, sincronia `?sku=`), serviços e modelos
 - [x] **Etapa 4 — Quality Gate 360 (`reviewer` + `ux_reviewer` + `tester`)**
   - [x] Execução e aprovação de `pytest tests/analytics/test_seasonality_*.py` (17 passed)
-  - [x] Execução de testes de frontend e build de produção (`ng build` concluído, 100 specs aprovados)
-  - [x] Verificação de governança e ausência de regressões em arquivos compartilhados
+  - [x] Execução de testes de frontend e build de produção (`ng build` exit 0, 112/112 specs aprovados)
+  - [x] Verificação de governança, remoção de cores hardcoded, responsividade mobile e ausência de regressões em arquivos compartilhados
+  - [x] **Auditoria Sênior UI/UX & Frontend (revisão pós-implementação):** correção de `correlacaoYoy`, error handling dedicado (`SEA-001`..`003`/`ANL-001`..`002`), alinhamento matemático da linha `1,00x`, guarda de série plana, inspetor interativo e cobertura completa em `.spec.ts`
