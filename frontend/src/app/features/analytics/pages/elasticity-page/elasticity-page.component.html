@@ -28,10 +28,12 @@
 
   @switch (loadState()) {
     @case ('initial') {
-      <app-result-state
-        [view]="initialState"
-        (action)="onStateAction($event)"
-      />
+      <section class="result-panel" aria-label="Estado inicial da análise de elasticidade">
+        <app-result-state
+          [view]="initialState"
+          (action)="onStateAction($event)"
+        />
+      </section>
     }
 
     @case ('loading') {
@@ -39,10 +41,12 @@
     }
 
     @case ('insufficient-data') {
-      <app-result-state
-        [view]="insufficientDataState"
-        (action)="onStateAction($event)"
-      />
+      <section class="result-panel" aria-label="Histórico insuficiente para elasticidade">
+        <app-result-state
+          [view]="insufficientDataState"
+          (action)="onStateAction($event)"
+        />
+      </section>
     }
 
     @case ('error') {

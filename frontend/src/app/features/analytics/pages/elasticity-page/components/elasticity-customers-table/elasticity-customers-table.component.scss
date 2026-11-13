@@ -2,6 +2,14 @@
 
 .customers-panel {
   @include ui.panel;
+  padding: var(--space-5) var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+
+  @media (max-width: ui.$bp-mobile) {
+    padding: var(--space-4);
+  }
 }
 
 .customers-header {
@@ -10,28 +18,29 @@
   align-items: flex-start;
   flex-wrap: wrap;
   gap: var(--space-3);
-  margin-bottom: var(--space-4);
 }
 
 .section-eyebrow {
   display: inline-block;
-  font-size: var(--font-size-xs);
+  font-size: 0.75rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--text-secondary);
+  color: var(--brand-primary);
 }
 
 .section-title {
   margin: var(--space-1) 0;
-  font-size: var(--font-size-xl);
-  font-weight: 600;
+  font-family: var(--font-family-headline);
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.25;
   color: var(--text-primary);
 }
 
 .section-subtitle {
   margin: 0;
-  font-size: var(--font-size-sm);
+  font-size: 0.88rem;
   color: var(--text-secondary);
 }
 
@@ -43,13 +52,13 @@
   border-radius: var(--radius-full);
   background: var(--bg-subtle);
   border: 1px solid var(--border-default);
-  font-size: var(--font-size-xs);
+  font-size: 0.78rem;
   font-weight: 700;
   color: var(--text-primary);
 }
 
 .customers-toolbar {
-  margin-bottom: var(--space-4);
+  margin: 0;
 }
 
 .lookup-field {
@@ -59,7 +68,7 @@
 }
 
 .lookup-label {
-  font-size: var(--font-size-sm);
+  font-size: 0.85rem;
   font-weight: 600;
   color: var(--text-primary);
 }
@@ -90,16 +99,16 @@
   width: 100%;
   min-height: ui.$touch-target;
   padding: var(--space-2) var(--space-8) var(--space-2) calc(var(--space-3) + 22px);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-xs);
   border: 1px solid var(--border-strong);
   background: var(--bg-surface);
-  font-family: var(--font-mono);
-  font-size: var(--font-size-sm);
+  font-family: var(--font-family-mono);
+  font-size: 0.88rem;
   color: var(--text-primary);
   transition: border-color var(--transition-fast);
 
   &::placeholder {
-    font-family: var(--font-sans);
+    font-family: var(--font-family-body);
     color: var(--text-muted);
   }
 
@@ -123,7 +132,7 @@
   align-items: center;
   justify-content: center;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-xs);
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
@@ -143,18 +152,18 @@
 
 .lookup-submit-btn {
   @extend %button-secondary;
-  font-size: var(--font-size-sm);
+  font-size: 0.88rem;
 }
 
 .lookup-error {
   margin: var(--space-1) 0 0;
-  font-size: var(--font-size-xs);
+  font-size: 0.78rem;
   font-weight: 600;
   color: var(--feedback-critical-bg);
 }
 
 .page-error-wrap {
-  margin-bottom: var(--space-4);
+  margin: 0;
 }
 
 .filter-empty-state {
@@ -162,12 +171,12 @@
   text-align: center;
   background: var(--bg-subtle);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
 }
 
 .filter-empty-title {
   margin: 0 0 var(--space-1);
-  font-size: var(--font-size-base);
+  font-size: 1rem;
   font-weight: 600;
   color: var(--text-primary);
 }
@@ -175,19 +184,19 @@
 .filter-empty-text {
   margin: 0 auto var(--space-4);
   max-width: 52ch;
-  font-size: var(--font-size-sm);
+  font-size: 0.88rem;
   color: var(--text-secondary);
 }
 
 .filter-empty-clear-btn {
   @extend %button-secondary;
-  font-size: var(--font-size-sm);
+  font-size: 0.88rem;
 }
 
 .table-wrap {
   width: 100%;
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   overflow-x: auto;
   background: var(--bg-surface);
   transition: opacity var(--transition-fast);
@@ -200,14 +209,14 @@
 .customers-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: var(--font-size-sm);
+  font-size: 0.88rem;
 
   th {
     padding: 0;
     background: var(--bg-table-header);
     border-bottom: 1px solid var(--border-default);
     text-align: left;
-    font-size: var(--font-size-xs);
+    font-size: 0.75rem;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.04em;
@@ -322,7 +331,7 @@
   @extend %button-secondary;
   min-height: ui.$touch-target;
   padding: 0 var(--space-3);
-  font-size: var(--font-size-xs);
+  font-size: 0.78rem;
   white-space: nowrap;
 
   &.is-selected {
@@ -395,8 +404,8 @@
 
     &::before {
       content: attr(data-label);
-      font-family: var(--font-sans);
-      font-size: var(--font-size-xs);
+      font-family: var(--font-family-body);
+      font-size: 0.75rem;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.04em;
