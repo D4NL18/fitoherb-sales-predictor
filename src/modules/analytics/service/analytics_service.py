@@ -9,7 +9,7 @@ cliente, recomendação ou payload (LGPD-04).
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import Union
+from typing import Tuple, Union
 
 from src.modules.analytics.api import mappers
 from src.modules.analytics.api.schemas import (
@@ -18,14 +18,23 @@ from src.modules.analytics.api.schemas import (
     ProductCrossSellResponse,
     ProductSearchResponse,
 )
-from src.modules.analytics.domain.cross_sell import ProductRecommendation, UsefulRule, recommend_for_product
+from src.modules.analytics.domain.cross_sell import (
+    CatalogEntry,
+    ProductRecommendation,
+    UsefulRule,
+    recommend_for_product,
+)
 from src.modules.analytics.domain.cross_sell_customer import CustomerRecommendation, recommend_for_customer
 from src.modules.analytics.domain.exceptions import InsufficientBaseError
 from src.modules.analytics.domain.pagination import PageRequest, paginate
 from src.modules.analytics.domain.recommendation_curation import curate
 from src.modules.analytics.domain.product_search import search_products as search_catalog
 from src.modules.analytics.service import analytics_cache
-from src.modules.analytics.service.analytics_cache import AnalyticsSnapshot
+from src.modules.analytics.service.analytics_cache import (
+    CUTOFF_DAYS_AFTER_REFERENCE,
+    AnalyticsSnapshot,
+    CatalogSnapshot,
+)
 import math
 from datetime import datetime, timedelta, timezone
 
@@ -51,7 +60,6 @@ from src.modules.analytics.domain.exceptions import (
     ElasticityProductNotFoundError,
 )
 from src.modules.analytics.repository import sales_repository
-from src.modules.analytics.service.analytics_cache import CUTOFF_DAYS_AFTER_REFERENCE
 
 
 def _sufficient_snapshot() -> AnalyticsSnapshot:
@@ -111,12 +119,18 @@ def search_products(query: str, page_request: PageRequest) -> ProductSearchRespo
 
 # ------------------------------------------------------------------ Elasticidade (F5 / P-095..P-105)
 
+def _resolve_catalog_product(sku: int) -> Tuple[CatalogSnapshot, CatalogEntry]:
+    """Obtém o catálogo em cache e valida a existência do SKU (P-096, ELA-001)."""
+    catalog = analytics_cache.get_catalog()
+    product = catalog.entries.get(sku)
+    if product is None:
+        raise ElasticityProductNotFoundError()
+    return catalog, product
+
+
 def get_product_elasticity(sku: int, page_request: PageRequest) -> ProductElasticityResponse:
     """Calcula a elasticidade do produto e lista seus clientes paginados (P-096, P-103)."""
-    catalog = analytics_cache.get_catalog()
-    if sku not in catalog:
-        raise ElasticityProductNotFoundError()
-    product = catalog[sku]
+    catalog, product = _resolve_catalog_product(sku)
     cutoff = catalog.reference_date + timedelta(days=CUTOFF_DAYS_AFTER_REFERENCE)
 
     raw_points = sales_repository.fetch_product_price_points(sku, cutoff)
@@ -155,9 +169,9 @@ def get_product_elasticity(sku: int, page_request: PageRequest) -> ProductElasti
         code=product.code,
         description=product.description,
         supplier=product.supplier,
-        current_price=product.price,
-        cost_price=product.unit_cost,
-        stock=product.stock,
+        current_price=float(product.price),
+        cost_price=float(product.unit_cost),
+        stock=float(product.stock),
     )
     detail = ProductElasticityDetail(
         product=header,
@@ -188,10 +202,7 @@ def get_product_elasticity(sku: int, page_request: PageRequest) -> ProductElasti
 
 def get_customer_elasticity(sku: int, customer_code: int) -> CustomerElasticityResponse:
     """Calcula a elasticidade individual do cliente sobre o produto via shrinkage (P-097)."""
-    catalog = analytics_cache.get_catalog()
-    if sku not in catalog:
-        raise ElasticityProductNotFoundError()
-    product = catalog[sku]
+    catalog, _ = _resolve_catalog_product(sku)
     cutoff = catalog.reference_date + timedelta(days=CUTOFF_DAYS_AFTER_REFERENCE)
 
     raw_points = sales_repository.fetch_product_price_points(sku, cutoff)
@@ -204,7 +215,7 @@ def get_customer_elasticity(sku: int, customer_code: int) -> CustomerElasticityR
 
     c_prepared = prepare_price_points(c_raw)
     c_orders = int(c_raw["qtd"].count())
-    c_units = float(c_raw["qtd"].sum())
+    c_units = float(c_prepared["qtd_liquida"].sum()) if not c_prepared.empty else 0.0
     c_emp = estimate_product_elasticity(c_prepared)
 
     c_res = estimate_customer_elasticity(
@@ -238,10 +249,7 @@ def get_customer_elasticity(sku: int, customer_code: int) -> CustomerElasticityR
 
 def simulate_price_change(request: ElasticitySimulationRequest) -> ElasticitySimulationResponse:
     """Simula impacto de reajuste de preço em volume, receita e margem (P-101)."""
-    catalog = analytics_cache.get_catalog()
-    if request.sku not in catalog:
-        raise ElasticityProductNotFoundError()
-    product = catalog[request.sku]
+    catalog, product = _resolve_catalog_product(request.sku)
     cutoff = catalog.reference_date + timedelta(days=CUTOFF_DAYS_AFTER_REFERENCE)
 
     if request.customer_code:
@@ -255,8 +263,8 @@ def simulate_price_change(request: ElasticitySimulationRequest) -> ElasticitySim
         applied_elasticity = prod_el.coefficient
         base_volume = float(prepared_points["qtd_liquida"].sum()) if not prepared_points.empty else 100.0
 
-    current_price = product.price if product.price > 0 else 10.0
-    cost_price = product.unit_cost if product.unit_cost > 0 else (current_price * 0.6)
+    current_price = float(product.price) if product.price > 0 else 10.0
+    cost_price = float(product.unit_cost) if product.unit_cost > 0 else (current_price * 0.6)
 
     impact = simulate_price_impact(
         elasticity=applied_elasticity,

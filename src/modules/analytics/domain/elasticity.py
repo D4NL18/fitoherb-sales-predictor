@@ -116,11 +116,15 @@ def prepare_price_points(df_raw: pd.DataFrame) -> pd.DataFrame:
     }
     df = df.rename(columns=col_map)
 
+    # Normalizar colunas numéricas para float (pyodbc retorna Decimal/None)
+    qtd_num = pd.to_numeric(df["qtd"], errors="coerce").fillna(0.0)
+    valor_num = pd.to_numeric(df["valor"], errors="coerce").fillna(0.0)
+
     # Identificar devoluções e garantir sinal correto
     is_return = df["operacao"].astype(str).str.upper().str.startswith("DEVOLU")
     # Na base ERP, devoluções já vêm negativas; se porventura vierem positivas, invertemos o sinal
-    df["qtd_adj"] = np.where(is_return, -df["qtd"].abs(), df["qtd"].abs())
-    df["valor_adj"] = np.where(is_return, -df["valor"].abs(), df["valor"].abs())
+    df["qtd_adj"] = np.where(is_return, -qtd_num.abs(), qtd_num.abs())
+    df["valor_adj"] = np.where(is_return, -valor_num.abs(), valor_num.abs())
 
     # Agrupar por ano e mês
     group_cols = ["ano", "mes"]

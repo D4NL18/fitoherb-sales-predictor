@@ -203,3 +203,64 @@ def test_simulate_price_impact_out_of_range():
     json_data = response.json()
     assert json_data["error"]["code"] == "ELA-004"
     assert "priceChangePct" in json_data["error"]["fields"]
+
+
+def _real_catalog_snapshot():
+    from datetime import datetime, timezone
+    from src.modules.analytics.domain.cross_sell import CatalogEntry
+    from src.modules.analytics.service.analytics_cache import CatalogSnapshot
+
+    return CatalogSnapshot(
+        reference_date=date(2026, 11, 12),
+        loaded_at=datetime(2026, 11, 12, 12, 0, tzinfo=timezone.utc),
+        entries={
+            100002: CatalogEntry(
+                code=100002,
+                description="CHA VERDE SOLUVEL 200G",
+                supplier="FITOHERB LAB",
+                stock=150.0,
+                price=29.90,
+                unit_cost=14.00,
+                is_cost_estimated=False,
+            )
+        },
+        search_index=(),
+    )
+
+
+def test_real_service_uses_catalog_snapshot_entries_and_decimal_rows():
+    """Regressão: serviço real deve consultar `catalog.entries` e tolerar `Decimal` do pyodbc."""
+    from decimal import Decimal
+    import pandas as pd
+
+    snapshot = _real_catalog_snapshot()
+    price_points = pd.DataFrame([
+        {"ano": 2026, "mes": m, "operacao": "VENDA", "qtd": Decimal(100 - m * 5), "valor": Decimal((100 - m * 5) * (25 + m))}
+        for m in range(1, 7)
+    ])
+    customers_df = pd.DataFrame([
+        {"customer_code": 4501, "orders_count": 8, "total_units": Decimal("120.0"), "total_revenue": Decimal("3588.0")}
+    ])
+
+    with (
+        patch("src.modules.analytics.service.analytics_cache.get_catalog", return_value=snapshot),
+        patch("src.modules.analytics.repository.sales_repository.fetch_product_price_points", return_value=price_points),
+        patch("src.modules.analytics.repository.sales_repository.fetch_product_customers", return_value=customers_df),
+        patch("src.modules.analytics.repository.sales_repository.fetch_single_customer_points", return_value=price_points),
+    ):
+        resp_prod = client.get(f"{BASE_URL}/product/100002")
+        assert resp_prod.status_code == 200
+        assert resp_prod.json()["data"]["product"]["code"] == 100002
+        assert resp_prod.json()["data"]["customers"][0]["customerCode"] == 4501
+
+        resp_missing = client.get(f"{BASE_URL}/product/999999")
+        assert resp_missing.status_code == 404
+        assert resp_missing.json()["error"]["code"] == "ELA-001"
+
+        resp_cust = client.get(f"{BASE_URL}/product/100002/customer/4501")
+        assert resp_cust.status_code == 200
+        assert resp_cust.json()["data"]["customerCode"] == 4501
+
+        resp_sim = client.post(f"{BASE_URL}/simulate", json={"sku": 100002, "priceChangePct": 10.0})
+        assert resp_sim.status_code == 200
+        assert resp_sim.json()["data"]["sku"] == 100002
