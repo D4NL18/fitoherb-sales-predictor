@@ -10,6 +10,12 @@ export const routes: Routes = [
     path: 'analytics',
     loadChildren: () => import('./features/analytics/analytics.routes').then((m) => m.ANALYTICS_ROUTES),
   },
+  {
+    path: 'tendencia-vendas',
+    loadComponent: () =>
+      import('./features/sales-trend/pages/sales-trend-page/sales-trend-page.component').then(
+        (m) => m.SalesTrendPageComponent
+      ),
+  },
   { path: '**', redirectTo: 'pricing' }
 ];
-
