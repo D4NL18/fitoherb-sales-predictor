@@ -3,6 +3,9 @@
  * Alinhado estritamente com o contrato REST (api_contracts/analytics-elasticidade.md).
  */
 
+export type ElasticityClassification = 'ELASTICO' | 'INELASTICO';
+export type ElasticityConfidenceLevel = 'ALTA' | 'MEDIA' | 'BAIXA';
+
 export interface ProductHeader {
   code: number;
   description: string;
@@ -14,11 +17,11 @@ export interface ProductHeader {
 
 export interface ProductElasticityMetrics {
   coefficient: number;
-  classification: 'ELASTICO' | 'INELASTICO';
+  classification: ElasticityClassification;
   rSquared: number;
   standardError: number;
   confidenceInterval: [number, number];
-  confidenceLevel: 'ALTA' | 'MEDIA' | 'BAIXA';
+  confidenceLevel: ElasticityConfidenceLevel;
   isReliable: boolean;
   observationsCount: number;
   fallbackApplied: boolean;
@@ -31,7 +34,7 @@ export interface CustomerElasticityItem {
   totalUnits: number;
   empiricalElasticity: number;
   shrinkageElasticity: number;
-  classification: 'ELASTICO' | 'INELASTICO';
+  classification: ElasticityClassification;
   shrinkageWeight: number;
 }
 
@@ -61,11 +64,11 @@ export interface CustomerElasticityDetail {
   productElasticity: number;
   customerEmpiricalElasticity: number;
   customerElasticity: number;
-  classification: 'ELASTICO' | 'INELASTICO';
+  classification: ElasticityClassification;
   shrinkageWeight: number;
   ordersCount: number;
   totalUnits: number;
-  confidenceLevel: string;
+  confidenceLevel: ElasticityConfidenceLevel;
   isReliable: boolean;
   insightMessage: string;
 }

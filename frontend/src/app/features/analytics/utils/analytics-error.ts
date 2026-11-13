@@ -1,6 +1,6 @@
 /**
- * Conversão de erros HTTP do módulo Analytics (contrato §4, P-067; F-03).
- * Só corpos `{ error: { code, message, fields[] } }` com código do contrato viram `AnalyticsApiError`;
+ * Conversão de erros HTTP do módulo Analytics (contrato §4, P-067; F-03; F5 P-102).
+ * Só corpos `{ error: { code, message, fields[] } }` com código do contrato viram erro tipado;
  * todo o resto (500 do Starlette, rede, 422 padrão do FastAPI, corpo malformado) vira `null` = falha genérica.
  * A tela mapeia por código e nunca exibe `detail` cru nem stacktrace.
  */
@@ -34,13 +34,7 @@ const NOT_FOUND_CODE_BY_FIELD: Record<SearchField, AnalyticsErrorCode> = {
 
 /** Type guard do corpo de erro do contrato; `null` quando não é um erro reconhecido. */
 export function toAnalyticsApiError(err: unknown): AnalyticsApiError | null {
-  if (!(err instanceof HttpErrorResponse)) return null;
-  const body: unknown = err.error;
-  if (!isRecord(body) || !isRecord(body['error'])) return null;
-
-  const { code, message, fields } = body['error'];
-  if (!isAnalyticsErrorCode(code) || typeof message !== 'string' || !isStringArray(fields)) return null;
-  return { code, message, fields: [...fields] };
+  return parseContractError(err, ANALYTICS_ERROR_CODES);
 }
 
 /**
@@ -54,12 +48,73 @@ export function resolveFieldError(error: AnalyticsApiError | null, field: Search
   return null;
 }
 
+/** Códigos de erro do subdomínio Elasticidade-Preço (contrato analytics-elasticidade §4, P-102). */
+export const ELASTICITY_ERROR_CODES = ['ELA-001', 'ELA-002', 'ELA-003', 'ELA-004', 'ANL-001', 'ANL-002'] as const;
+
+export type ElasticityErrorCode = (typeof ELASTICITY_ERROR_CODES)[number];
+
+export interface ElasticityApiError {
+  code: ElasticityErrorCode;
+  message: string;
+  fields: string[];
+}
+
+/** Mensagens fixas da tela de Elasticidade; nunca exibe `detail` cru nem stacktrace. */
+export const ELASTICITY_ERROR_MESSAGES: Record<ElasticityErrorCode, string> = {
+  'ELA-001': 'Produto não encontrado ou sem histórico de vendas para cálculo de elasticidade.',
+  'ELA-002': 'Nenhum histórico de compras registrado para este código de cliente neste produto.',
+  'ELA-003': 'Histórico de vendas insuficiente para estimar elasticidade do produto.',
+  'ELA-004': 'Parâmetros inválidos fornecidos para consulta ou simulação de elasticidade.',
+  'ANL-001': 'Base de dados de vendas temporariamente indisponível. Tente novamente em instantes.',
+  'ANL-002': 'A base foi recarregada recentemente. Tente novamente mais tarde.',
+};
+
+export const ELASTICITY_GENERIC_ERROR_MESSAGE =
+  'Não foi possível consultar a elasticidade agora. Tente novamente em instantes.';
+
+export const ELASTICITY_SIMULATION_GENERIC_ERROR_MESSAGE =
+  'Não foi possível calcular a simulação agora. Tente novamente em instantes.';
+
+/** Type guard do corpo de erro do contrato de elasticidade; `null` em 500, rede ou corpo malformado. */
+export function toElasticityApiError(err: unknown): ElasticityApiError | null {
+  return parseContractError(err, ELASTICITY_ERROR_CODES);
+}
+
+/** Mensagem amigável de tela para erros de elasticidade usando o mapa fixo do contrato. */
+export function resolveElasticityErrorMessage(
+  error: ElasticityApiError | null,
+  fallbackMessage = ELASTICITY_GENERIC_ERROR_MESSAGE,
+): string {
+  return error ? ELASTICITY_ERROR_MESSAGES[error.code] : fallbackMessage;
+}
+
+/** Mensagem inline para o campo SKU quando o erro da API aponta produto ausente ou `sku` inválido. */
+export function resolveElasticitySkuFieldError(error: ElasticityApiError | null): string | null {
+  if (error === null) return null;
+  if (error.code === 'ELA-001') return ELASTICITY_ERROR_MESSAGES['ELA-001'];
+  if (error.code === 'ELA-004' && error.fields.includes('sku')) return ANALYTICS_ERROR_MESSAGES['XSL-004'];
+  return null;
+}
+
+function parseContractError<TCode extends string>(
+  err: unknown,
+  allowedCodes: readonly TCode[],
+): { code: TCode; message: string; fields: string[] } | null {
+  if (!(err instanceof HttpErrorResponse)) return null;
+  const body: unknown = err.error;
+  if (!isRecord(body) || !isRecord(body['error'])) return null;
+
+  const { code, message, fields } = body['error'];
+  if (!isAllowedCode(code, allowedCodes) || typeof message !== 'string' || !isStringArray(fields)) return null;
+  return { code, message, fields: [...fields] };
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function isAnalyticsErrorCode(value: unknown): value is AnalyticsErrorCode {
-  return typeof value === 'string' && (ANALYTICS_ERROR_CODES as readonly string[]).includes(value);
+function isAllowedCode<TCode extends string>(value: unknown, allowedCodes: readonly TCode[]): value is TCode {
+  return typeof value === 'string' && (allowedCodes as readonly string[]).includes(value);
 }
 
 function isStringArray(value: unknown): value is string[] {
