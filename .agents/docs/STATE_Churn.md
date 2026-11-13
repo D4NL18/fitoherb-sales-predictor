@@ -38,9 +38,9 @@
   - [x] `developer`: Implementação frontend (models, service/store, componentes, drawer, rota `/analytics/churn`)
 - [x] **Etapa 4: Quality Gate 360 + Auto-Healer**
   - [x] `reviewer`: Clean Code, sem números mágicos, conformidade com `.agents/rules/`
-  - [x] `ux_reviewer`: Auditoria de fidelidade ao Design Plan e aos 8 estados interativos
+  - [x] `ux_reviewer`: Auditoria de fidelidade ao Design Plan, tokens Papel & Tinta (`styles.scss`), acessibilidade WCAG 2.1 AA, responsividade (< 640px) e LGPD na UI
   - [x] `privacy_officer`: Auditoria LGPD de código com aprovação formal (LGPD-CHU-01..06)
-  - [x] `tester`: Execução final dos testes (17/17 pytest, 4/4 karma, build angular completo) e validação quantitativa de superioridade do score no backtest (P-127)
+  - [x] `tester`: Execução final dos testes (17/17 pytest, 112/112 karma, build angular completo) e validação quantitativa de superioridade do score no backtest (P-127)
 
 ---
 
@@ -58,3 +58,9 @@
 - **2026-11-12**: Etapa 2 concluída (`ADR-006`, `api_contracts`, `design/plans`, `privacy`).
 - **2026-11-12**: Etapa 3 concluída com TDD First: 17 testes pytest e 4 specs karma verdes.
 - **2026-11-12**: Etapa 4 concluída: Quality Gate 360 aprovado em todas as frentes. Pronto para release.
+- **2026-11-13**: Revisão sênior UI/UX e Frontend concluída:
+  - Removidas ~90 cores hardcoded nos SCSS de F3 em favor dos tokens Papel & Tinta (`styles.scss` + `_analytics-ui.scss`), respeitando tags globais (`.tag-positive`/`warning`/`critical`/`neutral`), contraste AA/AAA (`--text-secondary` sobre `--bg-subtle`/`--bg-table-header`), `tabular-nums`, alvos `>= 40px` e layout mobile em cartões (`< 639.98px`).
+  - Adicionados `ChangeDetectionStrategy.OnPush`, `switchMap` + `takeUntilDestroyed` (lista e drawer, com cancelamento ao fechar), filtros completos (`TODOS`), `dataReferencia`, `<app-list-pager>`, alinhamento com API de inativos sem inventar `scorePrioridade`, histórico mensal ordenado e variação trimestral sem multiplicação por 100.
+  - Implementados WCAG 2.1 AA no drawer e tabela: `aria-live="polite"`, `aria-busy`, `inert` no fundo, Focus Trap (`Tab`/`Shift+Tab`), foco inicial imediato (`visibility 0s` na abertura), restauração de foco, `Escape`/backdrop, scroll lock e estado de erro com retry.
+  - Exportação CSV blindada contra Formula Injection (`=`, `+`, `-`, `@`, `\t`, `\r`), BOM UTF-8, escape RFC 4180 e verificação LGPD (zero `customerCode` em URL/storage/`console.log`, zero PII).
+  - Validação final pós-revisão: `112 SUCCESS` (`ng test --watch=false --browsers=ChromeHeadless`), `ng build` limpo (`churn-page-component` 59.86 kB) e `17 passed` (`pytest tests/analytics/test_churn_*.py`).
