@@ -1,155 +1,554 @@
-/**
- * Página de Elasticidade-Preço por Produto e Cliente (F5 / P-095..P-105).
- * Suporte integral aos 8 estados interativos com Signals reativos.
- */
-import { CommonModule } from '@angular/common';
-import { Component, OnInit, inject, signal } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { AnalyticsService } from '../../services/analytics.service';
 import {
-  CustomerElasticityItem,
-  ElasticitySimulationResponse,
+  ChangeDetectionStrategy,
+  Component,
+  DestroyRef,
+  OnInit,
+  computed,
+  inject,
+  signal,
+  viewChild,
+} from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { ActivatedRoute, Router } from '@angular/router';
+import { EMPTY, Subject, catchError, defer, map, of, switchMap, timer } from 'rxjs';
+import { CodeSearchFormComponent } from '../../components/code-search-form/code-search-form.component';
+import { ErrorBannerComponent } from '../../components/error-banner/error-banner.component';
+import { ResultStateComponent } from '../../components/result-state/result-state.component';
+import { DEFAULT_PAGE_LIMIT } from '../../models/analytics.model';
+import {
+  CustomerElasticityDetail,
   ProductElasticityDetail,
-  ProductElasticityResponse,
+  ResponseMeta,
   SimulationImpactData,
 } from '../../models/elasticity.models';
+import { AnalyticsService } from '../../services/analytics.service';
+import {
+  ELASTICITY_SIMULATION_GENERIC_ERROR_MESSAGE,
+  PRODUCT_INVALID_FORMAT_MESSAGE,
+  resolveElasticityErrorMessage,
+  resolveElasticitySkuFieldError,
+  toElasticityApiError,
+} from '../../utils/analytics-error';
+import { ResultStateAction } from '../../utils/cross-sell-view';
+import {
+  PRICE_CHANGE_DEFAULT,
+  PRICE_CHANGE_MAX,
+  PRICE_CHANGE_MIN,
+  buildElasticityInitialState,
+  buildElasticityInsufficientDataState,
+  buildProductLiveAnnouncement,
+  buildSimulationLiveAnnouncement,
+} from '../../utils/elasticity-view';
+import { ElasticityCustomersTableComponent } from './components/elasticity-customers-table/elasticity-customers-table.component';
+import { ElasticityDiagnosticCardComponent } from './components/elasticity-diagnostic-card/elasticity-diagnostic-card.component';
+import { ElasticitySimulatorPanelComponent } from './components/elasticity-simulator-panel/elasticity-simulator-panel.component';
+import { ElasticitySkeletonComponent } from './components/elasticity-skeleton/elasticity-skeleton.component';
 
-export type PageStatus = 'initial' | 'loading' | 'success' | 'empty' | 'error';
+type ElasticityLoadState = 'initial' | 'loading' | 'loaded' | 'insufficient-data' | 'error';
+
+interface ProductLoadRequest {
+  sku: number;
+  page: number;
+  mode: 'full' | 'page';
+}
+
+interface SimulationTrigger {
+  sku: number;
+  customerCode: number | null;
+  priceChangePct: number;
+  immediate: boolean;
+}
+
+interface CustomerDetailTrigger {
+  sku: number;
+  customerCode: number;
+  isLookup: boolean;
+}
+
+interface BannerErrorState {
+  message: string;
+  code: string | null;
+}
+
+const SLIDER_DEBOUNCE_MS = 180;
+const POSITIVE_INT_PATTERN = /^[1-9]\d*$/;
 
 @Component({
   selector: 'app-elasticity-page',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [
+    CodeSearchFormComponent,
+    ErrorBannerComponent,
+    ResultStateComponent,
+    ElasticitySkeletonComponent,
+    ElasticityDiagnosticCardComponent,
+    ElasticitySimulatorPanelComponent,
+    ElasticityCustomersTableComponent,
+  ],
   templateUrl: './elasticity-page.component.html',
   styleUrl: './elasticity-page.component.scss',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ElasticityPageComponent implements OnInit {
   private readonly analyticsService = inject(AnalyticsService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly destroyRef = inject(DestroyRef);
 
-  // Estados da página
-  protected readonly status = signal<PageStatus>('initial');
-  protected readonly errorMessage = signal<string | null>(null);
-  protected readonly errorCode = signal<string | null>(null);
+  private readonly searchForm = viewChild(CodeSearchFormComponent);
+  private readonly simulatorPanel = viewChild(ElasticitySimulatorPanelComponent);
 
-  // Dados do produto consultado
-  protected readonly searchSku = signal<string>('1001');
+  private readonly productRequest$ = new Subject<ProductLoadRequest | null>();
+  private readonly simulationRequest$ = new Subject<SimulationTrigger | null>();
+  private readonly customerDetailRequest$ = new Subject<CustomerDetailTrigger | null>();
+
+  protected readonly skuInput = signal<string>('');
+  protected readonly activeSku = signal<number | null>(null);
   protected readonly productData = signal<ProductElasticityDetail | null>(null);
+  protected readonly productMeta = signal<ResponseMeta | null>(null);
+  protected readonly currentPage = signal<number>(1);
+  protected readonly failedPage = signal<number | null>(null);
 
-  // Simulador de Reajuste
-  protected readonly priceChangePct = signal<number>(5.0);
+  protected readonly isLoadingProduct = signal<boolean>(false);
+  protected readonly isLoadingPage = signal<boolean>(false);
+  protected readonly loadState = signal<ElasticityLoadState>('initial');
+  protected readonly skuFieldError = signal<string | null>(null);
+  protected readonly bannerError = signal<BannerErrorState | null>(null);
+  protected readonly pageLoadError = signal<string | null>(null);
+
+  protected readonly priceChangePct = signal<number>(PRICE_CHANGE_DEFAULT);
   protected readonly selectedCustomerCode = signal<number | null>(null);
+  protected readonly customerDetail = signal<CustomerElasticityDetail | null>(null);
+  protected readonly isCustomerLoading = signal<boolean>(false);
+  protected readonly customerError = signal<string | null>(null);
+  protected readonly customerLookupError = signal<string | null>(null);
+
   protected readonly simulationResult = signal<SimulationImpactData | null>(null);
   protected readonly isSimulating = signal<boolean>(false);
   protected readonly simulationError = signal<string | null>(null);
+  protected readonly liveAnnouncement = signal<string>('');
 
-  // Paginação de Clientes
-  protected readonly clientPageLimit = 10;
-  protected readonly clientPageOffset = signal<number>(0);
-  protected readonly totalClients = signal<number>(0);
+  protected readonly initialState = buildElasticityInitialState();
+  protected readonly insufficientDataState = buildElasticityInsufficientDataState();
+  protected readonly invalidSkuFormatMessage = PRODUCT_INVALID_FORMAT_MESSAGE;
+
+  protected readonly totalClients = computed(
+    () => this.productMeta()?.totalItems ?? this.productData()?.customers.length ?? 0,
+  );
+
+  protected readonly totalPages = computed(() => {
+    const meta = this.productMeta();
+    if (meta?.totalPages !== undefined && meta.totalPages >= 1) {
+      return meta.totalPages;
+    }
+    return Math.max(1, Math.ceil(this.totalClients() / DEFAULT_PAGE_LIMIT));
+  });
+
+  protected readonly pageOffset = computed(
+    () => this.productMeta()?.offset ?? (this.currentPage() - 1) * DEFAULT_PAGE_LIMIT,
+  );
+
+  constructor() {
+    this.setupProductStream();
+    this.setupSimulationStream();
+    this.setupCustomerDetailStream();
+  }
 
   ngOnInit(): void {
-    // Carregar produto inicial de demonstração se disponível
-    if (this.searchSku()) {
-      this.loadProductElasticity();
-    }
-  }
+    this.route.queryParamMap
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((params) => {
+        const rawSku = params.get('sku')?.trim() ?? '';
+        if (!rawSku) {
+          if (this.activeSku() !== null || this.loadState() !== 'initial') {
+            this.resetToInitialState();
+          }
+          return;
+        }
 
-  /** Consulta a elasticidade do SKU informado (P-096, P-099). */
-  loadProductElasticity(): void {
-    const skuNum = Number(this.searchSku().trim());
-    if (!skuNum || skuNum <= 0) {
-      this.status.set('error');
-      this.errorCode.set('ELA-004');
-      this.errorMessage.set('Informe um código de produto (SKU) numérico válido.');
-      return;
-    }
+        if (!POSITIVE_INT_PATTERN.test(rawSku)) {
+          this.resetToInitialState();
+          this.skuInput.set(rawSku);
+          this.skuFieldError.set(PRODUCT_INVALID_FORMAT_MESSAGE);
+          return;
+        }
 
-    this.status.set('loading');
-    this.errorMessage.set(null);
-    this.errorCode.set(null);
-    this.clientPageOffset.set(0);
+        const parsedSku = Number.parseInt(rawSku, 10);
+        if (!Number.isSafeInteger(parsedSku) || parsedSku <= 0) {
+          this.resetToInitialState();
+          this.skuInput.set(rawSku);
+          this.skuFieldError.set(PRODUCT_INVALID_FORMAT_MESSAGE);
+          return;
+        }
 
-    this.analyticsService.getProductElasticity(skuNum, { limit: 50, offset: 0 }).subscribe({
-      next: (resp: ProductElasticityResponse) => {
-        this.productData.set(resp.data);
-        this.totalClients.set(resp.data.customers.length);
-        this.status.set(resp.data.customers.length > 0 ? 'success' : 'success');
-        // Disparar simulação inicial com o percentual default (+5%)
-        this.runSimulation();
-      },
-      error: (err) => {
-        this.status.set('error');
-        const code = err.error?.error?.code || 'ELA-001';
-        const msg = err.error?.error?.message || 'Produto não encontrado ou sem histórico suficiente.';
-        this.errorCode.set(code);
-        this.errorMessage.set(msg);
-      },
-    });
-  }
-
-  /** Executa o cálculo da simulação de preço (P-101). */
-  runSimulation(): void {
-    const data = this.productData();
-    if (!data) return;
-
-    const pct = this.priceChangePct();
-    if (pct < -50 || pct > 100) {
-      this.simulationError.set('O percentual deve estar entre -50% e +100%.');
-      return;
-    }
-
-    this.isSimulating.set(true);
-    this.simulationError.set(null);
-
-    this.analyticsService
-      .simulatePriceChange({
-        sku: data.product.code,
-        customerCode: this.selectedCustomerCode(),
-        priceChangePct: pct,
-      })
-      .subscribe({
-        next: (resp: ElasticitySimulationResponse) => {
-          this.simulationResult.set(resp.data);
-          this.isSimulating.set(false);
-        },
-        error: (err) => {
-          this.simulationError.set(err.error?.error?.message || 'Erro ao simular variação de preço.');
-          this.isSimulating.set(false);
-        },
+        this.skuInput.set(String(parsedSku));
+        if (parsedSku !== this.activeSku()) {
+          this.triggerProductLoad(parsedSku, 1, 'full');
+        }
       });
   }
 
-  /** Define percentual rápido de reajuste. */
-  setPriceQuickAdjust(pct: number): void {
+  protected onSearchSku(sku: number): void {
+    this.skuInput.set(String(sku));
+    if (this.route.snapshot.queryParamMap.get('sku') !== String(sku)) {
+      // LGPD: sincroniza apenas `sku` na URL; nunca expõe `customerCode` em query params ou storage.
+      void this.router.navigate([], {
+        relativeTo: this.route,
+        queryParams: { sku: String(sku) },
+      });
+    }
+    this.triggerProductLoad(sku, 1, 'full');
+  }
+
+  protected onRetryProduct(): void {
+    const sku = this.activeSku();
+    if (sku === null) return;
+    this.triggerProductLoad(sku, 1, 'full');
+  }
+
+  protected onStateAction(action: ResultStateAction): void {
+    if (action === 'focus-field') {
+      this.searchForm()?.focus();
+      return;
+    }
+    if (action === 'new-search') {
+      this.searchForm()?.clearAndFocus();
+      return;
+    }
+    if (action === 'retry') {
+      this.onRetryProduct();
+    }
+  }
+
+  protected onPriceSliderInput(pct: number): void {
+    const sku = this.activeSku();
     this.priceChangePct.set(pct);
-    this.runSimulation();
+    this.simulationError.set(null);
+    if (sku === null || this.loadState() !== 'loaded') return;
+
+    this.simulationRequest$.next({
+      sku,
+      customerCode: this.selectedCustomerCode(),
+      priceChangePct: pct,
+      immediate: false,
+    });
   }
 
-  /** Seleciona um cliente para simulação individualizada. */
-  selectCustomerForSimulation(code: number | null): void {
-    this.selectedCustomerCode.set(code);
-    this.runSimulation();
+  protected onPriceImmediateChange(pct: number): void {
+    const sku = this.activeSku();
+    this.priceChangePct.set(pct);
+    this.simulationError.set(null);
+    if (sku === null || this.loadState() !== 'loaded') return;
+
+    this.simulationRequest$.next({
+      sku,
+      customerCode: this.selectedCustomerCode(),
+      priceChangePct: pct,
+      immediate: true,
+    });
   }
 
-  /** Próxima página de clientes. */
-  nextPage(): void {
-    const maxOffset = this.totalClients() - this.clientPageLimit;
-    if (this.clientPageOffset() < maxOffset) {
-      this.clientPageOffset.update((v) => v + this.clientPageLimit);
+  protected onRetrySimulation(): void {
+    const sku = this.activeSku();
+    if (sku === null) return;
+
+    this.simulationRequest$.next({
+      sku,
+      customerCode: this.selectedCustomerCode(),
+      priceChangePct: this.priceChangePct(),
+      immediate: true,
+    });
+  }
+
+  protected onSelectCustomer(customerCode: number): void {
+    const sku = this.activeSku();
+    if (sku === null) return;
+
+    this.customerLookupError.set(null);
+    if (this.selectedCustomerCode() === customerCode) {
+      this.onClearCustomer();
+      return;
+    }
+
+    this.selectedCustomerCode.set(customerCode);
+    this.customerDetail.set(null);
+    this.customerError.set(null);
+    this.isCustomerLoading.set(true);
+    this.simulatorPanel()?.focusSimulatorContext();
+
+    this.customerDetailRequest$.next({ sku, customerCode, isLookup: false });
+    this.simulationRequest$.next({
+      sku,
+      customerCode,
+      priceChangePct: this.priceChangePct(),
+      immediate: true,
+    });
+  }
+
+  protected onLookupCustomer(customerCode: number): void {
+    const sku = this.activeSku();
+    if (sku === null) return;
+
+    this.customerLookupError.set(null);
+    this.customerError.set(null);
+    this.isCustomerLoading.set(true);
+    this.customerDetailRequest$.next({ sku, customerCode, isLookup: true });
+  }
+
+  protected onClearCustomer(): void {
+    const sku = this.activeSku();
+    this.selectedCustomerCode.set(null);
+    this.customerDetail.set(null);
+    this.isCustomerLoading.set(false);
+    this.customerError.set(null);
+    this.customerDetailRequest$.next(null);
+
+    if (sku !== null && this.loadState() === 'loaded') {
+      this.simulationRequest$.next({
+        sku,
+        customerCode: null,
+        priceChangePct: this.priceChangePct(),
+        immediate: true,
+      });
     }
   }
 
-  /** Página anterior de clientes. */
-  prevPage(): void {
-    if (this.clientPageOffset() > 0) {
-      this.clientPageOffset.update((v) => Math.max(0, v - this.clientPageLimit));
-    }
+  protected onPageChange(page: number): void {
+    const sku = this.activeSku();
+    if (sku === null || page === this.currentPage() || this.isLoadingPage()) return;
+    this.triggerProductLoad(sku, page, 'page');
   }
 
-  /** Lista de clientes exibida na página atual. */
-  displayedCustomers(): CustomerElasticityItem[] {
-    const customers = this.productData()?.customers || [];
-    const offset = this.clientPageOffset();
-    return customers.slice(offset, offset + this.clientPageLimit);
+  protected onRetryPage(): void {
+    const sku = this.activeSku();
+    if (sku === null) return;
+    this.triggerProductLoad(sku, this.failedPage() ?? this.currentPage(), 'page');
+  }
+
+  protected onStartNewSearch(): void {
+    this.searchForm()?.clearAndFocus();
+  }
+
+  private setupProductStream(): void {
+    this.productRequest$
+      .pipe(
+        switchMap((req) => {
+          if (req === null) return EMPTY;
+
+          const pageRequest = {
+            limit: DEFAULT_PAGE_LIMIT,
+            offset: (req.page - 1) * DEFAULT_PAGE_LIMIT,
+          };
+
+          return this.analyticsService.getProductElasticity(req.sku, pageRequest).pipe(
+            map((resp) => ({ req, resp })),
+            catchError((err: unknown) => {
+              const apiErr = toElasticityApiError(err);
+              if (req.mode === 'page') {
+                this.isLoadingPage.set(false);
+                this.failedPage.set(req.page);
+                this.pageLoadError.set(resolveElasticityErrorMessage(apiErr));
+                return EMPTY;
+              }
+
+              this.isLoadingProduct.set(false);
+              this.productData.set(null);
+              this.productMeta.set(null);
+
+              if (apiErr?.code === 'ELA-003') {
+                this.loadState.set('insufficient-data');
+                this.skuFieldError.set(null);
+                this.bannerError.set(null);
+              } else {
+                this.loadState.set('error');
+                this.skuFieldError.set(resolveElasticitySkuFieldError(apiErr));
+                this.bannerError.set({
+                  message: resolveElasticityErrorMessage(apiErr),
+                  code: apiErr?.code ?? null,
+                });
+              }
+              return EMPTY;
+            }),
+          );
+        }),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe(({ req, resp }) => {
+        this.productData.set(resp.data);
+        this.productMeta.set(resp.meta);
+        this.currentPage.set(req.page);
+        this.failedPage.set(null);
+        this.pageLoadError.set(null);
+        this.isLoadingProduct.set(false);
+        this.isLoadingPage.set(false);
+        this.loadState.set('loaded');
+
+        if (req.mode === 'full') {
+          const total = resp.meta.totalItems ?? resp.data.customers.length;
+          this.liveAnnouncement.set(buildProductLiveAnnouncement(resp.data, total));
+          this.simulationRequest$.next({
+            sku: req.sku,
+            customerCode: null,
+            priceChangePct: this.priceChangePct(),
+            immediate: true,
+          });
+        }
+      });
+  }
+
+  private setupSimulationStream(): void {
+    this.simulationRequest$
+      .pipe(
+        switchMap((req) => {
+          if (req === null) {
+            this.isSimulating.set(false);
+            return EMPTY;
+          }
+
+          if (req.priceChangePct < PRICE_CHANGE_MIN || req.priceChangePct > PRICE_CHANGE_MAX) {
+            this.isSimulating.set(false);
+            return EMPTY;
+          }
+
+          const trigger$ = req.immediate ? of(req) : timer(SLIDER_DEBOUNCE_MS).pipe(map(() => req));
+          return trigger$.pipe(
+            switchMap((activeReq) =>
+              defer(() => {
+                this.isSimulating.set(true);
+                this.simulationError.set(null);
+                return this.analyticsService.simulatePriceChange({
+                  sku: activeReq.sku,
+                  customerCode: activeReq.customerCode,
+                  priceChangePct: activeReq.priceChangePct,
+                });
+              }),
+            ),
+            catchError((err: unknown) => {
+              const apiErr = toElasticityApiError(err);
+              this.isSimulating.set(false);
+              this.simulationError.set(
+                resolveElasticityErrorMessage(apiErr, ELASTICITY_SIMULATION_GENERIC_ERROR_MESSAGE),
+              );
+              return EMPTY;
+            }),
+          );
+        }),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe((resp) => {
+        this.simulationResult.set(resp.data);
+        this.isSimulating.set(false);
+        this.simulationError.set(null);
+        this.liveAnnouncement.set(buildSimulationLiveAnnouncement(resp.data));
+      });
+  }
+
+  private setupCustomerDetailStream(): void {
+    this.customerDetailRequest$
+      .pipe(
+        switchMap((req) => {
+          if (req === null) {
+            this.isCustomerLoading.set(false);
+            return EMPTY;
+          }
+
+          return this.analyticsService.getCustomerElasticity(req.sku, req.customerCode).pipe(
+            map((resp) => ({ req, resp })),
+            catchError((err: unknown) => {
+              const apiErr = toElasticityApiError(err);
+              const friendlyMessage = resolveElasticityErrorMessage(apiErr);
+              this.isCustomerLoading.set(false);
+
+              if (req.isLookup) {
+                this.customerLookupError.set(friendlyMessage);
+              } else {
+                this.customerError.set(friendlyMessage);
+              }
+              return EMPTY;
+            }),
+          );
+        }),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe(({ req, resp }) => {
+        this.isCustomerLoading.set(false);
+        this.customerError.set(null);
+        this.customerLookupError.set(null);
+        this.customerDetail.set(resp.data);
+
+        if (req.isLookup) {
+          this.selectedCustomerCode.set(req.customerCode);
+          this.simulatorPanel()?.focusSimulatorContext();
+          this.simulationRequest$.next({
+            sku: req.sku,
+            customerCode: req.customerCode,
+            priceChangePct: this.priceChangePct(),
+            immediate: true,
+          });
+        }
+      });
+  }
+
+  private triggerProductLoad(sku: number, page: number, mode: 'full' | 'page'): void {
+    if (mode === 'full') {
+      this.activeSku.set(sku);
+      this.currentPage.set(1);
+      this.failedPage.set(null);
+      this.productData.set(null);
+      this.productMeta.set(null);
+      this.selectedCustomerCode.set(null);
+      this.customerDetail.set(null);
+      this.isCustomerLoading.set(false);
+      this.customerError.set(null);
+      this.customerLookupError.set(null);
+      this.simulationResult.set(null);
+      this.simulationError.set(null);
+      this.isSimulating.set(false);
+      this.priceChangePct.set(PRICE_CHANGE_DEFAULT);
+      this.skuFieldError.set(null);
+      this.bannerError.set(null);
+      this.pageLoadError.set(null);
+      this.isLoadingProduct.set(true);
+      this.isLoadingPage.set(false);
+      this.loadState.set('loading');
+
+      // Aborta streams filhos vinculados ao SKU anterior antes da nova chamada.
+      this.simulationRequest$.next(null);
+      this.customerDetailRequest$.next(null);
+    } else {
+      this.isLoadingPage.set(true);
+      this.pageLoadError.set(null);
+    }
+
+    this.productRequest$.next({ sku, page, mode });
+  }
+
+  private resetToInitialState(): void {
+    this.productRequest$.next(null);
+    this.simulationRequest$.next(null);
+    this.customerDetailRequest$.next(null);
+
+    this.skuInput.set('');
+    this.activeSku.set(null);
+    this.productData.set(null);
+    this.productMeta.set(null);
+    this.currentPage.set(1);
+    this.failedPage.set(null);
+    this.isLoadingProduct.set(false);
+    this.isLoadingPage.set(false);
+    this.loadState.set('initial');
+    this.skuFieldError.set(null);
+    this.bannerError.set(null);
+    this.pageLoadError.set(null);
+    this.priceChangePct.set(PRICE_CHANGE_DEFAULT);
+    this.selectedCustomerCode.set(null);
+    this.customerDetail.set(null);
+    this.isCustomerLoading.set(false);
+    this.customerError.set(null);
+    this.customerLookupError.set(null);
+    this.simulationResult.set(null);
+    this.isSimulating.set(false);
+    this.simulationError.set(null);
+    this.liveAnnouncement.set('');
   }
 }
