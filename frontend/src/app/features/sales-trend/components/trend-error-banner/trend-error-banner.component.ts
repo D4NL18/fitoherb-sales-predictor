@@ -1,14 +1,15 @@
 /**
  * Banner de alerta para erros de comunicação com a API (Design Plan §4.2).
- * Exibe role="alert" e botão de nova tentativa.
+ * Exibe role="alert" e botão de nova tentativa (com ação secundária opcional para recuperação contextual).
  */
-import { Component, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 
 @Component({
   selector: 'app-trend-error-banner',
   standalone: true,
   imports: [CommonModule],
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="trend-error-banner" role="alert">
       <div class="banner-content">
@@ -20,9 +21,16 @@ import { CommonModule } from '@angular/common';
         <span class="error-text">{{ message() }}</span>
       </div>
 
-      <button type="button" class="retry-btn" (click)="retry.emit()">
-        {{ retryLabel() }}
-      </button>
+      <div class="banner-actions">
+        @if (secondaryActionLabel()) {
+          <button type="button" class="retry-btn primary-recovery-btn" (click)="secondaryAction.emit()">
+            {{ secondaryActionLabel() }}
+          </button>
+        }
+        <button type="button" class="retry-btn" (click)="retry.emit()">
+          {{ retryLabel() }}
+        </button>
+      </div>
     </div>
   `,
   styles: [`
@@ -30,23 +38,26 @@ import { CommonModule } from '@angular/common';
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: var(--space-4, 16px);
-      padding: var(--space-4, 16px);
-      background-color: var(--bg-surface);
-      border: 1px solid var(--feedback-critical-border, #661212);
-      border-left: 4px solid var(--feedback-critical-bg, #8F1B1B);
-      border-radius: var(--radius-sm, 5px);
+      flex-wrap: wrap;
+      gap: var(--space-3);
+      padding: var(--space-4);
+      background-color: var(--feedback-critical-subtle);
+      border: 1px solid var(--feedback-critical-border);
+      border-left: 4px solid var(--feedback-critical-bg);
+      border-radius: var(--radius-sm);
       color: var(--text-primary);
     }
 
     .banner-content {
       display: flex;
       align-items: center;
-      gap: var(--space-3, 12px);
+      gap: var(--space-3);
+      flex: 1 1 240px;
+      min-width: 0;
     }
 
     .alert-icon {
-      color: var(--feedback-critical-bg, #8F1B1B);
+      color: var(--feedback-critical-bg);
       flex-shrink: 0;
     }
 
@@ -55,12 +66,20 @@ import { CommonModule } from '@angular/common';
       font-size: 0.9375rem;
     }
 
+    .banner-actions {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: var(--space-2);
+    }
+
     .retry-btn {
-      min-height: 36px;
-      padding: var(--space-1, 4px) var(--space-3, 12px);
+      min-height: 40px;
+      padding: var(--space-1) var(--space-3);
       background-color: var(--bg-surface);
       border: 1px solid var(--border-default);
       border-radius: var(--radius-xs);
+      font-family: var(--font-family-body);
       font-weight: 600;
       font-size: 0.875rem;
       color: var(--text-primary);
@@ -71,11 +90,28 @@ import { CommonModule } from '@angular/common';
         background-color: var(--bg-subtle);
         border-color: var(--border-strong);
       }
+
+      &:focus-visible {
+        outline: 2px solid var(--border-focus);
+        outline-offset: 2px;
+      }
+
+      &.primary-recovery-btn {
+        background-color: var(--brand-primary);
+        border-color: var(--brand-primary-active);
+        color: var(--text-on-brand);
+
+        &:hover {
+          background-color: var(--brand-primary-hover);
+        }
+      }
     }
   `],
 })
 export class TrendErrorBannerComponent {
   readonly message = input.required<string>();
   readonly retryLabel = input<string>('Tentar novamente');
+  readonly secondaryActionLabel = input<string | null>(null);
   readonly retry = output<void>();
+  readonly secondaryAction = output<void>();
 }

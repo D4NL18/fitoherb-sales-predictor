@@ -3,8 +3,20 @@
  */
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { TrendSupplierGroupComponent } from './trend-supplier-group.component';
-import { TrendSupplierRow } from '../../models/sales-trend.model';
+import { TrendParameters, TrendSupplierRow } from '../../models/sales-trend.model';
 import { SupplierDetailState } from '../../services/sales-trend.store';
+
+function createMockParameters(): TrendParameters {
+  return {
+    limiteBaseBaixaQuantidade: 10,
+    limiteBaseBaixaFaturamento: 500,
+    coberturaMinimaAnterior: 0.5,
+    buscaMinCaracteres: 2,
+    buscaMinCaracteresNumerica: 1,
+    buscaMaxCaracteres: 60,
+    ttlCacheHoras: 6,
+  };
+}
 
 describe('TrendSupplierGroupComponent (F-11, T-18)', () => {
   let fixture: ComponentFixture<TrendSupplierGroupComponent>;
@@ -67,31 +79,8 @@ describe('TrendSupplierGroupComponent (F-11, T-18)', () => {
     ],
   };
 
-  beforeEach(async () => {
-    await TestBed.configureTestingModule({
-      imports: [TrendSupplierGroupComponent],
-    }).compileComponents();
-
-    fixture = TestBed.createComponent(TrendSupplierGroupComponent);
-    component = fixture.componentInstance;
-  });
-
-  it('emite toggle ao clicar no botão de chevron de expansão', () => {
-    fixture.componentRef.setInput('supplier', mockSupplier);
-    fixture.componentRef.setInput('metric', 'revenue');
-    fixture.componentRef.setInput('sortWindow', 3);
-    fixture.componentRef.setInput('sortDir', 'desc');
-    fixture.componentRef.setInput('isExpanded', false);
-    fixture.detectChanges();
-
-    spyOn(component.toggle, 'emit');
-    const btn = fixture.nativeElement.querySelector('.expand-chevron-btn');
-    btn.click();
-    expect(component.toggle.emit).toHaveBeenCalled();
-  });
-
-  it('exibe produtos filhos e emite sortChange para ordenação dos filhos', () => {
-    const detailState: SupplierDetailState = {
+  function createDetailState(): SupplierDetailState {
+    return {
       supplierKey: 'f:laboratorio alfa',
       status: 'success',
       data: {
@@ -130,7 +119,7 @@ describe('TrendSupplierGroupComponent (F-11, T-18)', () => {
           mesBaseParcial: false,
           metrica: 'revenue',
           janelas: [],
-          parametros: {} as any,
+          parametros: createMockParameters(),
           page: 1,
           limit: 20,
           offset: 0,
@@ -148,18 +137,80 @@ describe('TrendSupplierGroupComponent (F-11, T-18)', () => {
       sortDir: 'desc',
       sortWindow: 3,
     };
+  }
 
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [TrendSupplierGroupComponent],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(TrendSupplierGroupComponent);
+    component = fixture.componentInstance;
+  });
+
+  it('emite toggle ao clicar no botão de chevron de expansão', () => {
     fixture.componentRef.setInput('supplier', mockSupplier);
-    fixture.componentRef.setInput('detailState', detailState);
+    fixture.componentRef.setInput('metric', 'revenue');
+    fixture.componentRef.setInput('sortWindow', 3);
+    fixture.componentRef.setInput('sortDir', 'desc');
+    fixture.componentRef.setInput('isExpanded', false);
+    fixture.detectChanges();
+
+    spyOn(component.toggle, 'emit');
+    const btn = fixture.nativeElement.querySelector('.expand-chevron-btn') as HTMLButtonElement;
+    expect(btn.getAttribute('aria-expanded')).toBe('false');
+    expect(btn.getAttribute('aria-controls')).toBeTruthy();
+    btn.click();
+    expect(component.toggle.emit).toHaveBeenCalled();
+  });
+
+  it('exibe valores do fornecedor, produtos filhos alinhados e emite sortChange', () => {
+    fixture.componentRef.setInput('supplier', mockSupplier);
+    fixture.componentRef.setInput('detailState', createDetailState());
     fixture.componentRef.setInput('metric', 'revenue');
     fixture.componentRef.setInput('sortWindow', 3);
     fixture.componentRef.setInput('sortDir', 'desc');
     fixture.componentRef.setInput('isExpanded', true);
     fixture.detectChanges();
 
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('.detail-header-row app-trend-row-values')).not.toBeNull();
+
     spyOn(component.sortChange, 'emit');
-    const sortButtons = fixture.nativeElement.querySelectorAll('.sort-pill');
+    const sortButtons = el.querySelectorAll('.sort-pill') as NodeListOf<HTMLButtonElement>;
+    expect(sortButtons[0].getAttribute('aria-pressed')).toBe('true');
+    expect(sortButtons[0].textContent).toContain('↓');
+
     sortButtons[1].click(); // Variação %
     expect(component.sortChange.emit).toHaveBeenCalledWith('variation');
+  });
+
+  it('expande valores detalhados ao clicar no chevron de um produto filho e recolhe no Escape', () => {
+    fixture.componentRef.setInput('supplier', mockSupplier);
+    fixture.componentRef.setInput('detailState', createDetailState());
+    fixture.componentRef.setInput('metric', 'revenue');
+    fixture.componentRef.setInput('sortWindow', 3);
+    fixture.componentRef.setInput('sortDir', 'desc');
+    fixture.componentRef.setInput('isExpanded', true);
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    const childBtn = el.querySelector('tr.detail-child-row .expand-chevron-btn') as HTMLButtonElement;
+    expect(childBtn).not.toBeNull();
+    expect(el.querySelector('.child-values-row')).toBeNull();
+
+    childBtn.click();
+    fixture.detectChanges();
+    expect(el.querySelector('.child-values-row app-trend-row-values')).not.toBeNull();
+
+    const childValuesRow = el.querySelector('.child-values-row') as HTMLElement;
+    childValuesRow.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    fixture.detectChanges();
+    expect(el.querySelector('.child-values-row')).toBeNull();
+
+    spyOn(component.toggle, 'emit');
+    const detailHeaderRow = el.querySelector('.detail-header-row') as HTMLElement;
+    detailHeaderRow.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(component.toggle.emit).toHaveBeenCalled();
   });
 });

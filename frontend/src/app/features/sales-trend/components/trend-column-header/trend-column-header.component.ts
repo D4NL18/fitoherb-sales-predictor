@@ -1,8 +1,8 @@
 /**
  * Cabeçalho de coluna interativo para as janelas de 1, 3, 6 e 12 meses (Design Plan §5.4).
- * Suporta indicação aria-sort, períodos comparados em 2 linhas e badges de base.
+ * Suporta períodos comparados em 2 linhas, contraste WCAG AA e indicador visual de direção.
  */
-import { Component, computed, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { TrendComparisonMode, TrendSortDir, TrendSortWindow, TrendWindowMeta } from '../../models/sales-trend.model';
 import { formatWindowMonthSpan } from '../../utils/trend-format';
@@ -11,6 +11,7 @@ import { formatWindowMonthSpan } from '../../utils/trend-format';
   selector: 'app-trend-column-header',
   standalone: true,
   imports: [CommonModule],
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <button
       type="button"
@@ -139,7 +140,7 @@ import { formatWindowMonthSpan } from '../../utils/trend-format';
       width: 18px;
       height: 18px;
       border-radius: var(--radius-xs);
-      color: var(--text-muted);
+      color: var(--text-secondary);
       border: 1px solid transparent;
       flex-shrink: 0;
       transition: background-color var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
@@ -180,7 +181,7 @@ import { formatWindowMonthSpan } from '../../utils/trend-format';
     }
 
     .vs-prefix {
-      color: var(--text-muted);
+      color: var(--text-secondary);
       font-family: var(--font-family-body);
       font-size: 0.6875rem;
       letter-spacing: 0;
@@ -238,6 +239,6 @@ export class TrendColumnHeaderComponent {
     const months = this.windowMeta().meses;
     const sorted = this.isSorted();
     const dir = this.sortDir() === 'desc' ? 'decrescente' : 'crescente';
-    return `Coluna de ${months} meses, ${sorted ? `ordenada ${dir}` : 'não ordenada'}. Clique para ordenar.`;
+    return `Coluna de ${months} ${months === 1 ? 'mês' : 'meses'}, ${sorted ? `ordenada ${dir}` : 'não ordenada'}. Clique para ordenar.`;
   });
 }

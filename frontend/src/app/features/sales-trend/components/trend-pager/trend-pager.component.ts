@@ -2,13 +2,14 @@
  * Componente reutilizável de paginação acessível (Design Plan §4.2, P-081.4).
  * Oculta automaticamente se houver 1 página ou menos e usa tokens oficiais de design.
  */
-import { Component, computed, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 
 @Component({
   selector: 'app-trend-pager',
   standalone: true,
   imports: [CommonModule],
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (totalPages() > 1) {
       <nav class="trend-pager" [attr.aria-label]="ariaLabel()">
@@ -27,7 +28,7 @@ import { CommonModule } from '@angular/common';
             ‹ Anterior
           </button>
 
-          <span class="pager-current" aria-current="page">
+          <span class="pager-current">
             Página {{ page() }} de {{ totalPages() }}
           </span>
 
@@ -50,8 +51,8 @@ import { CommonModule } from '@angular/common';
       align-items: center;
       justify-content: space-between;
       flex-wrap: wrap;
-      gap: var(--space-3, 12px);
-      padding: var(--space-3, 12px) 0;
+      gap: var(--space-3);
+      padding: var(--space-3) 0;
       font-family: var(--font-family-body);
       font-size: 0.875rem;
       color: var(--text-secondary);
@@ -60,22 +61,24 @@ import { CommonModule } from '@angular/common';
     .pager-summary {
       font-family: var(--font-family-mono);
       font-size: 0.8125rem;
-      color: var(--text-muted);
+      color: var(--text-secondary);
     }
 
     .pager-controls {
       display: flex;
       align-items: center;
-      gap: var(--space-2, 8px);
+      flex-wrap: wrap;
+      gap: var(--space-2);
     }
 
     .pager-btn {
-      min-height: 36px;
-      padding: var(--space-1, 4px) var(--space-3, 12px);
+      min-height: 40px;
+      padding: var(--space-1) var(--space-3);
       background-color: var(--bg-surface);
       border: 1px solid var(--border-default);
       border-radius: var(--radius-xs);
       color: var(--text-primary);
+      font-family: var(--font-family-body);
       font-weight: 600;
       cursor: pointer;
       transition: background-color var(--transition-fast);
@@ -83,6 +86,11 @@ import { CommonModule } from '@angular/common';
       &:hover:not(:disabled) {
         background-color: var(--bg-subtle);
         border-color: var(--border-strong);
+      }
+
+      &:focus-visible {
+        outline: 2px solid var(--border-focus);
+        outline-offset: 2px;
       }
 
       &:disabled {
@@ -93,7 +101,8 @@ import { CommonModule } from '@angular/common';
 
     .pager-current {
       font-weight: 600;
-      padding: 0 var(--space-2, 8px);
+      color: var(--text-primary);
+      padding: 0 var(--space-2);
     }
   `],
 })

@@ -1,11 +1,12 @@
 /**
  * Store reativo para o estado da página de Tendência de Vendas (P-084, P-086, ADR-003 DA-08).
- * Gerencia signals de consulta, requisições canceláveis, paginação, expansão de fornecedores e sync com URL.
+ * Gerencia signals de consulta, requisições canceláveis via switchMap, paginação, expansão de fornecedores e sync com URL.
  * Não utiliza localStorage nem sessionStorage.
  */
-import { Injectable, inject, signal } from '@angular/core';
+import { DestroyRef, Injectable, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
-import { Subject, Subscription } from 'rxjs';
+import { Observable, Subject, Subscription, catchError, map, of, switchMap } from 'rxjs';
 import {
   ProductTrendResponse,
   SalesTrendCacheResponse,
@@ -13,7 +14,6 @@ import {
   SupplierProductsQueryParams,
   SupplierTrendResponse,
   TrendComparisonMode,
-  TrendErrorCode,
   TrendErrorPayload,
   TrendGroupBy,
   TrendListMeta,
@@ -42,6 +42,24 @@ export interface SupplierDetailState {
   q?: string;
 }
 
+interface MainTrigger {
+  query: TrendQueryParams;
+  generation: number;
+}
+
+type MainResult =
+  | { ok: true; res: ProductTrendResponse | SupplierTrendResponse; generation: number }
+  | { ok: false; error: TrendErrorPayload | null; generation: number };
+
+interface DetailTrigger {
+  req: SupplierProductsQueryParams;
+  generation: number;
+}
+
+type DetailResult =
+  | { ok: true; res: SupplierDetailResponse; generation: number }
+  | { ok: false; error: TrendErrorPayload | null; generation: number };
+
 const DEFAULT_QUERY: TrendQueryParams = {
   metric: 'revenue',
   groupBy: 'product',
@@ -54,10 +72,14 @@ const DEFAULT_QUERY: TrendQueryParams = {
   offset: 0,
 };
 
+const MAX_MIN_VOLUME = 1_000_000_000;
+const MAX_SEARCH_LENGTH = 60;
+
 @Injectable()
 export class SalesTrendStore {
   private readonly service = inject(SalesTrendService);
   private readonly router = inject(Router);
+  private readonly destroyRef = inject(DestroyRef);
 
   // Signals do estado principal
   readonly query = signal<TrendQueryParams>({ ...DEFAULT_QUERY });
@@ -67,13 +89,72 @@ export class SalesTrendStore {
   readonly error = signal<TrendErrorPayload | null>(null);
   readonly cacheStatus = signal<SalesTrendCacheResponse | null>(null);
   readonly isSlowLoading = signal<boolean>(false);
+  readonly noticeMessage = signal<string | null>(null);
 
   // Expansões de fornecedor: Map imutável supplierKey -> SupplierDetailState
   readonly expandedSuppliers = signal<Map<string, SupplierDetailState>>(new Map());
 
-  private mainRequestSub: Subscription | null = null;
+  private mainGeneration = 0;
+  private readonly mainRequestTrigger$ = new Subject<MainTrigger>();
+  private healthSub: Subscription | null = null;
   private slowLoadingTimer: ReturnType<typeof setTimeout> | null = null;
-  private readonly cancel$ = new Subject<void>();
+
+  private readonly detailChannels = new Map<
+    string,
+    { trigger$: Subject<DetailTrigger>; sub: Subscription }
+  >();
+  private readonly detailGenerations = new Map<string, number>();
+
+  constructor() {
+    this.mainRequestTrigger$
+      .pipe(
+        switchMap(
+          ({ query, generation }): Observable<MainResult> =>
+            this.service.getTrend(query).pipe(
+              map((res): MainResult => ({ ok: true, res, generation })),
+              catchError((err): Observable<MainResult> => of({ ok: false, error: toTrendApiError(err), generation }))
+            )
+        ),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((outcome) => {
+        if (outcome.generation !== this.mainGeneration) {
+          return;
+        }
+        this.clearSlowLoadingTimer();
+
+        if (!outcome.ok) {
+          this.status.set('error');
+          this.error.set(outcome.error);
+          return;
+        }
+
+        const res = outcome.res;
+        const isEmpty = !res.data || res.data.length === 0;
+        this.status.set(isEmpty ? 'empty' : 'success');
+
+        if (res.meta.agrupamento === 'supplier') {
+          this.supplierResponse.set(res as SupplierTrendResponse);
+          this.productResponse.set(null);
+        } else {
+          this.productResponse.set(res as ProductTrendResponse);
+          this.supplierResponse.set(null);
+        }
+
+        // Se o mês base não estava fixado no estado, adota o mês base retornado no meta
+        if (!this.query().baseMonth && res.meta.mesBase) {
+          this.query.update((curr) => ({ ...curr, baseMonth: res.meta.mesBase }));
+        }
+      });
+
+    this.destroyRef.onDestroy(() => {
+      this.clearSlowLoadingTimer();
+      this.healthSub?.unsubscribe();
+      this.healthSub = null;
+      this.cancelAllSupplierRequests();
+      this.mainRequestTrigger$.complete();
+    });
+  }
 
   get currentMeta(): TrendListMeta | null {
     if (this.query().groupBy === 'supplier') {
@@ -96,76 +177,58 @@ export class SalesTrendStore {
   }
 
   /**
-   * Dispara a requisição principal da lista com cancelamento de requisições em trânsito.
+   * Dispara a requisição principal da lista com cancelamento via switchMap e proteção por geração.
    */
   loadTrend(): void {
-    if (this.mainRequestSub) {
-      this.mainRequestSub.unsubscribe();
-      this.mainRequestSub = null;
-    }
-
+    const generation = ++this.mainGeneration;
+    this.clearExpandedSuppliers();
     this.status.set('loading');
     this.error.set(null);
     this.startSlowLoadingTimer();
 
     const q = this.query();
     this.syncUrl();
-
-    this.mainRequestSub = this.service.getTrend(q).subscribe({
-      next: (res) => {
-        this.clearSlowLoadingTimer();
-        const isEmpty = !res.data || res.data.length === 0;
-        this.status.set(isEmpty ? 'empty' : 'success');
-
-        if (res.meta.agrupamento === 'supplier') {
-          this.supplierResponse.set(res as SupplierTrendResponse);
-          this.productResponse.set(null);
-        } else {
-          this.productResponse.set(res as ProductTrendResponse);
-          this.supplierResponse.set(null);
-        }
-
-        // Se o mês base não estava fixado no estado, adota o mês base retornado no meta
-        if (!this.query().baseMonth && res.meta.mesBase) {
-          this.query.update((curr) => ({ ...curr, baseMonth: res.meta.mesBase }));
-        }
-      },
-      error: (err) => {
-        this.clearSlowLoadingTimer();
-        this.status.set('error');
-        const parsed = toTrendApiError(err);
-        this.error.set(parsed);
-      },
-    });
+    this.mainRequestTrigger$.next({ query: q, generation });
   }
 
   setGroupBy(groupBy: TrendGroupBy): void {
-    if (this.query().groupBy === groupBy) {
+    const curr = this.query();
+    if (curr.groupBy === groupBy) {
       return;
     }
-    this.query.update((curr) => ({
-      ...curr,
+
+    const hadFilters = Boolean(curr.q || (curr.minVolume ?? 0) > 0 || (curr.view && curr.view !== 'all'));
+    if (hadFilters) {
+      this.noticeMessage.set('A busca e os filtros foram limpos ao alternar o agrupamento.');
+    }
+
+    this.query.update((c) => ({
+      ...c,
       groupBy,
       view: 'all',
       minVolume: 0,
       q: undefined,
       offset: 0,
     }));
-    this.expandedSuppliers.set(new Map());
     this.loadTrend();
   }
 
   setMetric(metric: TrendMetric): void {
-    if (this.query().metric === metric) {
+    const curr = this.query();
+    if (curr.metric === metric) {
       return;
     }
-    this.query.update((curr) => ({
-      ...curr,
+
+    if ((curr.minVolume ?? 0) > 0) {
+      this.noticeMessage.set('O corte mínimo foi zerado porque a métrica de análise mudou.');
+    }
+
+    this.query.update((c) => ({
+      ...c,
       metric,
       minVolume: 0,
       offset: 0,
     }));
-    this.expandedSuppliers.set(new Map());
     this.loadTrend();
   }
 
@@ -178,7 +241,6 @@ export class SalesTrendStore {
       comparisonMode,
       offset: 0,
     }));
-    this.expandedSuppliers.set(new Map());
     this.loadTrend();
   }
 
@@ -191,7 +253,6 @@ export class SalesTrendStore {
       baseMonth,
       offset: 0,
     }));
-    this.expandedSuppliers.set(new Map());
     this.loadTrend();
   }
 
@@ -204,6 +265,10 @@ export class SalesTrendStore {
       } else {
         newDir = curr.view === 'falling' ? 'asc' : 'desc';
       }
+    }
+
+    if (curr.sortWindow === window && curr.sortDir === newDir) {
+      return;
     }
 
     this.query.update((c) => ({
@@ -230,23 +295,28 @@ export class SalesTrendStore {
   }
 
   setSearch(q: string | undefined): void {
-    const cleanQ = q && q.trim().length > 0 ? q.trim() : undefined;
-    if (cleanQ && !/^\d+$/.test(cleanQ) && cleanQ.length < 2) {
+    const normalized =
+      q && q.trim().length > 0
+        ? q.trim().replace(/\s+/g, ' ').slice(0, MAX_SEARCH_LENGTH).trim()
+        : undefined;
+    if (normalized && !/^\d+$/.test(normalized) && normalized.length < 2) {
       return;
     }
-    if (this.query().q === cleanQ) {
+    if (this.query().q === normalized) {
       return;
     }
     this.query.update((curr) => ({
       ...curr,
-      q: cleanQ,
+      q: normalized,
       offset: 0,
     }));
     this.loadTrend();
   }
 
   setMinVolume(minVolume: number): void {
-    const valid = Math.max(0, minVolume);
+    const valid = Number.isFinite(minVolume)
+      ? Math.min(MAX_MIN_VOLUME, Math.max(0, minVolume))
+      : 0;
     if (this.query().minVolume === valid) {
       return;
     }
@@ -260,7 +330,7 @@ export class SalesTrendStore {
 
   setPage(page: number): void {
     const limit = this.query().limit || 50;
-    const newOffset = Math.max(0, (page - 1) * limit);
+    const newOffset = Math.max(0, (Math.max(1, page) - 1) * limit);
     if (this.query().offset === newOffset) {
       return;
     }
@@ -271,9 +341,37 @@ export class SalesTrendStore {
     this.loadTrend();
   }
 
+  clearFilters(): void {
+    this.noticeMessage.set(null);
+    this.query.update((curr) => ({
+      ...curr,
+      q: undefined,
+      minVolume: 0,
+      view: 'all',
+      offset: 0,
+    }));
+    this.loadTrend();
+  }
+
+  resetToDefaultMonth(): void {
+    const defaultMonth = this.currentMeta?.mesBasePadrao;
+    this.noticeMessage.set(null);
+    this.query.update((curr) => ({
+      ...curr,
+      baseMonth: defaultMonth,
+      offset: 0,
+    }));
+    this.loadTrend();
+  }
+
+  dismissNotice(): void {
+    this.noticeMessage.set(null);
+  }
+
   toggleSupplier(supplierKey: string): void {
     const map = new Map(this.expandedSuppliers());
     if (map.has(supplierKey)) {
+      this.disposeSupplierChannel(supplierKey);
       map.delete(supplierKey);
       this.expandedSuppliers.set(map);
       return;
@@ -305,57 +403,46 @@ export class SalesTrendStore {
 
     const baseMonth = this.currentMeta?.mesBase || this.query().baseMonth;
     const metric = this.query().metric || 'revenue';
+    const nextSortBy = paramsOverride?.sortBy ?? curr.sortBy;
+    const nextSortWindow = paramsOverride?.sortWindow ?? curr.sortWindow;
+    const nextSortDir = paramsOverride?.sortDir ?? curr.sortDir;
+    const nextQ = paramsOverride?.q !== undefined ? paramsOverride.q : curr.q;
+    const nextLimit = paramsOverride?.limit ?? curr.limit;
+    const nextOffset = paramsOverride?.offset ?? curr.offset;
+    const nextPage = Math.floor(nextOffset / Math.max(1, nextLimit)) + 1;
 
     const req: SupplierProductsQueryParams = {
       supplierKey,
       baseMonth,
       metric,
       comparisonMode: this.query().comparisonMode,
-      sortBy: paramsOverride?.sortBy ?? curr.sortBy,
-      sortWindow: paramsOverride?.sortWindow ?? curr.sortWindow,
-      sortDir: paramsOverride?.sortDir ?? curr.sortDir,
-      q: paramsOverride?.q ?? curr.q,
-      limit: paramsOverride?.limit ?? curr.limit,
-      offset: paramsOverride?.offset ?? curr.offset,
+      sortBy: nextSortBy,
+      sortWindow: nextSortWindow,
+      sortDir: nextSortDir,
+      q: nextQ,
+      limit: nextLimit,
+      offset: nextOffset,
     };
 
-    curr.status = 'loading';
-    this.expandedSuppliers.set(new Map(map));
+    const nextGeneration = (this.detailGenerations.get(supplierKey) ?? 0) + 1;
+    this.detailGenerations.set(supplierKey, nextGeneration);
 
-    this.service.getSupplierProducts(req).subscribe({
-      next: (res) => {
-        const nextMap = new Map(this.expandedSuppliers());
-        const item = nextMap.get(supplierKey);
-        if (!item) {
-          return;
-        }
-
-        // C-50: se a data de referência divergir do snapshot da lista principal, recarrega tudo
-        if (this.currentMeta && res.meta.dataReferencia !== this.currentMeta.dataReferencia) {
-          this.loadTrend();
-          return;
-        }
-
-        item.data = res;
-        item.status = !res.data || res.data.length === 0 ? 'empty' : 'success';
-        item.error = null;
-        item.page = res.meta.page;
-        item.offset = res.meta.offset;
-        item.limit = res.meta.limit;
-        nextMap.set(supplierKey, { ...item });
-        this.expandedSuppliers.set(nextMap);
-      },
-      error: (err) => {
-        const nextMap = new Map(this.expandedSuppliers());
-        const item = nextMap.get(supplierKey);
-        if (item) {
-          item.status = 'error';
-          item.error = toTrendApiError(err);
-          nextMap.set(supplierKey, { ...item });
-          this.expandedSuppliers.set(nextMap);
-        }
-      },
+    map.set(supplierKey, {
+      ...curr,
+      status: 'loading',
+      error: null,
+      sortBy: nextSortBy,
+      sortWindow: nextSortWindow,
+      sortDir: nextSortDir,
+      q: nextQ,
+      limit: nextLimit,
+      offset: nextOffset,
+      page: nextPage,
     });
+    this.expandedSuppliers.set(map);
+
+    const channel = this.getOrCreateDetailChannel(supplierKey);
+    channel.trigger$.next({ req, generation: nextGeneration });
   }
 
   setSupplierPage(supplierKey: string, page: number): void {
@@ -363,7 +450,7 @@ export class SalesTrendStore {
     if (!item) {
       return;
     }
-    const newOffset = Math.max(0, (page - 1) * item.limit);
+    const newOffset = Math.max(0, (Math.max(1, page) - 1) * item.limit);
     this.loadSupplierProducts(supplierKey, { offset: newOffset });
   }
 
@@ -380,14 +467,114 @@ export class SalesTrendStore {
   }
 
   checkHealth(): void {
-    this.service.getHealth().subscribe({
-      next: (res) => this.cacheStatus.set(res),
-      error: () => {},
-    });
+    this.healthSub?.unsubscribe();
+    this.healthSub = this.service
+      .getHealth()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (res) => this.cacheStatus.set(res),
+        error: () => {},
+      });
   }
 
   retry(): void {
     this.loadTrend();
+  }
+
+  private getOrCreateDetailChannel(supplierKey: string): {
+    trigger$: Subject<DetailTrigger>;
+    sub: Subscription;
+  } {
+    const existing = this.detailChannels.get(supplierKey);
+    if (existing) {
+      return existing;
+    }
+
+    const trigger$ = new Subject<DetailTrigger>();
+    const sub = trigger$
+      .pipe(
+        switchMap(
+          ({ req, generation }): Observable<DetailResult> =>
+            this.service.getSupplierProducts(req).pipe(
+              map((res): DetailResult => ({ ok: true, res, generation })),
+              catchError((err): Observable<DetailResult> => of({ ok: false, error: toTrendApiError(err), generation }))
+            )
+        )
+      )
+      .subscribe((outcome) => {
+        if (this.detailGenerations.get(supplierKey) !== outcome.generation) {
+          return;
+        }
+
+        const nextMap = new Map(this.expandedSuppliers());
+        const item = nextMap.get(supplierKey);
+        if (!item) {
+          return;
+        }
+
+        if (!outcome.ok) {
+          nextMap.set(supplierKey, {
+            ...item,
+            status: 'error',
+            error: outcome.error,
+          });
+          this.expandedSuppliers.set(nextMap);
+          return;
+        }
+
+        const res = outcome.res;
+
+        // C-50: se a data de referência divergir do snapshot da lista principal, recarrega tudo
+        if (this.currentMeta && res.meta.dataReferencia !== this.currentMeta.dataReferencia) {
+          this.noticeMessage.set(
+            'Os dados foram atualizados em segundo plano e a listagem foi recarregada.'
+          );
+          this.loadTrend();
+          return;
+        }
+
+        nextMap.set(supplierKey, {
+          ...item,
+          data: res,
+          status: !res.data || res.data.length === 0 ? 'empty' : 'success',
+          error: null,
+          page: res.meta.page,
+          offset: res.meta.offset,
+          limit: res.meta.limit,
+          sortBy: res.meta.ordenacao?.por ?? item.sortBy,
+          sortWindow: res.meta.ordenacao?.janela ?? item.sortWindow,
+          sortDir: res.meta.ordenacao?.sentido ?? item.sortDir,
+        });
+        this.expandedSuppliers.set(nextMap);
+      });
+
+    const channel = { trigger$, sub };
+    this.detailChannels.set(supplierKey, channel);
+    return channel;
+  }
+
+  private disposeSupplierChannel(supplierKey: string): void {
+    this.detailGenerations.set(supplierKey, (this.detailGenerations.get(supplierKey) ?? 0) + 1);
+    const channel = this.detailChannels.get(supplierKey);
+    if (channel) {
+      channel.sub.unsubscribe();
+      channel.trigger$.complete();
+      this.detailChannels.delete(supplierKey);
+    }
+  }
+
+  private cancelAllSupplierRequests(): void {
+    for (const key of Array.from(this.detailChannels.keys())) {
+      this.disposeSupplierChannel(key);
+    }
+    this.detailGenerations.clear();
+  }
+
+  private clearExpandedSuppliers(): void {
+    this.cancelAllSupplierRequests();
+    if (this.expandedSuppliers().size > 0) {
+      this.expandedSuppliers.set(new Map());
+    }
   }
 
   private syncUrl(): void {

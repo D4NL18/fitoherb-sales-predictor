@@ -1,8 +1,8 @@
 /**
  * Tabela ledger de alta densidade para telas >= 768px (Design Plan §5.4).
- * Suporta cabeçalho sticky, largura proporcional sem rolagem horizontal e acessibilidade WCAG AA.
+ * Suporta cabeçalho descritivo acessível, largura proporcional sem rolagem horizontal e contraste WCAG AA.
  */
-import { Component, computed, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
   TrendComparisonMode,
@@ -36,9 +36,13 @@ import { TrendSupplierGroupComponent } from '../trend-supplier-group/trend-suppl
     TrendRowValuesComponent,
     TrendSupplierGroupComponent,
   ],
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div class="trend-table-wrapper">
-      <table class="trend-table" role="table">
+    <div class="trend-table-wrapper" [class.is-loading]="loading()">
+      <table class="trend-table" [attr.aria-busy]="loading()">
+        <caption class="sr-only">
+          Tendência de vendas agrupada por {{ groupBy() === 'supplier' ? 'fornecedor' : 'produto' }} em janelas de 1, 3, 6 e 12 meses.
+        </caption>
         <thead>
           <tr>
             <th class="th-expand" scope="col"><span class="sr-only">Expandir</span></th>
@@ -71,9 +75,9 @@ import { TrendSupplierGroupComponent } from '../trend-supplier-group/trend-suppl
           </tr>
         </thead>
 
-        <tbody>
-          <!-- Linha Total Geral (Q-4) -->
-          @if (totalRow()) {
+        @if (totalRow() && totalRow()!.janelas.length > 0) {
+          <tbody>
+            <!-- Linha Total Geral (Q-4) -->
             <tr class="total-row">
               <td class="col-expand"></td>
               <td class="col-entity">
@@ -93,11 +97,12 @@ import { TrendSupplierGroupComponent } from '../trend-supplier-group/trend-suppl
                 </td>
               }
             </tr>
-          }
+          </tbody>
+        }
 
-          <!-- Linhas de Dados -->
-          @for (item of rows(); track getItemKey(item)) {
-            @if (groupBy() === 'product') {
+        @if (groupBy() === 'product') {
+          <tbody>
+            @for (item of rows(); track getItemKey(item)) {
               <tr
                 appTrendRow
                 [row]="asProductRow(item)"
@@ -105,11 +110,12 @@ import { TrendSupplierGroupComponent } from '../trend-supplier-group/trend-suppl
                 [sortWindow]="sortWindow()"
                 [params]="params()"
                 [isExpanded]="isExpanded(getItemKey(item))"
+                [ariaControlsId]="rowValuesId(getItemKey(item))"
                 (toggle)="toggleRow.emit(getItemKey(item))"
               ></tr>
               @if (isExpanded(getItemKey(item))) {
-                <tr class="expanded-detail-row">
-                  <td colspan="6" style="padding: 0">
+                <tr [id]="rowValuesId(getItemKey(item))" class="expanded-detail-row">
+                  <td colspan="6" class="expanded-detail-td">
                     <app-trend-row-values
                       [janelas]="item.janelas"
                       [metric]="metric()"
@@ -118,26 +124,27 @@ import { TrendSupplierGroupComponent } from '../trend-supplier-group/trend-suppl
                   </td>
                 </tr>
               }
-            } @else {
-              <!-- Grupo de Fornecedor -->
-              <app-trend-supplier-group
-                style="display: contents"
-                [supplier]="asSupplierRow(item)"
-                [detailState]="getSupplierDetail(asSupplierRow(item).fornecedorChave)"
-                [metric]="metric()"
-                [sortWindow]="sortWindow()"
-                [sortDir]="sortDir()"
-                [params]="params()"
-                [windowMetas]="columns()"
-                [isExpanded]="isExpanded(asSupplierRow(item).fornecedorChave)"
-                (toggle)="toggleRow.emit(asSupplierRow(item).fornecedorChave)"
-                (sortChange)="detailSortChange.emit({ supplierKey: asSupplierRow(item).fornecedorChave, sortBy: $event })"
-                (pageChange)="detailPageChange.emit({ supplierKey: asSupplierRow(item).fornecedorChave, page: $event })"
-                (retry)="detailRetry.emit(asSupplierRow(item).fornecedorChave)"
-              />
             }
+          </tbody>
+        } @else {
+          @for (item of rows(); track getItemKey(item)) {
+            <tbody
+              appTrendSupplierGroup
+              [supplier]="asSupplierRow(item)"
+              [detailState]="getSupplierDetail(asSupplierRow(item).fornecedorChave)"
+              [metric]="metric()"
+              [sortWindow]="sortWindow()"
+              [sortDir]="sortDir()"
+              [params]="params()"
+              [windowMetas]="columns()"
+              [isExpanded]="isExpanded(asSupplierRow(item).fornecedorChave)"
+              (toggle)="toggleRow.emit(asSupplierRow(item).fornecedorChave)"
+              (sortChange)="detailSortChange.emit({ supplierKey: asSupplierRow(item).fornecedorChave, sortBy: $event })"
+              (pageChange)="detailPageChange.emit({ supplierKey: asSupplierRow(item).fornecedorChave, page: $event })"
+              (retry)="detailRetry.emit(asSupplierRow(item).fornecedorChave)"
+            ></tbody>
           }
-        </tbody>
+        }
       </table>
     </div>
   `,
@@ -148,11 +155,17 @@ import { TrendSupplierGroupComponent } from '../trend-supplier-group/trend-suppl
       border: 1px solid var(--border-default);
       border-radius: var(--radius-sm);
       box-shadow: var(--shadow-xs);
-      overflow: hidden;
+      overflow-x: auto;
+      transition: opacity var(--transition-fast);
+
+      &.is-loading {
+        opacity: 0.65;
+      }
     }
 
     .trend-table {
       width: 100%;
+      min-width: 720px;
       table-layout: fixed;
       border-collapse: collapse;
 
@@ -166,7 +179,7 @@ import { TrendSupplierGroupComponent } from '../trend-supplier-group/trend-suppl
     }
 
     .th-expand {
-      width: 40px;
+      width: 44px;
     }
 
     .th-entity {
@@ -180,7 +193,7 @@ import { TrendSupplierGroupComponent } from '../trend-supplier-group/trend-suppl
       justify-content: center;
       min-height: 58px;
       gap: 4px;
-      padding: 10px var(--space-3, 12px);
+      padding: 10px var(--space-3);
     }
 
     .th-entity-title {
@@ -197,18 +210,18 @@ import { TrendSupplierGroupComponent } from '../trend-supplier-group/trend-suppl
       font-size: 0.6875rem;
       font-weight: 500;
       line-height: 1.25;
-      color: var(--text-muted);
+      color: var(--text-secondary);
     }
 
     .th-entity-base {
       font-family: var(--font-family-mono);
       font-weight: 600;
-      color: var(--text-secondary);
+      color: var(--text-primary);
     }
 
     .th-window {
-      width: 16%;
-      min-width: 120px;
+      width: 15.5%;
+      min-width: 116px;
       border-left: 1px solid var(--border-subtle);
       transition: background-color var(--transition-fast);
 
@@ -218,11 +231,11 @@ import { TrendSupplierGroupComponent } from '../trend-supplier-group/trend-suppl
     }
 
     .total-row {
-      background-color: var(--bg-table-row-zebra, #FAF8F4);
+      background-color: var(--bg-table-row-zebra);
       border-bottom: 2px solid var(--border-default);
 
       td {
-        padding: var(--space-3, 12px) var(--space-3, 12px);
+        padding: var(--space-3);
       }
     }
 
@@ -231,29 +244,34 @@ import { TrendSupplierGroupComponent } from '../trend-supplier-group/trend-suppl
       flex-direction: column;
       gap: 2px;
       font-size: 0.875rem;
+      color: var(--text-primary);
     }
 
     .total-count {
       font-size: 0.75rem;
-      color: var(--text-muted);
+      color: var(--text-secondary);
     }
 
     .col-expand {
-      width: 40px;
+      width: 44px;
       text-align: center;
     }
 
     .col-entity {
-      padding: var(--space-2, 8px) var(--space-3, 12px);
+      padding: var(--space-2) var(--space-3);
     }
 
     .col-window {
-      padding: var(--space-2, 8px) var(--space-3, 12px);
+      padding: var(--space-2) var(--space-3);
       text-align: right;
     }
 
     .col-window.sorted-col {
-      background-color: rgba(29, 69, 40, 0.04);
+      background-color: var(--bg-table-col-sorted);
+    }
+
+    .expanded-detail-td {
+      padding: 0;
     }
 
     .sr-only {
@@ -264,6 +282,7 @@ import { TrendSupplierGroupComponent } from '../trend-supplier-group/trend-suppl
       margin: -1px;
       overflow: hidden;
       clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
       border: 0;
     }
   `],
@@ -280,6 +299,7 @@ export class TrendTableComponent {
   readonly expandedKeys = input<Set<string | number>>(new Set());
   readonly details = input<Map<string, SupplierDetailState>>(new Map());
   readonly totalRow = input<TrendTotalRow | null>(null);
+  readonly loading = input<boolean>(false);
 
   readonly sort = output<TrendSortWindow>();
   readonly toggleRow = output<string | number>();
@@ -300,7 +320,11 @@ export class TrendTableComponent {
   });
 
   getItemKey(item: TrendProductRow | TrendSupplierRow): string | number {
-    return (item as TrendSupplierRow).fornecedorChave ?? (item as TrendProductRow).codigo;
+    return 'fornecedorChave' in item ? item.fornecedorChave : item.codigo;
+  }
+
+  rowValuesId(key: string | number): string {
+    return `product-values-${String(key).replace(/[^a-zA-Z0-9_-]/g, '-')}`;
   }
 
   isExpanded(key: string | number): boolean {
@@ -311,11 +335,11 @@ export class TrendTableComponent {
     return this.details().get(key) ?? null;
   }
 
-  asProductRow(item: any): TrendProductRow {
+  asProductRow(item: TrendProductRow | TrendSupplierRow): TrendProductRow {
     return item as TrendProductRow;
   }
 
-  asSupplierRow(item: any): TrendSupplierRow {
+  asSupplierRow(item: TrendProductRow | TrendSupplierRow): TrendSupplierRow {
     return item as TrendSupplierRow;
   }
 }

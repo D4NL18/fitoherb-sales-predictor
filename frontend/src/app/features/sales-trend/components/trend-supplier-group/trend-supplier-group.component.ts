@@ -1,8 +1,17 @@
 /**
- * Grupo expansível de fornecedor com produtos filhos e cálculo de contribuição (Design Plan §5.6, P-090, P-092).
- * Inclui paginação independente de 20 itens, alternância de ordenação e tratamento de erros do detalhe.
+ * Grupo expansível de fornecedor (tbody compartilhado na tabela principal) com valores detalhados,
+ * produtos filhos alinhados às colunas do pai, ordenação por contribuição/variação e paginação (Design Plan §5.6, P-090, P-092).
  */
-import { Component, computed, input, output } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  computed,
+  input,
+  output,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
   TrendMetric,
@@ -16,31 +25,35 @@ import {
 import { SupplierDetailState } from '../../services/sales-trend.store';
 import { TrendCellComponent } from '../trend-cell/trend-cell.component';
 import { TrendRowComponent } from '../trend-row/trend-row.component';
+import { TrendRowValuesComponent } from '../trend-row-values/trend-row-values.component';
 import { TrendPagerComponent } from '../trend-pager/trend-pager.component';
 import { TrendErrorBannerComponent } from '../trend-error-banner/trend-error-banner.component';
-import { TrendTableSkeletonComponent } from '../trend-table-skeleton/trend-table-skeleton.component';
 
 @Component({
-  selector: 'app-trend-supplier-group',
+  selector: 'tbody[appTrendSupplierGroup]',
   standalone: true,
   imports: [
     CommonModule,
     TrendCellComponent,
     TrendRowComponent,
+    TrendRowValuesComponent,
     TrendPagerComponent,
     TrendErrorBannerComponent,
-    TrendTableSkeletonComponent,
   ],
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <!-- Linha Pai do Fornecedor -->
+    <!-- Linha Pai do Fornecedor (alinhada diretamente às colunas da tabela principal) -->
     <tr class="supplier-row" [class.is-expanded]="isExpanded()">
       <td class="col-expand">
         <button
+          #expandBtn
           type="button"
           class="expand-chevron-btn"
           [class.is-expanded]="isExpanded()"
           (click)="toggle.emit()"
           [attr.aria-expanded]="isExpanded()"
+          [attr.aria-controls]="detailRegionId()"
+          [attr.aria-busy]="isExpanded() && detailState()?.status === 'loading'"
           [attr.aria-label]="expandAriaLabel()"
         >
           <span class="chevron-icon" aria-hidden="true">›</span>
@@ -68,105 +81,138 @@ import { TrendTableSkeletonComponent } from '../trend-table-skeleton/trend-table
       }
     </tr>
 
-    <!-- Região Expansível com Produtos Filhos -->
+    <!-- Região Expansível: Valores do Fornecedor + Controles e Produtos Filhos Alinhados -->
     @if (isExpanded()) {
-      <tr class="detail-container-row">
-        <td colspan="6" class="detail-cell">
-          <div class="supplier-detail-panel">
-            <header class="detail-header">
-              <div class="detail-header-info">
-                <span class="detail-caption">Produtos de {{ supplier().fornecedor }}</span>
-                <span class="detail-subcaption">
-                  Contribuição calculada sobre a soma de vendas do fornecedor
-                </span>
-              </div>
+      <tr [id]="detailRegionId()" class="detail-header-row" (keydown.escape)="onCollapseKey($event)">
+        <td colspan="6" class="detail-banner-td">
+          <app-trend-row-values
+            [janelas]="supplierValuesJanelas()"
+            [metric]="metric()"
+            [windowMetas]="windowMetas()"
+          />
 
-              <!-- Alternador de ordenação dos filhos -->
-              <div class="detail-sort-controls">
-                <span class="sort-caption">Ordenar filhos por:</span>
-                <div class="sort-pill-group">
-                  <button
-                    type="button"
-                    class="sort-pill"
-                    [class.active]="detailState()?.sortBy === 'contribution'"
-                    (click)="sortChange.emit('contribution')"
-                  >
-                    Contribuição
-                  </button>
-                  <button
-                    type="button"
-                    class="sort-pill"
-                    [class.active]="detailState()?.sortBy === 'variation'"
-                    (click)="sortChange.emit('variation')"
-                  >
-                    Variação %
-                  </button>
-                </div>
-              </div>
-            </header>
+          <div class="detail-header">
+            <div class="detail-header-info">
+              <span class="detail-caption">Produtos de {{ supplier().fornecedor }}</span>
+              <span class="detail-subcaption">
+                Contribuição calculada sobre a soma de vendas do fornecedor
+              </span>
+            </div>
 
-            <!-- Estados do Detalhe: Loading, Error, Empty, Success -->
-            @if (detailState()?.status === 'loading') {
-              <div class="detail-loading">
-                <app-trend-table-skeleton [rows]="3" variant="table" />
-              </div>
-            } @else if (detailState()?.status === 'error') {
-              <div class="detail-error">
-                <app-trend-error-banner
-                  [message]="detailState()?.error?.message || 'Erro ao carregar produtos do fornecedor.'"
-                  (retry)="retry.emit()"
-                />
-              </div>
-            } @else if (detailState()?.status === 'empty') {
-              <div class="detail-empty">
-                <span>Nenhum produto ativo encontrado para este fornecedor no período.</span>
-              </div>
-            } @else if (detailState()?.data) {
-              <table class="detail-table">
-                <thead>
-                  <tr>
-                    <th style="width: 40px"></th>
-                    <th style="text-align: left">PRODUTO</th>
-                    <th style="text-align: right">1 MÊS</th>
-                    <th style="text-align: right">3 MESES</th>
-                    <th style="text-align: right">6 MESES</th>
-                    <th style="text-align: right">12 MESES</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (prod of detailState()!.data!.data; track prod.codigo) {
-                    <tr
-                      appTrendRow
-                      level="child"
-                      [row]="prod"
-                      [metric]="metric()"
-                      [sortWindow]="sortWindow()"
-                      [params]="params()"
-                      [isExpanded]="isChildExpanded(prod.codigo)"
-                      (toggle)="toggleChild(prod.codigo)"
-                    ></tr>
+            <div class="detail-sort-controls">
+              <span class="sort-caption">Ordenar filhos por:</span>
+              <div class="sort-pill-group">
+                <button
+                  type="button"
+                  class="sort-pill"
+                  [class.active]="detailState()?.sortBy === 'contribution'"
+                  [attr.aria-pressed]="detailState()?.sortBy === 'contribution'"
+                  (click)="sortChange.emit('contribution')"
+                >
+                  <span>Contribuição</span>
+                  @if (detailState()?.sortBy === 'contribution') {
+                    <span class="sort-dir-glyph" aria-hidden="true">{{ detailState()?.sortDir === 'asc' ? '↑' : '↓' }}</span>
                   }
-                </tbody>
-              </table>
-
-              <!-- Paginador do detalhe (20 por página) -->
-              @if (detailState()!.data!.meta.totalPages > 1) {
-                <div class="detail-pager-wrapper">
-                  <app-trend-pager
-                    [page]="detailState()!.data!.meta.page"
-                    [totalPages]="detailState()!.data!.meta.totalPages"
-                    [totalItems]="detailState()!.data!.meta.totalItems"
-                    [offset]="detailState()!.data!.meta.offset"
-                    [limit]="detailState()!.data!.meta.limit"
-                    [ariaLabel]="'Paginação de produtos de ' + supplier().fornecedor"
-                    (pageChange)="pageChange.emit($event)"
-                  />
-                </div>
-              }
-            }
+                </button>
+                <button
+                  type="button"
+                  class="sort-pill"
+                  [class.active]="detailState()?.sortBy === 'variation'"
+                  [attr.aria-pressed]="detailState()?.sortBy === 'variation'"
+                  (click)="sortChange.emit('variation')"
+                >
+                  <span>Variação %</span>
+                  @if (detailState()?.sortBy === 'variation') {
+                    <span class="sort-dir-glyph" aria-hidden="true">{{ detailState()?.sortDir === 'asc' ? '↑' : '↓' }}</span>
+                  }
+                </button>
+              </div>
+            </div>
           </div>
         </td>
       </tr>
+
+      @if (detailState()?.status === 'loading') {
+        @for (sk of skeletonRows; track sk) {
+          <tr class="detail-skeleton-row" aria-hidden="true">
+            <td class="col-expand"></td>
+            <td class="col-entity">
+              <div class="child-skeleton-entity">
+                <span class="skeleton-line" style="width: 65%"></span>
+                <span class="skeleton-line" style="width: 35%"></span>
+              </div>
+            </td>
+            <td class="col-window"><span class="skeleton-box" style="width: 70px; height: 22px"></span></td>
+            <td class="col-window"><span class="skeleton-box" style="width: 70px; height: 22px"></span></td>
+            <td class="col-window"><span class="skeleton-box" style="width: 70px; height: 22px"></span></td>
+            <td class="col-window"><span class="skeleton-box" style="width: 70px; height: 22px"></span></td>
+          </tr>
+        }
+      } @else if (detailState()?.status === 'error') {
+        <tr class="detail-state-row" (keydown.escape)="onCollapseKey($event)">
+          <td colspan="6" class="detail-state-td">
+            <app-trend-error-banner
+              [message]="detailState()?.error?.message || 'Erro ao carregar produtos do fornecedor.'"
+              (retry)="retry.emit()"
+            />
+          </td>
+        </tr>
+      } @else if (detailState()?.status === 'empty') {
+        <tr class="detail-state-row" (keydown.escape)="onCollapseKey($event)">
+          <td colspan="6" class="detail-state-td">
+            <div class="detail-empty" role="status">
+              Nenhum produto ativo encontrado para este fornecedor no período.
+            </div>
+          </td>
+        </tr>
+      } @else if (detailState()?.data) {
+        @for (prod of detailState()!.data!.data; track prod.codigo) {
+          <tr
+            appTrendRow
+            class="detail-child-row"
+            level="child"
+            [row]="prod"
+            [metric]="metric()"
+            [sortWindow]="sortWindow()"
+            [params]="params()"
+            [isExpanded]="isChildExpanded(prod.codigo)"
+            [ariaControlsId]="childValuesId(prod.codigo)"
+            (toggle)="toggleChild(prod.codigo)"
+            (keydown.escape)="onCollapseKey($event)"
+          ></tr>
+          @if (isChildExpanded(prod.codigo)) {
+            <tr
+              [id]="childValuesId(prod.codigo)"
+              class="child-values-row"
+              (keydown.escape)="onCollapseChild($event, prod.codigo)"
+            >
+              <td colspan="6" class="child-values-td">
+                <app-trend-row-values
+                  [janelas]="prod.janelas"
+                  [metric]="metric()"
+                  [windowMetas]="windowMetas()"
+                />
+              </td>
+            </tr>
+          }
+        }
+
+        @if (detailState()!.data!.meta.totalPages > 1) {
+          <tr class="detail-pager-row" (keydown.escape)="onCollapseKey($event)">
+            <td colspan="6" class="detail-pager-td">
+              <app-trend-pager
+                [page]="detailState()!.data!.meta.page"
+                [totalPages]="detailState()!.data!.meta.totalPages"
+                [totalItems]="detailState()!.data!.meta.totalItems"
+                [offset]="detailState()!.data!.meta.offset"
+                [limit]="detailState()!.data!.meta.limit"
+                [ariaLabel]="'Paginação de produtos de ' + supplier().fornecedor"
+                (pageChange)="pageChange.emit($event)"
+              />
+            </td>
+          </tr>
+        }
+      }
     }
   `,
   styles: [`
@@ -186,14 +232,15 @@ import { TrendTableSkeletonComponent } from '../trend-table-skeleton/trend-table
     }
 
     .col-expand {
-      width: 40px;
+      width: 44px;
       text-align: center;
-      padding: var(--space-2, 8px) 0;
+      padding: var(--space-1) 0;
+      vertical-align: middle;
     }
 
     .expand-chevron-btn {
-      width: 36px;
-      height: 36px;
+      width: 40px;
+      height: 40px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -203,7 +250,7 @@ import { TrendTableSkeletonComponent } from '../trend-table-skeleton/trend-table
       color: var(--text-secondary);
       font-size: 1.25rem;
       border-radius: var(--radius-xs);
-      transition: transform var(--transition-fast);
+      transition: transform var(--transition-fast), background-color var(--transition-fast);
 
       &.is-expanded {
         transform: rotate(90deg);
@@ -213,53 +260,68 @@ import { TrendTableSkeletonComponent } from '../trend-table-skeleton/trend-table
       &:hover {
         background-color: var(--bg-subtle);
       }
+
+      &:focus-visible {
+        outline: 2px solid var(--border-focus);
+        outline-offset: 2px;
+      }
     }
 
     .col-entity {
-      padding: var(--space-2, 8px) var(--space-3, 12px);
+      padding: var(--space-2) var(--space-3);
       vertical-align: middle;
+      min-width: 0;
     }
 
     .supplier-title-group {
       display: flex;
       align-items: baseline;
-      gap: var(--space-2, 8px);
+      flex-wrap: wrap;
+      gap: var(--space-2);
+      min-width: 0;
     }
 
     .supplier-name {
       font-size: 0.9375rem;
       color: var(--text-primary);
+      overflow-wrap: anywhere;
     }
 
     .supplier-meta-pill {
       font-size: 0.75rem;
-      color: var(--text-muted);
+      font-weight: 600;
+      color: var(--text-secondary);
     }
 
     .col-window {
-      padding: var(--space-2, 8px) var(--space-3, 12px);
+      padding: var(--space-2) var(--space-3);
       text-align: right;
       vertical-align: middle;
     }
 
     .col-window.sorted-col {
-      background-color: rgba(29, 69, 40, 0.04);
+      background-color: var(--bg-table-col-sorted);
     }
 
-    .detail-container-row {
-      background-color: var(--bg-table-row-zebra, #FAF8F4);
-      border-bottom: 2px solid var(--border-default);
+    .detail-header-row,
+    .detail-state-row,
+    .detail-pager-row {
+      background-color: var(--bg-table-row-zebra);
     }
 
-    .detail-cell {
+    .detail-banner-td,
+    .child-values-td {
       padding: 0 !important;
     }
 
-    .supplier-detail-panel {
-      padding: var(--space-3, 12px) var(--space-4, 16px);
-      display: flex;
-      flex-direction: column;
-      gap: var(--space-3, 12px);
+    .detail-state-td {
+      padding: var(--space-3) var(--space-4) !important;
+      border-bottom: 2px solid var(--border-default);
+    }
+
+    .detail-pager-td {
+      padding: 0 var(--space-4) var(--space-2) !important;
+      border-bottom: 2px solid var(--border-default);
     }
 
     .detail-header {
@@ -267,9 +329,10 @@ import { TrendTableSkeletonComponent } from '../trend-table-skeleton/trend-table
       align-items: center;
       justify-content: space-between;
       flex-wrap: wrap;
-      gap: var(--space-2, 8px);
-      padding-bottom: var(--space-2, 8px);
-      border-bottom: 1px dashed var(--border-subtle);
+      gap: var(--space-2);
+      padding: var(--space-3) var(--space-4);
+      background-color: var(--bg-table-row-zebra);
+      border-bottom: 1px solid var(--border-subtle);
     }
 
     .detail-header-info {
@@ -289,13 +352,14 @@ import { TrendTableSkeletonComponent } from '../trend-table-skeleton/trend-table
 
     .detail-subcaption {
       font-size: 0.75rem;
-      color: var(--text-muted);
+      color: var(--text-secondary);
     }
 
     .detail-sort-controls {
       display: flex;
       align-items: center;
-      gap: var(--space-2, 8px);
+      flex-wrap: wrap;
+      gap: var(--space-2);
     }
 
     .sort-caption {
@@ -309,49 +373,66 @@ import { TrendTableSkeletonComponent } from '../trend-table-skeleton/trend-table
       border: 1px solid var(--border-default);
       border-radius: var(--radius-xs);
       background-color: var(--bg-surface);
-      padding: 1px;
+      padding: 2px;
+      gap: 2px;
     }
 
     .sort-pill {
-      height: 28px;
-      padding: 0 var(--space-2, 8px);
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      min-height: 36px;
+      padding: 0 var(--space-3);
       background: transparent;
       border: none;
+      font-family: var(--font-family-body);
       font-size: 0.75rem;
       font-weight: 600;
       color: var(--text-secondary);
       cursor: pointer;
       border-radius: var(--radius-xs);
 
+      &:hover:not(.active) {
+        background-color: var(--bg-subtle);
+        color: var(--text-primary);
+      }
+
       &.active {
         background-color: var(--brand-primary);
         color: var(--text-on-brand);
       }
-    }
 
-    .detail-table {
-      width: 100%;
-      border-collapse: collapse;
-
-      th {
-        font-family: var(--font-family-body);
-        font-size: 0.6875rem;
-        font-weight: 700;
-        color: var(--text-muted);
-        padding: 4px 12px;
-        border-bottom: 1px solid var(--border-subtle);
+      &:focus-visible {
+        outline: 2px solid var(--border-focus);
+        outline-offset: 1px;
       }
     }
 
-    .detail-pager-wrapper {
-      padding-top: var(--space-2, 8px);
-      border-top: 1px solid var(--border-subtle);
+    .sort-dir-glyph {
+      font-size: 0.75rem;
+      line-height: 1;
+    }
+
+    .detail-child-row {
+      background-color: var(--bg-table-row-zebra);
+    }
+
+    .detail-skeleton-row {
+      background-color: var(--bg-table-row-zebra);
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .child-skeleton-entity {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding-left: var(--space-4);
     }
 
     .detail-empty {
-      padding: var(--space-4, 16px);
+      padding: var(--space-3);
       text-align: center;
-      color: var(--text-muted);
+      color: var(--text-secondary);
       font-size: 0.875rem;
     }
   `],
@@ -371,22 +452,58 @@ export class TrendSupplierGroupComponent {
   readonly pageChange = output<number>();
   readonly retry = output<void>();
 
-  private readonly expandedChildSkus = new Set<number>();
+  private readonly expandBtn = viewChild<ElementRef<HTMLButtonElement>>('expandBtn');
+  private readonly expandedChildSkus = signal<Set<number>>(new Set());
+  readonly skeletonRows = [0, 1, 2];
+
+  readonly detailRegionId = computed(() =>
+    `supplier-detail-${this.supplier().fornecedorChave.replace(/[^a-zA-Z0-9_-]/g, '-')}`
+  );
+
+  readonly supplierValuesJanelas = computed(() => {
+    const fromMeta = this.detailState()?.data?.meta?.fornecedor?.janelas;
+    return fromMeta && fromMeta.length > 0 ? fromMeta : this.supplier().janelas;
+  });
 
   readonly expandAriaLabel = computed(() => {
     const isExp = this.isExpanded();
     return `${isExp ? 'Recolher' : 'Expandir'} produtos do fornecedor ${this.supplier().fornecedor}`;
   });
 
+  childValuesId(sku: number): string {
+    return `${this.detailRegionId()}-child-${sku}`;
+  }
+
   isChildExpanded(sku: number): boolean {
-    return this.expandedChildSkus.has(sku);
+    return this.expandedChildSkus().has(sku);
   }
 
   toggleChild(sku: number): void {
-    if (this.expandedChildSkus.has(sku)) {
-      this.expandedChildSkus.delete(sku);
-    } else {
-      this.expandedChildSkus.add(sku);
+    this.expandedChildSkus.update((curr) => {
+      const next = new Set(curr);
+      if (next.has(sku)) {
+        next.delete(sku);
+      } else {
+        next.add(sku);
+      }
+      return next;
+    });
+  }
+
+  onCollapseChild(event: Event, sku: number): void {
+    event.stopPropagation();
+    this.expandedChildSkus.update((curr) => {
+      const next = new Set(curr);
+      next.delete(sku);
+      return next;
+    });
+  }
+
+  onCollapseKey(event: Event): void {
+    event.stopPropagation();
+    if (this.isExpanded()) {
+      this.toggle.emit();
+      this.expandBtn()?.nativeElement.focus();
     }
   }
 }

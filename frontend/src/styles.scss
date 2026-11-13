@@ -25,6 +25,7 @@
   --bg-table-header: #F0ECE1;
   --bg-table-row-hover: #F7F5EE;
   --bg-table-row-zebra: #FAF8F4;
+  --bg-table-col-sorted: #F6F8F6;
   --bg-overlay: rgba(24, 28, 24, 0.55);
 
   /* Aliases de superfície */
@@ -100,6 +101,8 @@
   --feedback-info-border: #123456;
   --feedback-neutral-bg: #3B423C;
   --feedback-neutral-border: #282D29;
+  --feedback-warning-subtle: #FDF3E7;
+  --feedback-critical-subtle: #FDE8E8;
   --feedback-code-bg: rgba(255, 255, 255, 0.16);
   --feedback-badge-border: rgba(255, 255, 255, 0.38);
 
@@ -273,6 +276,12 @@ button, input, select, textarea {
   background-color: var(--bg-muted);
   border-radius: var(--radius-xs);
   animation: pulseSolid 1.5s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-box, .skeleton-line {
+    animation: none;
+  }
 }
 
 @media (max-width: 768px) {

@@ -3,12 +3,31 @@
  */
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute } from '@angular/router';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { signal } from '@angular/core';
 import { SalesTrendPageComponent } from './sales-trend-page.component';
 import { SalesTrendService } from '../../services/sales-trend.service';
 import { ViewportService } from '../../services/viewport.service';
-import { ProductTrendResponse } from '../../models/sales-trend.model';
+import {
+  ProductTrendResponse,
+  SalesTrendCacheResponse,
+  TrendCell,
+} from '../../models/sales-trend.model';
+
+function createZeroCell(meses: 1 | 3 | 6 | 12): TrendCell {
+  return {
+    meses,
+    atual: 0,
+    anterior: 0,
+    variacaoPct: null,
+    status: 'SEM_MOVIMENTO',
+    baseParcial: false,
+    baseBaixa: false,
+    devolucaoLiquida: false,
+    atualPorDia: null,
+    anteriorPorDia: null,
+  };
+}
 
 describe('SalesTrendPageComponent (F-12)', () => {
   let fixture: ComponentFixture<SalesTrendPageComponent>;
@@ -58,7 +77,15 @@ describe('SalesTrendPageComponent (F-12)', () => {
           baseParcial: false,
         },
       ],
-      parametros: {} as any,
+      parametros: {
+        limiteBaseBaixaQuantidade: 10,
+        limiteBaseBaixaFaturamento: 500,
+        coberturaMinimaAnterior: 0.5,
+        buscaMinCaracteres: 2,
+        buscaMinCaracteresNumerica: 1,
+        buscaMaxCaracteres: 60,
+        ttlCacheHoras: 6,
+      },
       page: 1,
       limit: 50,
       offset: 0,
@@ -68,8 +95,22 @@ describe('SalesTrendPageComponent (F-12)', () => {
       visao: 'all',
       ordenacao: { janela: 1, sentido: 'desc' },
       totaisPorVisao: { todos: 1, maioresAltas: 1, maioresQuedas: 0, novos: 0 },
-      total: { qtdProdutos: 1, janelas: [] as any },
+      total: {
+        qtdProdutos: 1,
+        janelas: [createZeroCell(1), createZeroCell(3), createZeroCell(6), createZeroCell(12)],
+      },
     },
+  };
+
+  const mockHealthResponse: SalesTrendCacheResponse = {
+    estado: 'QUENTE',
+    dataReferencia: '2026-11-09',
+    carregadoEm: '2026-11-10T06:00:00Z',
+    idadeHoras: 4,
+    expirado: false,
+    duracaoUltimaCargaMs: 1200,
+    carregando: false,
+    contagens: null,
   };
 
   beforeEach(async () => {
@@ -78,8 +119,8 @@ describe('SalesTrendPageComponent (F-12)', () => {
       'getSupplierProducts',
       'getHealth',
     ]);
-    serviceMock.getTrend.and.returnValue(of(mockResponse as any));
-    serviceMock.getHealth.and.returnValue(of({ estado: 'QUENTE' } as any));
+    serviceMock.getTrend.and.returnValue(of(mockResponse));
+    serviceMock.getHealth.and.returnValue(of(mockHealthResponse));
     isCompactSignal.set(false);
 
     await TestBed.configureTestingModule({
@@ -101,14 +142,68 @@ describe('SalesTrendPageComponent (F-12)', () => {
     fixture.detectChanges();
   });
 
-  it('inicializa e renderiza o título da página e nota de catálogo ativo', () => {
-    const el = fixture.nativeElement;
-    expect(el.querySelector('.hero-title').textContent).toContain('Tendência de Vendas');
-    expect(el.querySelector('.hero-scope-note').textContent).toContain('produtos ativos do catálogo atual');
+  it('inicializa sem landmark main aninhado e renderiza título e nota de catálogo ativo', () => {
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('main')).toBeNull();
+    expect(el.querySelector('section.trend-page')).not.toBeNull();
+    expect(el.querySelector('.hero-title')?.textContent).toContain('Tendência de Vendas');
+    expect(el.querySelector('.hero-scope-note')?.textContent).toContain('produtos ativos do catálogo atual');
   });
 
-  it('exibe a tabela quando há dados carregados com sucesso', () => {
-    const el = fixture.nativeElement;
+  it('exibe a tabela no desktop e cartões no viewport compacto', () => {
+    const el = fixture.nativeElement as HTMLElement;
     expect(el.querySelector('app-trend-table')).not.toBeNull();
+    expect(el.querySelector('app-trend-card-list')).toBeNull();
+
+    isCompactSignal.set(true);
+    fixture.detectChanges();
+    expect(el.querySelector('app-trend-table')).toBeNull();
+    expect(el.querySelector('app-trend-card-list')).not.toBeNull();
+  });
+
+  it('oculta tabela obsoleta e oferece recuperação de mês padrão em erro TND-002', () => {
+    serviceMock.getTrend.and.returnValue(
+      throwError(() => ({
+        error: {
+          error: { code: 'TND-002', message: 'Mês-base inválido' },
+        },
+      }))
+    );
+
+    component.store.setBaseMonth('2020-01');
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('app-trend-table')).toBeNull();
+    expect(el.querySelector('app-trend-error-banner')).not.toBeNull();
+    expect(el.querySelector('.primary-recovery-btn')?.textContent?.trim()).toBe('Voltar para mês padrão');
+  });
+
+  it('adapta estado vazio quando offset ultrapassa totalItems vs sem movimentação', () => {
+    const pastEndResponse: ProductTrendResponse = {
+      ...mockResponse,
+      data: [],
+      meta: { ...mockResponse.meta, totalItems: 25, totalPages: 1, page: 3, offset: 100 },
+    };
+    serviceMock.getTrend.and.returnValue(of(pastEndResponse));
+
+    component.store.setPage(3);
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('.empty-title')?.textContent?.trim()).toBe('Página sem resultados');
+    expect(el.querySelector('.empty-action-btn')?.textContent?.trim()).toBe('Voltar para a primeira página');
+
+    const emptyNoFiltersResponse: ProductTrendResponse = {
+      ...mockResponse,
+      data: [],
+      meta: { ...mockResponse.meta, totalItems: 0, totalPages: 0, page: 1, offset: 0 },
+    };
+    serviceMock.getTrend.and.returnValue(of(emptyNoFiltersResponse));
+
+    component.store.setPage(1);
+    fixture.detectChanges();
+    expect(el.querySelector('.empty-title')?.textContent?.trim()).toBe('Sem movimentação no período');
+    expect(el.querySelector('.empty-action-btn')).toBeNull();
   });
 });

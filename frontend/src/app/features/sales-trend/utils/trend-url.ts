@@ -19,6 +19,12 @@ const VALID_WINDOWS: readonly TrendSortWindow[] = [1, 3, 6, 12];
 const VALID_SORT_DIRS: readonly TrendSortDir[] = ['asc', 'desc'];
 const VALID_VIEWS: readonly TrendView[] = ['all', 'rising', 'falling', 'new'];
 const VALID_MODES: readonly TrendComparisonMode[] = ['point', 'average'];
+const MAX_SEARCH_QUERY_LENGTH = 60;
+const MAX_MIN_VOLUME = 1_000_000_000;
+
+function readStrictString(value: unknown): string | null {
+  return typeof value === 'string' ? value.trim() : null;
+}
 
 /**
  * Converte o estado da consulta para parâmetros de URL limpos (omite padrões).
@@ -69,56 +75,71 @@ export function stateToQueryParams(state: TrendQueryParams): Params {
 export function queryParamsToState(rawParams: Params): TrendQueryParams {
   const result: TrendQueryParams = {};
 
-  if (typeof rawParams['baseMonth'] === 'string' && /^\d{4}-\d{2}$/.test(rawParams['baseMonth'])) {
-    result.baseMonth = rawParams['baseMonth'];
+  const baseMonth = readStrictString(rawParams['baseMonth']);
+  if (baseMonth && /^\d{4}-(0[1-9]|1[0-2])$/.test(baseMonth)) {
+    result.baseMonth = baseMonth;
   }
 
-  if (typeof rawParams['metric'] === 'string' && VALID_METRICS.includes(rawParams['metric'] as TrendMetric)) {
-    result.metric = rawParams['metric'] as TrendMetric;
+  const metric = readStrictString(rawParams['metric']);
+  if (metric && VALID_METRICS.includes(metric as TrendMetric)) {
+    result.metric = metric as TrendMetric;
   }
 
-  if (typeof rawParams['groupBy'] === 'string' && VALID_GROUP_BY.includes(rawParams['groupBy'] as TrendGroupBy)) {
-    result.groupBy = rawParams['groupBy'] as TrendGroupBy;
-  }
-  if (typeof rawParams['comparisonMode'] === 'string' && VALID_MODES.includes(rawParams['comparisonMode'] as TrendComparisonMode)) {
-    result.comparisonMode = rawParams['comparisonMode'] as TrendComparisonMode;
+  const groupBy = readStrictString(rawParams['groupBy']);
+  if (groupBy && VALID_GROUP_BY.includes(groupBy as TrendGroupBy)) {
+    result.groupBy = groupBy as TrendGroupBy;
   }
 
-  if (rawParams['sortWindow']) {
-    const w = parseInt(rawParams['sortWindow'], 10);
+  const comparisonMode = readStrictString(rawParams['comparisonMode']);
+  if (comparisonMode && VALID_MODES.includes(comparisonMode as TrendComparisonMode)) {
+    result.comparisonMode = comparisonMode as TrendComparisonMode;
+  }
+
+  const sortWindowRaw = readStrictString(rawParams['sortWindow']);
+  if (sortWindowRaw && /^\d+$/.test(sortWindowRaw)) {
+    const w = parseInt(sortWindowRaw, 10);
     if (VALID_WINDOWS.includes(w as TrendSortWindow)) {
       result.sortWindow = w as TrendSortWindow;
     }
   }
 
-  if (typeof rawParams['sortDir'] === 'string' && VALID_SORT_DIRS.includes(rawParams['sortDir'] as TrendSortDir)) {
-    result.sortDir = rawParams['sortDir'] as TrendSortDir;
+  const sortDir = readStrictString(rawParams['sortDir']);
+  if (sortDir && VALID_SORT_DIRS.includes(sortDir as TrendSortDir)) {
+    result.sortDir = sortDir as TrendSortDir;
   }
 
-  if (typeof rawParams['view'] === 'string' && VALID_VIEWS.includes(rawParams['view'] as TrendView)) {
-    result.view = rawParams['view'] as TrendView;
+  const view = readStrictString(rawParams['view']);
+  if (view && VALID_VIEWS.includes(view as TrendView)) {
+    result.view = view as TrendView;
   }
 
-  if (typeof rawParams['q'] === 'string' && rawParams['q'].trim().length > 0) {
-    result.q = rawParams['q'].trim();
+  const rawQ = readStrictString(rawParams['q']);
+  if (rawQ) {
+    const normalizedQ = rawQ.replace(/\s+/g, ' ').slice(0, MAX_SEARCH_QUERY_LENGTH).trim();
+    if (normalizedQ.length > 0) {
+      result.q = normalizedQ;
+    }
   }
 
-  if (rawParams['minVolume'] !== undefined) {
-    const v = parseFloat(rawParams['minVolume']);
-    if (Number.isFinite(v) && v >= 0) {
+  const minVolumeRaw = readStrictString(rawParams['minVolume']);
+  if (minVolumeRaw && /^\d+(\.\d+)?$/.test(minVolumeRaw)) {
+    const v = parseFloat(minVolumeRaw);
+    if (Number.isFinite(v) && v >= 0 && v <= MAX_MIN_VOLUME) {
       result.minVolume = v;
     }
   }
 
-  if (rawParams['limit'] !== undefined) {
-    const l = parseInt(rawParams['limit'], 10);
+  const limitRaw = readStrictString(rawParams['limit']);
+  if (limitRaw && /^\d+$/.test(limitRaw)) {
+    const l = parseInt(limitRaw, 10);
     if (Number.isInteger(l) && l >= 1 && l <= 200) {
       result.limit = l;
     }
   }
 
-  if (rawParams['offset'] !== undefined) {
-    const o = parseInt(rawParams['offset'], 10);
+  const offsetRaw = readStrictString(rawParams['offset']);
+  if (offsetRaw && /^\d+$/.test(offsetRaw)) {
+    const o = parseInt(offsetRaw, 10);
     if (Number.isInteger(o) && o >= 0) {
       result.offset = o;
     }

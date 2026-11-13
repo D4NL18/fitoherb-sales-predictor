@@ -1,15 +1,16 @@
 /**
  * Aviso contextual em linha para notificações não-bloqueantes (Design Plan §4.2).
  */
-import { Component, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 
 @Component({
   selector: 'app-inline-notice',
   standalone: true,
   imports: [CommonModule],
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div class="inline-notice" [class.warning-tone]="tone() === 'warning'" role="note">
+    <div class="inline-notice" [class.warning-tone]="tone() === 'warning'" role="status">
       <div class="notice-icon" aria-hidden="true">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="12" r="10"></circle>
@@ -42,18 +43,20 @@ import { CommonModule } from '@angular/common';
     .inline-notice {
       display: flex;
       align-items: center;
-      gap: var(--space-3, 12px);
-      padding: var(--space-3, 12px) var(--space-4, 16px);
+      flex-wrap: wrap;
+      gap: var(--space-3);
+      padding: var(--space-3) var(--space-4);
       background-color: var(--bg-surface);
       border: 1px solid var(--border-default);
-      border-left: 4px solid var(--feedback-info-bg, #1B4B7A);
+      border-left: 4px solid var(--feedback-info-bg);
       border-radius: var(--radius-xs);
       font-size: 0.875rem;
       color: var(--text-primary);
     }
 
     .inline-notice.warning-tone {
-      border-left-color: var(--feedback-warning-bg, #7A4607);
+      border-left-color: var(--feedback-warning-bg);
+      background-color: var(--feedback-warning-subtle);
     }
 
     .notice-icon {
@@ -62,10 +65,11 @@ import { CommonModule } from '@angular/common';
     }
 
     .notice-body {
-      flex: 1;
+      flex: 1 1 220px;
       display: flex;
       flex-direction: column;
       gap: 2px;
+      min-width: 0;
     }
 
     .notice-title {
@@ -73,9 +77,13 @@ import { CommonModule } from '@angular/common';
     }
 
     .notice-action-btn {
+      display: inline-flex;
+      align-items: center;
+      min-height: 36px;
       background: none;
-      border: none;
-      padding: 0;
+      border: 1px solid transparent;
+      border-radius: var(--radius-xs);
+      padding: 0 var(--space-2);
       color: var(--brand-primary);
       font-weight: 600;
       text-decoration: underline;
@@ -84,20 +92,38 @@ import { CommonModule } from '@angular/common';
 
       &:hover {
         color: var(--brand-primary-hover);
+        background-color: var(--brand-primary-subtle);
+      }
+
+      &:focus-visible {
+        outline: 2px solid var(--border-focus);
+        outline-offset: 2px;
       }
     }
 
     .notice-dismiss-btn {
-      background: none;
-      border: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 36px;
+      min-height: 36px;
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: var(--radius-xs);
       font-size: 1.25rem;
       line-height: 1;
-      color: var(--text-muted);
+      color: var(--text-secondary);
       cursor: pointer;
       padding: 0 var(--space-1);
 
       &:hover {
+        background-color: var(--bg-subtle);
         color: var(--text-primary);
+      }
+
+      &:focus-visible {
+        outline: 2px solid var(--border-focus);
+        outline-offset: 2px;
       }
     }
   `],

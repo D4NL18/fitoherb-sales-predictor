@@ -9,8 +9,8 @@ import {
   TrendParameters,
   TrendWindowMeta,
 } from '../models/sales-trend.model';
-import { formatCurrency, formatDecimal } from './pt-br-format';
-import { formatPercentChange } from './trend-format';
+import { formatCurrency, formatDecimal, roundHalfUp } from './pt-br-format';
+import { formatPercentChange, formatValueByMetric } from './trend-format';
 
 export interface BadgeModel {
   text: string;
@@ -50,7 +50,7 @@ export function getCellDisplayModel(
 
   let direction: 'up' | 'down' | 'flat' | 'none' = 'none';
   if (isNumeric) {
-    const val = cell.variacaoPct ?? 0;
+    const val = roundHalfUp(cell.variacaoPct ?? 0, 1);
     if (val > 0) {
       direction = 'up';
     } else if (val < 0) {
@@ -71,10 +71,8 @@ export function getCellDisplayModel(
     });
   }
 
-  const currentValueText =
-    metric === 'revenue' ? formatCurrency(cell.atual) : `${formatDecimal(cell.atual, 0)} un`;
-  const previousValueText =
-    metric === 'revenue' ? formatCurrency(cell.anterior) : `${formatDecimal(cell.anterior, 0)} un`;
+  const currentValueText = formatValueByMetric(cell.atual, metric);
+  const previousValueText = formatValueByMetric(cell.anterior, metric);
 
   let currentDailyText: string | null = null;
   let previousDailyText: string | null = null;

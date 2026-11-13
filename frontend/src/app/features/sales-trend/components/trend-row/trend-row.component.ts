@@ -2,7 +2,7 @@
  * Linha de produto da tabela (usada tanto no universo geral quanto nos filhos de fornecedor).
  * Suporta expansão de valores detalhados e acessibilidade ARIA (Design Plan §5.4).
  */
-import { Component, computed, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
   TrendDetailRow,
@@ -12,12 +12,12 @@ import {
   TrendSortWindow,
 } from '../../models/sales-trend.model';
 import { TrendCellComponent } from '../trend-cell/trend-cell.component';
-import { TrendRowValuesComponent } from '../trend-row-values/trend-row-values.component';
 
 @Component({
   selector: 'tr[appTrendRow]',
   standalone: true,
-  imports: [CommonModule, TrendCellComponent, TrendRowValuesComponent],
+  imports: [CommonModule, TrendCellComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <!-- Coluna 1: Botão de expandir detalhes -->
     <td class="col-expand">
@@ -27,13 +27,14 @@ import { TrendRowValuesComponent } from '../trend-row-values/trend-row-values.co
         [class.is-expanded]="isExpanded()"
         (click)="toggle.emit()"
         [attr.aria-expanded]="isExpanded()"
+        [attr.aria-controls]="ariaControlsId()"
         [attr.aria-label]="expandAriaLabel()"
       >
         <span class="chevron-icon" aria-hidden="true">›</span>
       </button>
     </td>
 
-    <!-- Coluna 2: Produto / Fornecedor -->
+    <!-- Coluna 2: Produto -->
     <td class="col-entity">
       <div class="entity-content" [class.child-indent]="level() === 'child'">
         <div class="entity-main">
@@ -60,6 +61,7 @@ import { TrendRowValuesComponent } from '../trend-row-values/trend-row-values.co
   `,
   styles: [`
     :host {
+      border-bottom: 1px solid var(--border-subtle);
       transition: background-color var(--transition-fast);
 
       &:hover {
@@ -68,14 +70,15 @@ import { TrendRowValuesComponent } from '../trend-row-values/trend-row-values.co
     }
 
     .col-expand {
-      width: 40px;
+      width: 44px;
       text-align: center;
-      padding: var(--space-2, 8px) 0;
+      padding: var(--space-1) 0;
+      vertical-align: middle;
     }
 
     .expand-chevron-btn {
-      width: 36px;
-      height: 36px;
+      width: 40px;
+      height: 40px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -85,7 +88,7 @@ import { TrendRowValuesComponent } from '../trend-row-values/trend-row-values.co
       color: var(--text-secondary);
       font-size: 1.25rem;
       border-radius: var(--radius-xs);
-      transition: transform var(--transition-fast);
+      transition: transform var(--transition-fast), background-color var(--transition-fast);
 
       &.is-expanded {
         transform: rotate(90deg);
@@ -95,55 +98,69 @@ import { TrendRowValuesComponent } from '../trend-row-values/trend-row-values.co
       &:hover {
         background-color: var(--bg-subtle);
       }
+
+      &:focus-visible {
+        outline: 2px solid var(--border-focus);
+        outline-offset: 2px;
+      }
     }
 
     .col-entity {
-      padding: var(--space-2, 8px) var(--space-3, 12px);
+      padding: var(--space-2) var(--space-3);
       vertical-align: middle;
+      min-width: 0;
     }
 
     .entity-content {
       display: flex;
       flex-direction: column;
       gap: 2px;
+      min-width: 0;
     }
 
     .entity-content.child-indent {
-      padding-left: var(--space-4, 16px);
+      margin-left: var(--space-3);
+      padding-left: var(--space-3);
+      border-left: 2px solid var(--border-default);
     }
 
     .entity-main {
       display: flex;
       align-items: baseline;
-      gap: var(--space-2, 8px);
+      flex-wrap: wrap;
+      gap: var(--space-2);
+      min-width: 0;
     }
 
     .product-sku {
       font-family: var(--font-family-mono);
       font-size: 0.75rem;
       font-weight: 600;
-      color: var(--text-muted);
+      color: var(--text-secondary);
+      flex-shrink: 0;
     }
 
     .product-desc {
       font-size: 0.875rem;
       font-weight: 600;
       color: var(--text-primary);
+      overflow-wrap: anywhere;
     }
 
     .product-supplier {
       font-size: 0.75rem;
       color: var(--text-secondary);
+      overflow-wrap: anywhere;
     }
 
     .col-window {
-      padding: var(--space-2, 8px) var(--space-3, 12px);
+      padding: var(--space-2) var(--space-3);
       vertical-align: middle;
       text-align: right;
     }
 
     .col-window.sorted-col {
-      background-color: rgba(29, 69, 40, 0.04);
+      background-color: var(--bg-table-col-sorted);
     }
   `],
 })
@@ -154,6 +171,7 @@ export class TrendRowComponent {
   readonly params = input<TrendParameters | undefined>(undefined);
   readonly level = input<'parent' | 'child'>('parent');
   readonly isExpanded = input<boolean>(false);
+  readonly ariaControlsId = input<string | null>(null);
 
   readonly toggle = output<void>();
 

@@ -75,4 +75,35 @@ describe('trend-url utils (T-16)', () => {
     expect(state.offset).toBe(20);
     expect((state as Record<string, unknown>)['activeOnly']).toBeUndefined();
   });
+
+  it('descarta parâmetros malformados, arrays e limites fora do intervalo', () => {
+    const state = queryParamsToState({
+      baseMonth: '2026-13',
+      metric: 'invalid',
+      groupBy: 'category',
+      comparisonMode: 'monthly',
+      sortWindow: '99',
+      sortDir: 'sideways',
+      view: 'top10',
+      q: ['camomila'],
+      minVolume: '-50',
+      limit: '999',
+      offset: '-5',
+    });
+
+    expect(state).toEqual({});
+  });
+
+  it('normaliza espaços internos e limita busca longa em 60 caracteres', () => {
+    const state = queryParamsToState({
+      q: `   cha    verde   ${'x'.repeat(80)}`,
+      sortWindow: '12',
+      minVolume: '0',
+    });
+
+    expect(state.q?.length).toBeLessThanOrEqual(60);
+    expect(state.q?.startsWith('cha verde ')).toBeTrue();
+    expect(state.sortWindow).toBe(12);
+    expect(state.minVolume).toBe(0);
+  });
 });

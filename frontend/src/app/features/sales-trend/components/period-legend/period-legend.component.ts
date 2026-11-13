@@ -1,7 +1,7 @@
 /**
  * Legenda explicativa dos períodos comparados em cada janela (Design Plan §4.2).
  */
-import { Component, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { TrendComparisonMode, TrendMetric, TrendWindowMeta } from '../../models/sales-trend.model';
 import { formatWindowMonthSpan } from '../../utils/trend-format';
@@ -11,6 +11,7 @@ import { formatIsoDate } from '../../utils/pt-br-format';
   selector: 'app-period-legend',
   standalone: true,
   imports: [CommonModule],
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="period-legend-panel">
       <h4 class="legend-title">Períodos comparados</h4>
@@ -41,7 +42,7 @@ import { formatIsoDate } from '../../utils/pt-br-format';
   `,
   styles: [`
     .period-legend-panel {
-      padding: var(--space-3, 12px) var(--space-4, 16px);
+      padding: var(--space-3) var(--space-4);
       background-color: var(--bg-surface);
       border: 1px solid var(--border-subtle);
       border-radius: var(--radius-sm);
@@ -54,20 +55,22 @@ import { formatIsoDate } from '../../utils/pt-br-format';
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.04em;
-      margin-bottom: var(--space-2, 8px);
-      color: var(--text-muted);
+      margin: 0 0 var(--space-2) 0;
+      color: var(--text-secondary);
     }
 
     .legend-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: var(--space-2, 8px) var(--space-4, 16px);
+      grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
+      gap: var(--space-2) var(--space-4);
     }
 
     .legend-item {
       display: flex;
       align-items: center;
+      flex-wrap: wrap;
       gap: 6px;
+      min-width: 0;
       font-family: var(--font-family-mono);
       font-size: 0.75rem;
     }
@@ -78,17 +81,18 @@ import { formatIsoDate } from '../../utils/pt-br-format';
     }
 
     .vs-text {
-      color: var(--text-muted);
+      color: var(--text-secondary);
       margin: 0 2px;
     }
 
     .legend-badge {
       font-size: 0.6875rem;
-      padding: 1px 4px;
+      padding: 1px 6px;
       background-color: var(--brand-primary-subtle);
       color: var(--brand-primary);
       border-radius: var(--radius-xs);
       font-family: var(--font-family-body);
+      font-weight: 600;
     }
 
     .badge-neutral {
@@ -97,9 +101,9 @@ import { formatIsoDate } from '../../utils/pt-br-format';
     }
 
     .legend-footer {
-      margin-top: var(--space-2, 8px);
+      margin: var(--space-2) 0 0 0;
       font-size: 0.75rem;
-      color: var(--text-muted);
+      color: var(--text-secondary);
     }
   `],
 })

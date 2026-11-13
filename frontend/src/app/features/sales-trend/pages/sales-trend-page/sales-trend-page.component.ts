@@ -2,13 +2,19 @@
  * Página principal /tendencia-vendas (P-086, Design Plan §4 e §5).
  * Único componente inteligente da feature; compõe store, toolbar, tabela/cartões, skeleton, vazios e guia de leitura.
  */
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
+import {
+  TrendSortBy,
+  TrendSortDir,
+  TrendSortWindow,
+} from '../../models/sales-trend.model';
 import { SalesTrendStore } from '../../services/sales-trend.store';
 import { ViewportService } from '../../services/viewport.service';
 import { queryParamsToState } from '../../utils/trend-url';
 import { formatIsoDate } from '../../utils/pt-br-format';
+import { isAllSemBase } from '../../utils/trend-view';
 import { TrendToolbarComponent } from '../../components/trend-toolbar/trend-toolbar.component';
 import { TrendErrorBannerComponent } from '../../components/trend-error-banner/trend-error-banner.component';
 import { TrendEmptyStateComponent } from '../../components/trend-empty-state/trend-empty-state.component';
@@ -38,8 +44,9 @@ import { getDisplayErrorMessage } from '../../utils/trend-error';
     InlineNoticeComponent,
   ],
   providers: [SalesTrendStore],
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <main class="trend-page" role="main">
+    <section class="trend-page" aria-label="Tendência de Vendas">
       <div class="trend-container">
         <!-- Hero da Feature -->
         <header class="feature-hero">
@@ -88,10 +95,39 @@ import { getDisplayErrorMessage } from '../../utils/trend-error';
           />
         }
 
+        <!-- Aviso contextual de ajuste automático de filtros ou atualização -->
+        @if (store.noticeMessage()) {
+          <app-inline-notice
+            tone="info"
+            [text]="store.noticeMessage()!"
+            [dismissible]="true"
+            (dismiss)="store.dismissNotice()"
+          />
+        }
+
+        <!-- Aviso de mês-base parcial em curso -->
+        @if (store.status() !== 'error' && store.currentMeta?.mesBaseParcial && store.currentMeta?.ultimoDiaCoberto) {
+          <app-inline-notice
+            tone="info"
+            [text]="'Mês-base em andamento: as variações utilizam média diária acumulada até ' + formatIsoDate(store.currentMeta!.ultimoDiaCoberto) + ' comparada a período equivalente.'"
+          />
+        }
+
+        <!-- Aviso quando nenhuma janela atinge 50% de base histórica -->
+        @if (store.status() === 'success' && allSemBase()) {
+          <app-inline-notice
+            tone="warning"
+            title="Base comparativa insuficiente"
+            text="Nenhuma janela atingiu cobertura histórica mínima de 50% no período anterior para o mês-base selecionado."
+          />
+        }
+
         <!-- Alerta de Erro de Comunicação -->
         @if (store.status() === 'error') {
           <app-trend-error-banner
             [message]="errorMessage()"
+            [secondaryActionLabel]="canResetMonthOnError() ? 'Voltar para mês padrão' : null"
+            (secondaryAction)="store.resetToDefaultMonth()"
             (retry)="store.retry()"
           />
         }
@@ -104,18 +140,32 @@ import { getDisplayErrorMessage } from '../../utils/trend-error';
           />
         }
 
-        <!-- Estado Vazio -->
+        <!-- Estado Vazio Contextual -->
         @if (store.status() === 'empty') {
           <app-trend-empty-state
-            title="Nenhum item encontrado"
-            description="Não encontramos nenhum produto ou fornecedor ativo com movimentação para os filtros selecionados."
-            actionLabel="Limpar filtros"
-            (action)="onClearFilters()"
+            [title]="emptyStateTitle()"
+            [description]="emptyStateDescription()"
+            [actionLabel]="emptyStateActionLabel()"
+            (action)="onEmptyAction()"
+          />
+        }
+
+        <!-- Paginação Superior -->
+        @if (canDisplayResults() && (store.currentMeta?.totalPages || 0) > 1) {
+          <app-trend-pager
+            ariaLabel="Paginação superior"
+            [page]="store.currentMeta!.page"
+            [totalPages]="store.currentMeta!.totalPages"
+            [totalItems]="store.currentMeta!.totalItems"
+            [offset]="store.currentMeta!.offset"
+            [limit]="store.currentMeta!.limit"
+            [disabled]="store.status() === 'loading'"
+            (pageChange)="store.setPage($event)"
           />
         }
 
         <!-- Tabela Ledger (Desktop/Tablet >= 768px) -->
-        @if (hasData() && !viewport.isCompact()) {
+        @if (canDisplayResults() && !viewport.isCompact()) {
           <app-trend-table
             [columns]="columns()"
             [rows]="tableRows()"
@@ -128,6 +178,7 @@ import { getDisplayErrorMessage } from '../../utils/trend-error';
             [expandedKeys]="expandedKeysSet()"
             [details]="store.expandedSuppliers()"
             [totalRow]="store.currentMeta?.total || null"
+            [loading]="store.status() === 'loading'"
             (sort)="store.setSort($event)"
             (toggleRow)="onToggleRow($event)"
             (detailSortChange)="onDetailSort($event)"
@@ -137,23 +188,31 @@ import { getDisplayErrorMessage } from '../../utils/trend-error';
         }
 
         <!-- Lista em Cartões (Mobile < 768px) -->
-        @if (hasData() && viewport.isCompact()) {
+        @if (canDisplayResults() && viewport.isCompact()) {
           <app-trend-card-list
             [items]="tableRows()"
+            [groupBy]="store.query().groupBy || 'product'"
             [metric]="store.query().metric || 'revenue'"
             [sortWindow]="store.query().sortWindow || 3"
             [sortDir]="store.query().sortDir || 'desc'"
             [windowMetas]="columns()"
             [params]="store.currentMeta?.parametros"
             [expandedKeys]="expandedKeysSet()"
+            [details]="store.expandedSuppliers()"
+            [totalRow]="store.currentMeta?.total || null"
+            [loading]="store.status() === 'loading'"
             (sortChange)="onMobileSort($event)"
             (toggleRow)="onToggleRow($event)"
+            (detailSortChange)="onDetailSort($event)"
+            (detailPageChange)="onDetailPage($event)"
+            (detailRetry)="store.loadSupplierProducts($event)"
           />
         }
 
-        <!-- Paginação Principal -->
-        @if (hasData() && (store.currentMeta?.totalPages || 0) > 1) {
+        <!-- Paginação Inferior -->
+        @if (canDisplayResults() && (store.currentMeta?.totalPages || 0) > 1) {
           <app-trend-pager
+            ariaLabel="Paginação inferior"
             [page]="store.currentMeta!.page"
             [totalPages]="store.currentMeta!.totalPages"
             [totalItems]="store.currentMeta!.totalItems"
@@ -165,7 +224,7 @@ import { getDisplayErrorMessage } from '../../utils/trend-error';
         }
 
         <!-- Legenda de Períodos e Guia de Leitura -->
-        @if (hasData()) {
+        @if (canDisplayResults()) {
           <app-period-legend
             [windows]="columns()"
             [metric]="store.query().metric || 'revenue'"
@@ -181,11 +240,11 @@ import { getDisplayErrorMessage } from '../../utils/trend-error';
           {{ liveRegionText() }}
         </div>
       </div>
-    </main>
+    </section>
   `,
   styles: [`
     .trend-page {
-      padding: var(--space-5, 20px) var(--space-4, 16px);
+      padding: var(--space-5) var(--space-4);
       background-color: var(--bg-canvas);
       min-height: calc(100vh - var(--navbar-height, 64px));
     }
@@ -195,7 +254,7 @@ import { getDisplayErrorMessage } from '../../utils/trend-error';
       margin: 0 auto;
       display: flex;
       flex-direction: column;
-      gap: var(--space-5, 20px);
+      gap: var(--space-5);
     }
 
     .feature-hero {
@@ -203,8 +262,8 @@ import { getDisplayErrorMessage } from '../../utils/trend-error';
       justify-content: space-between;
       align-items: flex-start;
       flex-wrap: wrap;
-      gap: var(--space-4, 16px);
-      padding: var(--space-5, 20px) var(--space-6, 24px);
+      gap: var(--space-4);
+      padding: var(--space-5) var(--space-6);
       background-color: var(--bg-surface);
       border: 1px solid var(--border-default);
       border-top: 3px solid var(--brand-primary);
@@ -234,7 +293,7 @@ import { getDisplayErrorMessage } from '../../utils/trend-error';
 
     .hero-scope-note {
       font-size: 0.8125rem;
-      color: var(--text-muted);
+      color: var(--text-secondary);
       margin-top: 2px;
     }
 
@@ -260,7 +319,22 @@ import { getDisplayErrorMessage } from '../../utils/trend-error';
       margin: -1px;
       overflow: hidden;
       clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
       border: 0;
+    }
+
+    @media (max-width: 639.98px) {
+      .trend-page {
+        padding: var(--space-3);
+      }
+
+      .feature-hero {
+        padding: var(--space-4);
+      }
+
+      .hero-title {
+        font-size: 1.45rem;
+      }
     }
   `],
 })
@@ -285,6 +359,8 @@ export class SalesTrendPageComponent implements OnInit {
 
   readonly columns = computed(() => this.store.currentMeta?.janelas || []);
 
+  readonly allSemBase = computed(() => isAllSemBase(this.columns()));
+
   readonly tableRows = computed(() => {
     if (this.store.query().groupBy === 'supplier') {
       return this.store.supplierResponse()?.data || [];
@@ -294,7 +370,68 @@ export class SalesTrendPageComponent implements OnInit {
 
   readonly hasData = computed(() => this.tableRows().length > 0);
 
+  readonly canDisplayResults = computed(() => this.store.status() !== 'error' && this.hasData());
+
   readonly errorMessage = computed(() => getDisplayErrorMessage(this.store.error()));
+
+  readonly canResetMonthOnError = computed(() => {
+    const err = this.store.error();
+    return err?.code === 'TND-002' && Boolean(this.store.query().baseMonth);
+  });
+
+  readonly hasActiveFilters = computed(() => {
+    const q = this.store.query();
+    return Boolean(
+      (q.q && q.q.trim().length > 0) ||
+      (typeof q.minVolume === 'number' && q.minVolume > 0) ||
+      (q.view && q.view !== 'all')
+    );
+  });
+
+  readonly isPagePastEnd = computed(() => {
+    const offset = this.store.query().offset ?? 0;
+    const total = this.store.currentMeta?.totalItems ?? 0;
+    return offset > 0 && total > 0;
+  });
+
+  readonly isNonDefaultMonth = computed(() => {
+    const selected = this.store.query().baseMonth;
+    const def = this.store.currentMeta?.mesBasePadrao;
+    return Boolean(selected && def && selected !== def);
+  });
+
+  readonly emptyStateTitle = computed(() => {
+    if (this.isPagePastEnd()) {
+      return 'Página sem resultados';
+    }
+    if (this.hasActiveFilters()) {
+      return 'Nenhum item encontrado';
+    }
+    return 'Sem movimentação no período';
+  });
+
+  readonly emptyStateDescription = computed(() => {
+    if (this.isPagePastEnd()) {
+      return 'A página informada na URL ultrapassou a quantidade disponível para os filtros atuais.';
+    }
+    if (this.hasActiveFilters()) {
+      return 'Não encontramos nenhum produto ou fornecedor ativo com movimentação para os filtros selecionados.';
+    }
+    return 'Não há vendas registradas para produtos ativos do catálogo no mês-base selecionado.';
+  });
+
+  readonly emptyStateActionLabel = computed(() => {
+    if (this.isPagePastEnd()) {
+      return 'Voltar para a primeira página';
+    }
+    if (this.hasActiveFilters()) {
+      return 'Limpar filtros';
+    }
+    if (this.isNonDefaultMonth()) {
+      return 'Voltar para mês padrão';
+    }
+    return null;
+  });
 
   readonly expandedKeysSet = computed(() => {
     if (this.store.query().groupBy === 'supplier') {
@@ -307,10 +444,16 @@ export class SalesTrendPageComponent implements OnInit {
     const s = this.store.status();
     if (s === 'loading') return 'Carregando dados da tendência...';
     if (s === 'error') return this.errorMessage();
-    if (s === 'empty') return 'Nenhum item encontrado para os filtros informados.';
+    if (s === 'empty') return this.emptyStateDescription();
     if (s === 'success') {
-      const total = this.store.currentMeta?.totalItems || 0;
-      return `Carregados ${total} itens na tabela de tendência.`;
+      const meta = this.store.currentMeta;
+      const total = meta?.totalItems ?? 0;
+      const page = meta?.page ?? 1;
+      const totalPages = meta?.totalPages ?? 1;
+      const groupLabel = this.store.query().groupBy === 'supplier' ? 'fornecedores' : 'produtos';
+      const sortWindow = this.store.query().sortWindow || 3;
+      const sortDir = this.store.query().sortDir === 'asc' ? 'crescente' : 'decrescente';
+      return `Carregados ${total} ${groupLabel}, ordenados por ${sortWindow} ${sortWindow === 1 ? 'mês' : 'meses'} em ordem ${sortDir}. Página ${page} de ${Math.max(1, totalPages)}.`;
     }
     return '';
   });
@@ -329,7 +472,7 @@ export class SalesTrendPageComponent implements OnInit {
     }
   }
 
-  onDetailSort(event: { supplierKey: string; sortBy: any }): void {
+  onDetailSort(event: { supplierKey: string; sortBy: TrendSortBy }): void {
     this.store.setSupplierSort(event.supplierKey, event.sortBy);
   }
 
@@ -337,13 +480,25 @@ export class SalesTrendPageComponent implements OnInit {
     this.store.setSupplierPage(event.supplierKey, event.page);
   }
 
-  onMobileSort(event: { window: any; dir: any }): void {
+  onMobileSort(event: { window: TrendSortWindow; dir: TrendSortDir }): void {
     this.store.setSort(event.window, event.dir);
   }
 
   onClearFilters(): void {
-    this.store.setSearch(undefined);
-    this.store.setMinVolume(0);
-    this.store.setView('all');
+    this.store.clearFilters();
+  }
+
+  onEmptyAction(): void {
+    if (this.isPagePastEnd()) {
+      this.store.setPage(1);
+      return;
+    }
+    if (this.hasActiveFilters()) {
+      this.onClearFilters();
+      return;
+    }
+    if (this.isNonDefaultMonth()) {
+      this.store.resetToDefaultMonth();
+    }
   }
 }

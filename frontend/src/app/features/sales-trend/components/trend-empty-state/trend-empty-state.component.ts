@@ -1,13 +1,14 @@
 /**
  * Estado vazio informativo com ícone e ação sugerida (Design Plan §4.2).
  */
-import { Component, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 
 @Component({
   selector: 'app-trend-empty-state',
   standalone: true,
   imports: [CommonModule],
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="trend-empty-state" role="status">
       <div class="empty-icon-box" aria-hidden="true">
@@ -33,7 +34,7 @@ import { CommonModule } from '@angular/common';
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      padding: var(--space-8, 32px) var(--space-4, 16px);
+      padding: var(--space-8) var(--space-4);
       text-align: center;
       background-color: var(--bg-surface);
       border: 1px solid var(--border-subtle);
@@ -46,7 +47,7 @@ import { CommonModule } from '@angular/common';
       justify-content: center;
       width: 56px;
       height: 56px;
-      margin-bottom: var(--space-4, 16px);
+      margin-bottom: var(--space-4);
       background-color: var(--bg-subtle);
       border-radius: var(--radius-xs);
       color: var(--text-secondary);
@@ -54,31 +55,37 @@ import { CommonModule } from '@angular/common';
 
     .empty-title {
       font-size: 1.125rem;
-      margin-bottom: var(--space-2, 8px);
+      margin: 0 0 var(--space-2) 0;
       color: var(--text-primary);
     }
 
     .empty-desc {
       max-width: 440px;
-      margin-bottom: var(--space-4, 16px);
+      margin: 0 0 var(--space-4) 0;
       font-size: 0.875rem;
       color: var(--text-secondary);
-      line-height: 1.4;
+      line-height: 1.45;
     }
 
     .empty-action-btn {
-      min-height: 38px;
-      padding: var(--space-2, 8px) var(--space-4, 16px);
+      min-height: 40px;
+      padding: var(--space-2) var(--space-4);
       background-color: var(--brand-primary);
       border: 1px solid var(--brand-primary-active);
       border-radius: var(--radius-xs);
       color: var(--text-on-brand);
+      font-family: var(--font-family-body);
       font-weight: 600;
       font-size: 0.875rem;
       cursor: pointer;
 
       &:hover {
         background-color: var(--brand-primary-hover);
+      }
+
+      &:focus-visible {
+        outline: 2px solid var(--border-focus);
+        outline-offset: 2px;
       }
     }
   `],

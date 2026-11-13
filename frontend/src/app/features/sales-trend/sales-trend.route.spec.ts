@@ -2,6 +2,7 @@
  * Testes unitários da configuração de rota da Tendência de Vendas (T-19).
  * Valida lazy-loading em /tendencia-vendas antes do curinga **.
  */
+import { Type } from '@angular/core';
 import { routes } from '../../app.routes';
 import { SalesTrendPageComponent } from './pages/sales-trend-page/sales-trend-page.component';
 
@@ -16,7 +17,7 @@ describe('SalesTrend Route Configuration (T-19)', () => {
     const trendRoute = routes[trendRouteIndex];
     expect(typeof trendRoute.loadComponent).toBe('function');
 
-    const loaded = await (trendRoute.loadComponent as () => Promise<any>)();
+    const loaded = await (trendRoute.loadComponent as () => Promise<Type<unknown>>)();
     expect(loaded).toBe(SalesTrendPageComponent);
   });
 });

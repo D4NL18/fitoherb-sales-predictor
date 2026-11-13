@@ -1,13 +1,33 @@
 /**
  * Testes unitários para o SalesTrendStore (T-17).
- * Valida transições de estado, preservação e reset de parâmetros, cancelamento de requisições e drill-down.
+ * Valida transições de estado, preservação e reset de parâmetros, cancelamento via switchMap e drill-down.
  */
 import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
-import { of, throwError } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
 import { SalesTrendStore } from './sales-trend.store';
 import { SalesTrendService } from './sales-trend.service';
-import { ProductTrendResponse, SupplierDetailResponse } from '../models/sales-trend.model';
+import {
+  ProductTrendResponse,
+  SalesTrendCacheResponse,
+  SupplierDetailResponse,
+  TrendCell,
+} from '../models/sales-trend.model';
+
+function createZeroCell(meses: 1 | 3 | 6 | 12): TrendCell {
+  return {
+    meses,
+    atual: 0,
+    anterior: 0,
+    variacaoPct: null,
+    status: 'SEM_MOVIMENTO',
+    baseParcial: false,
+    baseBaixa: false,
+    devolucaoLiquida: false,
+    atualPorDia: null,
+    anteriorPorDia: null,
+  };
+}
 
 describe('SalesTrendStore (T-17)', () => {
   let store: SalesTrendStore;
@@ -102,8 +122,22 @@ describe('SalesTrendStore (T-17)', () => {
       visao: 'all',
       ordenacao: { janela: 3, sentido: 'desc' },
       totaisPorVisao: { todos: 1, maioresAltas: 1, maioresQuedas: 0, novos: 0 },
-      total: { qtdProdutos: 1, janelas: [] as any },
+      total: {
+        qtdProdutos: 1,
+        janelas: [createZeroCell(1), createZeroCell(3), createZeroCell(6), createZeroCell(12)],
+      },
     },
+  };
+
+  const mockHealthResponse: SalesTrendCacheResponse = {
+    estado: 'QUENTE',
+    dataReferencia: '2026-11-09',
+    carregadoEm: '2026-11-10T06:00:00Z',
+    idadeHoras: 4,
+    expirado: false,
+    duracaoUltimaCargaMs: 1200,
+    carregando: false,
+    contagens: null,
   };
 
   beforeEach(() => {
@@ -115,8 +149,8 @@ describe('SalesTrendStore (T-17)', () => {
     ]);
     routerMock = jasmine.createSpyObj<Router>('Router', ['navigate']);
 
-    serviceMock.getTrend.and.returnValue(of(mockProductResponse as any));
-    serviceMock.getHealth.and.returnValue(of({ estado: 'QUENTE' } as any));
+    serviceMock.getTrend.and.returnValue(of(mockProductResponse));
+    serviceMock.getHealth.and.returnValue(of(mockHealthResponse));
 
     TestBed.configureTestingModule({
       providers: [
@@ -138,18 +172,18 @@ describe('SalesTrendStore (T-17)', () => {
   });
 
   it('transita para empty quando data vem vazia', () => {
-    const emptyResponse = {
+    const emptyResponse: ProductTrendResponse = {
       ...mockProductResponse,
       data: [],
       meta: { ...mockProductResponse.meta, totalItems: 0, totalPages: 0 },
     };
-    serviceMock.getTrend.and.returnValue(of(emptyResponse as any));
+    serviceMock.getTrend.and.returnValue(of(emptyResponse));
 
     store.loadTrend();
     expect(store.status()).toBe('empty');
   });
 
-  it('transita para error quando API rejeita', () => {
+  it('transita para error quando API rejeita e continua aceitando retry via switchMap', () => {
     serviceMock.getTrend.and.returnValue(
       throwError(() => ({
         error: {
@@ -161,9 +195,34 @@ describe('SalesTrendStore (T-17)', () => {
     store.loadTrend();
     expect(store.status()).toBe('error');
     expect(store.error()?.code).toBe('TND-004');
+
+    serviceMock.getTrend.and.returnValue(of(mockProductResponse));
+    store.retry();
+    expect(store.status()).toBe('success');
+    expect(store.error()).toBeNull();
   });
 
-  it('trocar groupBy preserva baseMonth, metric, sortWindow, sortDir e reseta view, minVolume, q e offset', () => {
+  it('cancela requisição principal anterior via switchMap quando uma nova chamada ocorre antes da resposta', () => {
+    const first$ = new Subject<ProductTrendResponse>();
+    const second$ = new Subject<ProductTrendResponse>();
+    serviceMock.getTrend.and.returnValues(first$.asObservable(), second$.asObservable());
+
+    store.setSearch('camomila');
+    store.setSearch('erva doce');
+
+    const newerResponse: ProductTrendResponse = {
+      ...mockProductResponse,
+      data: [{ ...mockProductResponse.data[0], codigo: 2002, descricao: 'ERVA DOCE 100G' }],
+    };
+
+    second$.next(newerResponse);
+    first$.next(mockProductResponse);
+
+    expect(store.status()).toBe('success');
+    expect(store.productResponse()?.data[0].codigo).toBe(2002);
+  });
+
+  it('trocar groupBy preserva baseMonth, metric, sortWindow, sortDir, reseta filtros e emite aviso', () => {
     store.query.set({
       baseMonth: '2026-09',
       metric: 'quantity',
@@ -189,9 +248,10 @@ describe('SalesTrendStore (T-17)', () => {
     expect(q.minVolume).toBe(0);
     expect(q.q).toBeUndefined();
     expect(q.offset).toBe(0);
+    expect(store.noticeMessage()).toContain('filtros');
   });
 
-  it('trocar metric zera minVolume e offset', () => {
+  it('trocar metric zera minVolume, offset e emite aviso quando havia corte ativo', () => {
     store.query.set({
       metric: 'revenue',
       minVolume: 500,
@@ -204,6 +264,27 @@ describe('SalesTrendStore (T-17)', () => {
     expect(q.metric).toBe('quantity');
     expect(q.minVolume).toBe(0);
     expect(q.offset).toBe(0);
+    expect(store.noticeMessage()).toContain('corte mínimo');
+  });
+
+  it('clearFilters reseta q, minVolume, view e offset em uma única chamada', () => {
+    store.query.set({
+      metric: 'revenue',
+      groupBy: 'product',
+      q: 'cha',
+      minVolume: 150,
+      view: 'rising',
+      offset: 100,
+    });
+    serviceMock.getTrend.calls.reset();
+
+    store.clearFilters();
+
+    expect(serviceMock.getTrend).toHaveBeenCalledTimes(1);
+    expect(store.query().q).toBeUndefined();
+    expect(store.query().minVolume).toBe(0);
+    expect(store.query().view).toBe('all');
+    expect(store.query().offset).toBe(0);
   });
 
   it('clique repetido na mesma janela alterna desc e asc', () => {
@@ -216,8 +297,11 @@ describe('SalesTrendStore (T-17)', () => {
     expect(store.query().sortDir).toBe('desc');
   });
 
-  it('toggleSupplier expande fornecedor e busca produtos filhos', () => {
-    const mockDetail: SupplierDetailResponse = {
+  it('toggleSupplier expande fornecedor, busca produtos filhos e atualiza ordenação com switchMap', () => {
+    const buildDetail = (
+      por: 'contribution' | 'variation',
+      sentido: 'asc' | 'desc'
+    ): SupplierDetailResponse => ({
       data: [],
       meta: {
         ...mockProductResponse.meta,
@@ -228,18 +312,43 @@ describe('SalesTrendStore (T-17)', () => {
           qtdProdutos: 1,
           janelas: [],
         },
-        ordenacao: { por: 'contribution', janela: 3, sentido: 'desc' },
+        ordenacao: { por, janela: 3, sentido },
       },
-    };
-    serviceMock.getSupplierProducts.and.returnValue(of(mockDetail));
+    });
+
+    const firstDetail$ = new Subject<SupplierDetailResponse>();
+    const secondDetail$ = new Subject<SupplierDetailResponse>();
+    const thirdDetail$ = new Subject<SupplierDetailResponse>();
+
+    serviceMock.getSupplierProducts.and.returnValues(
+      of(buildDetail('contribution', 'desc')),
+      firstDetail$.asObservable(),
+      secondDetail$.asObservable(),
+      thirdDetail$.asObservable()
+    );
 
     store.toggleSupplier('f:laboratorio alfa');
 
     expect(store.expandedSuppliers().has('f:laboratorio alfa')).toBeTrue();
     expect(serviceMock.getSupplierProducts).toHaveBeenCalled();
 
-    // Novo clique recolhe
+    // Troca ordenação para variation e clica novamente antes da primeira resposta
+    store.setSupplierSort('f:laboratorio alfa', 'variation');
+    expect(store.expandedSuppliers().get('f:laboratorio alfa')?.sortBy).toBe('variation');
+    expect(store.expandedSuppliers().get('f:laboratorio alfa')?.sortDir).toBe('desc');
+
+    store.setSupplierSort('f:laboratorio alfa', 'variation');
+    expect(store.expandedSuppliers().get('f:laboratorio alfa')?.sortDir).toBe('asc');
+
+    secondDetail$.next(buildDetail('variation', 'asc'));
+    firstDetail$.next(buildDetail('variation', 'desc'));
+
+    expect(store.expandedSuppliers().get('f:laboratorio alfa')?.sortBy).toBe('variation');
+    expect(store.expandedSuppliers().get('f:laboratorio alfa')?.sortDir).toBe('asc');
+
+    // Novo clique recolhe e impede respostas tardias
     store.toggleSupplier('f:laboratorio alfa');
+    thirdDetail$.next(buildDetail('variation', 'desc'));
     expect(store.expandedSuppliers().has('f:laboratorio alfa')).toBeFalse();
   });
 });

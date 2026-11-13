@@ -11,7 +11,28 @@ import { BaseMonthPickerComponent } from './base-month-picker/base-month-picker.
 import { TrendSearchFieldComponent } from './trend-search-field/trend-search-field.component';
 import { TrendToolbarComponent } from './trend-toolbar/trend-toolbar.component';
 import { TrendCellComponent } from './trend-cell/trend-cell.component';
-import { TrendCell } from '../models/sales-trend.model';
+import { TrendRowValuesComponent } from './trend-row-values/trend-row-values.component';
+import { ReadingGuideComponent } from './reading-guide/reading-guide.component';
+import { TrendCardListComponent } from './trend-card-list/trend-card-list.component';
+import {
+  TrendCell,
+  TrendDetailCell,
+  TrendParameters,
+  TrendSupplierRow,
+} from '../models/sales-trend.model';
+import { SupplierDetailState } from '../services/sales-trend.store';
+
+function createMockParameters(): TrendParameters {
+  return {
+    limiteBaseBaixaQuantidade: 10,
+    limiteBaseBaixaFaturamento: 500,
+    coberturaMinimaAnterior: 0.5,
+    buscaMinCaracteres: 2,
+    buscaMinCaracteresNumerica: 1,
+    buscaMaxCaracteres: 60,
+    ttlCacheHoras: 6,
+  };
+}
 
 describe('Sales Trend Components (T-18)', () => {
   describe('TrendPagerComponent', () => {
@@ -40,7 +61,7 @@ describe('Sales Trend Components (T-18)', () => {
       expect(component.pageChange.emit).toHaveBeenCalledWith(2);
     });
 
-    it('calcula o texto de intervalo corretamente', () => {
+    it('calcula o texto de intervalo corretamente e não aplica aria-current em texto estático', () => {
       fixture.componentRef.setInput('page', 2);
       fixture.componentRef.setInput('totalPages', 3);
       fixture.componentRef.setInput('totalItems', 120);
@@ -49,6 +70,8 @@ describe('Sales Trend Components (T-18)', () => {
       fixture.detectChanges();
 
       expect(component.rangeText()).toBe('51–100 de 120');
+      const currentEl = fixture.nativeElement.querySelector('.pager-current') as HTMLElement;
+      expect(currentEl.getAttribute('aria-current')).toBeNull();
     });
   });
 
@@ -70,7 +93,7 @@ describe('Sales Trend Components (T-18)', () => {
       fixture.detectChanges();
 
       spyOn(component.retry, 'emit');
-      const btn = fixture.nativeElement.querySelector('.retry-btn');
+      const btn = fixture.nativeElement.querySelector('.retry-btn') as HTMLButtonElement;
       btn.click();
       expect(component.retry.emit).toHaveBeenCalled();
     });
@@ -96,15 +119,15 @@ describe('Sales Trend Components (T-18)', () => {
       fixture.detectChanges();
 
       spyOn(component.action, 'emit');
-      const btn = fixture.nativeElement.querySelector('.empty-action-btn');
+      const btn = fixture.nativeElement.querySelector('.empty-action-btn') as HTMLButtonElement;
       btn.click();
       expect(component.action.emit).toHaveBeenCalled();
     });
   });
 
   describe('SegmentedControlComponent', () => {
-    let fixture: ComponentFixture<SegmentedControlComponent>;
-    let component: SegmentedControlComponent;
+    let fixture: ComponentFixture<SegmentedControlComponent<unknown>>;
+    let component: SegmentedControlComponent<unknown>;
 
     beforeEach(async () => {
       await TestBed.configureTestingModule({
@@ -115,17 +138,21 @@ describe('Sales Trend Components (T-18)', () => {
       component = fixture.componentInstance;
     });
 
-    it('emite valor selecionado e navega por teclado', () => {
+    it('emite valor selecionado e navega por teclado pulando itens desabilitados', () => {
+      fixture.componentRef.setInput('label', 'Modo');
       fixture.componentRef.setInput('options', [
-        { value: 'product', label: 'Por produto' },
-        { value: 'supplier', label: 'Por fornecedor' },
+        { value: 'a', label: 'A' },
+        { value: 'b', label: 'B', disabled: true },
+        { value: 'c', label: 'C' },
       ]);
-      fixture.componentRef.setInput('value', 'product');
+      fixture.componentRef.setInput('value', 'a');
       fixture.detectChanges();
 
       spyOn(component.valueChange, 'emit');
-      component.select('supplier');
-      expect(component.valueChange.emit).toHaveBeenCalledWith('supplier');
+      const buttons = fixture.nativeElement.querySelectorAll('button.segment-item') as NodeListOf<HTMLButtonElement>;
+      buttons[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }));
+
+      expect(component.valueChange.emit).toHaveBeenCalledWith('c');
     });
   });
 
@@ -164,7 +191,7 @@ describe('Sales Trend Components (T-18)', () => {
       fixture.detectChanges();
 
       spyOn(component.monthChange, 'emit');
-      const select = fixture.nativeElement.querySelector('select');
+      const select = fixture.nativeElement.querySelector('select') as HTMLSelectElement;
       select.value = '2026-11';
       select.dispatchEvent(new Event('change'));
 
@@ -174,7 +201,6 @@ describe('Sales Trend Components (T-18)', () => {
 
   describe('TrendCellComponent', () => {
     let fixture: ComponentFixture<TrendCellComponent>;
-    let component: TrendCellComponent;
 
     beforeEach(async () => {
       await TestBed.configureTestingModule({
@@ -182,7 +208,6 @@ describe('Sales Trend Components (T-18)', () => {
       }).compileComponents();
 
       fixture = TestBed.createComponent(TrendCellComponent);
-      component = fixture.componentInstance;
     });
 
     it('renderiza percentual com seta para cima quando variação é positiva', () => {
@@ -203,9 +228,88 @@ describe('Sales Trend Components (T-18)', () => {
       fixture.componentRef.setInput('metric', 'revenue');
       fixture.detectChanges();
 
-      const el = fixture.nativeElement;
-      expect(el.querySelector('.direction-arrow').textContent).toContain('▲');
-      expect(el.querySelector('.variation-value').textContent).toContain('+50,0%');
+      const el = fixture.nativeElement as HTMLElement;
+      expect(el.querySelector('.direction-arrow')?.textContent).toContain('▲');
+      expect(el.querySelector('.variation-value')?.textContent).toContain('+50,0%');
+    });
+
+    it('exibe símbolo ▬ neutro para -0,04% arredondado para 0,0%', () => {
+      const cell: TrendCell = {
+        meses: 1,
+        atual: 99.96,
+        anterior: 100,
+        variacaoPct: -0.04,
+        status: 'VARIACAO',
+        baseParcial: false,
+        baseBaixa: false,
+        devolucaoLiquida: false,
+        atualPorDia: null,
+        anteriorPorDia: null,
+      };
+
+      fixture.componentRef.setInput('cell', cell);
+      fixture.componentRef.setInput('metric', 'revenue');
+      fixture.detectChanges();
+
+      const el = fixture.nativeElement as HTMLElement;
+      expect(el.querySelector('.direction-arrow')?.textContent).toContain('▬');
+      expect(el.querySelector('.variation-value')?.textContent).toContain('0,0%');
+      expect(el.querySelector('.variation-row')?.classList.contains('is-down')).toBeFalse();
+    });
+
+    it('adiciona /dia no delta nominal de contribuição quando a base é parcial', () => {
+      const detailCell: TrendDetailCell = {
+        meses: 3,
+        atual: 345.0,
+        anterior: 314.8,
+        variacaoPct: 816.6,
+        status: 'VARIACAO',
+        baseParcial: true,
+        baseBaixa: false,
+        devolucaoLiquida: false,
+        atualPorDia: 31.3636,
+        anteriorPorDia: 3.4217,
+        contribuicaoPp: 20.5,
+        contribuicaoValor: 27.94,
+      };
+
+      fixture.componentRef.setInput('cell', detailCell);
+      fixture.componentRef.setInput('metric', 'revenue');
+      fixture.detectChanges();
+
+      const contribVal = fixture.nativeElement.querySelector('.contrib-val')?.textContent?.trim();
+      expect(contribVal).toContain('R$');
+      expect(contribVal).toContain('27,94/dia');
+    });
+
+    it('abre e fecha tooltip acessível por foco/teclado no selo de devolução', () => {
+      const cell: TrendCell = {
+        meses: 3,
+        atual: 0,
+        anterior: 100,
+        variacaoPct: -100,
+        status: 'VARIACAO',
+        baseParcial: false,
+        baseBaixa: false,
+        devolucaoLiquida: true,
+        atualPorDia: null,
+        anteriorPorDia: null,
+      };
+
+      fixture.componentRef.setInput('cell', cell);
+      fixture.componentRef.setInput('metric', 'revenue');
+      fixture.detectChanges();
+
+      const badgeBtn = fixture.nativeElement.querySelector('button.cell-badge') as HTMLButtonElement;
+      expect(badgeBtn).not.toBeNull();
+
+      badgeBtn.dispatchEvent(new FocusEvent('focus'));
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[role="tooltip"]')?.textContent).toContain('devoluções');
+
+      badgeBtn.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[role="tooltip"]')).toBeNull();
     });
   });
 
@@ -248,7 +352,7 @@ describe('Sales Trend Components (T-18)', () => {
       expect(input.value).toBe('cha ');
     }));
 
-    it('emite imediatamente no Enter e limpa ao resetar valor externo', fakeAsync(() => {
+    it('emite imediatamente no Enter, limpa no Escape e ao clicar no botão limpar', fakeAsync(() => {
       const emitted: string[] = [];
       component.searchChange.subscribe((v) => emitted.push(v));
 
@@ -259,9 +363,16 @@ describe('Sales Trend Components (T-18)', () => {
 
       expect(emitted).toEqual(['57']);
 
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      fixture.detectChanges();
+      expect(input.value).toBe('');
+      expect(emitted).toEqual(['57', '']);
+
       fixture.componentRef.setInput('value', '57');
       fixture.detectChanges();
-      fixture.componentRef.setInput('value', undefined);
+      const clearBtn = fixture.nativeElement.querySelector('.clear-btn') as HTMLButtonElement;
+      expect(clearBtn).not.toBeNull();
+      clearBtn.click();
       fixture.detectChanges();
       expect(input.value).toBe('');
       tick(300);
@@ -307,6 +418,219 @@ describe('Sales Trend Components (T-18)', () => {
       expect(label.textContent?.trim()).toBe('Volume mínimo:');
       expect(input.placeholder).toBe('0');
       expect(unit.textContent?.trim()).toBe('un');
+    });
+
+    it('valida valor negativo no filtro mínimo exibindo erro inline e zerando corte', () => {
+      fixture.componentRef.setInput('query', { groupBy: 'product', metric: 'revenue' });
+      fixture.detectChanges();
+
+      const emitted: number[] = [];
+      fixture.componentInstance.minVolumeChange.subscribe((v) => emitted.push(v));
+
+      const input = fixture.nativeElement.querySelector('#min-volume-input') as HTMLInputElement;
+      input.value = '-25';
+      input.dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+
+      expect(emitted).toEqual([0]);
+      expect(fixture.nativeElement.querySelector('#min-volume-error')?.textContent).toContain('maior que zero');
+    });
+  });
+
+  describe('TrendRowValuesComponent', () => {
+    let fixture: ComponentFixture<TrendRowValuesComponent>;
+
+    beforeEach(async () => {
+      await TestBed.configureTestingModule({
+        imports: [TrendRowValuesComponent],
+      }).compileComponents();
+
+      fixture = TestBed.createComponent(TrendRowValuesComponent);
+    });
+
+    it('preserva casas decimais em quantidades fracionárias no modo average', () => {
+      const janelas: TrendCell[] = [
+        {
+          meses: 3,
+          atual: 1,
+          anterior: 0.333,
+          variacaoPct: 200.0,
+          status: 'VARIACAO',
+          baseParcial: false,
+          baseBaixa: true,
+          devolucaoLiquida: false,
+          atualPorDia: null,
+          anteriorPorDia: null,
+        },
+      ];
+
+      fixture.componentRef.setInput('janelas', janelas);
+      fixture.componentRef.setInput('metric', 'quantity');
+      fixture.detectChanges();
+
+      const cells = Array.from(
+        fixture.nativeElement.querySelectorAll('td.cell-val') as NodeListOf<HTMLElement>
+      ).map((el) => el.textContent?.trim());
+      expect(cells).toEqual(['1 un', '0,3 un']);
+    });
+  });
+
+  describe('ReadingGuideComponent', () => {
+    let fixture: ComponentFixture<ReadingGuideComponent>;
+
+    beforeEach(async () => {
+      await TestBed.configureTestingModule({
+        imports: [ReadingGuideComponent],
+      }).compileComponents();
+
+      fixture = TestBed.createComponent(ReadingGuideComponent);
+      fixture.detectChanges();
+    });
+
+    it('fecha o guia expansível ao pressionar Escape', () => {
+      const details = fixture.nativeElement.querySelector('details.reading-guide-details') as HTMLDetailsElement;
+      details.open = true;
+      fixture.detectChanges();
+
+      details.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      fixture.detectChanges();
+      expect(details.open).toBeFalse();
+    });
+  });
+
+  describe('TrendCardListComponent', () => {
+    let fixture: ComponentFixture<TrendCardListComponent>;
+
+    beforeEach(async () => {
+      await TestBed.configureTestingModule({
+        imports: [TrendCardListComponent],
+      }).compileComponents();
+
+      fixture = TestBed.createComponent(TrendCardListComponent);
+    });
+
+    it('renderiza drill-down de fornecedor no mobile e emite detailSortChange', () => {
+      const supplier: TrendSupplierRow = {
+        fornecedor: 'LAB MOBILE',
+        fornecedorChave: 'f:lab mobile',
+        semFornecedor: false,
+        qtdProdutos: 1,
+        janelas: [
+          {
+            meses: 3,
+            atual: 300,
+            anterior: 200,
+            variacaoPct: 50,
+            status: 'VARIACAO',
+            baseParcial: false,
+            baseBaixa: false,
+            devolucaoLiquida: false,
+            atualPorDia: null,
+            anteriorPorDia: null,
+          },
+        ],
+      };
+
+      const detailMap = new Map<string, SupplierDetailState>([
+        [
+          'f:lab mobile',
+          {
+            supplierKey: 'f:lab mobile',
+            status: 'success',
+            data: {
+              data: [
+                {
+                  codigo: 500,
+                  descricao: 'CHÁ MOBILE',
+                  fornecedor: 'LAB MOBILE',
+                  janelas: [
+                    {
+                      meses: 3,
+                      atual: 300,
+                      anterior: 200,
+                      variacaoPct: 50,
+                      status: 'VARIACAO',
+                      baseParcial: false,
+                      baseBaixa: false,
+                      devolucaoLiquida: false,
+                      atualPorDia: null,
+                      anteriorPorDia: null,
+                      contribuicaoPp: 50,
+                      contribuicaoValor: 100,
+                    },
+                  ],
+                },
+              ],
+              meta: {
+                timestamp: '2026-11-10T12:00:00Z',
+                version: '1.0.0',
+                dataReferencia: '2026-11-09',
+                ultimoDiaCoberto: '2026-11-08',
+                mesBase: '2026-10',
+                mesBasePadrao: '2026-10',
+                mesBaseMinimo: '2025-01',
+                mesBaseMaximo: '2026-11',
+                mesBaseParcial: false,
+                metrica: 'revenue',
+                janelas: [],
+                parametros: createMockParameters(),
+                page: 1,
+                limit: 20,
+                offset: 0,
+                totalItems: 1,
+                totalPages: 1,
+                ordenacao: { por: 'contribution', janela: 3, sentido: 'desc' },
+                fornecedor: supplier,
+              },
+            },
+            error: null,
+            page: 1,
+            limit: 20,
+            offset: 0,
+            sortBy: 'contribution',
+            sortDir: 'desc',
+            sortWindow: 3,
+          },
+        ],
+      ]);
+
+      fixture.componentRef.setInput('items', [supplier]);
+      fixture.componentRef.setInput('groupBy', 'supplier');
+      fixture.componentRef.setInput('metric', 'revenue');
+      fixture.componentRef.setInput('sortWindow', 3);
+      fixture.componentRef.setInput('sortDir', 'desc');
+      fixture.componentRef.setInput('expandedKeys', new Set(['f:lab mobile']));
+      fixture.componentRef.setInput('details', detailMap);
+      fixture.detectChanges();
+
+      const el = fixture.nativeElement as HTMLElement;
+      expect(el.querySelector('.mobile-child-title')?.textContent).toContain('CHÁ MOBILE');
+
+      spyOn(fixture.componentInstance.detailSortChange, 'emit');
+      const pills = el.querySelectorAll('.sort-pill') as NodeListOf<HTMLButtonElement>;
+      pills[1].click();
+      expect(fixture.componentInstance.detailSortChange.emit).toHaveBeenCalledWith({
+        supplierKey: 'f:lab mobile',
+        sortBy: 'variation',
+      });
+    });
+  });
+
+  describe('InlineNoticeComponent', () => {
+    it('renderiza aviso dismissible e emite evento ao fechar', async () => {
+      await TestBed.configureTestingModule({
+        imports: [InlineNoticeComponent],
+      }).compileComponents();
+
+      const fixture = TestBed.createComponent(InlineNoticeComponent);
+      fixture.componentRef.setInput('text', 'Filtros redefinidos.');
+      fixture.componentRef.setInput('dismissible', true);
+      fixture.detectChanges();
+
+      spyOn(fixture.componentInstance.dismiss, 'emit');
+      const dismissBtn = fixture.nativeElement.querySelector('.notice-dismiss-btn') as HTMLButtonElement;
+      dismissBtn.click();
+      expect(fixture.componentInstance.dismiss.emit).toHaveBeenCalled();
     });
   });
 });
