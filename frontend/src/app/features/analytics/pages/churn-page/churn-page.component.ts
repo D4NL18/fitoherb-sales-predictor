@@ -1,187 +1,327 @@
 /**
- * Página principal da aba Churn de Clientes (Design Plan §4; P-117 a P-127).
- * Tabela priorizada por Score de Retenção, KPIs de impacto, filtros e drawer lateral.
+ * Página principal de Churn de Clientes com Score de Prioridade (F3: P-117 a P-127, LGPD-CHU-01..06).
+ * Usa OnPush, switchMap + takeUntilDestroyed para evitar race conditions em filtros/paginação/drawer,
+ * e mantém códigos de clientes fora da URL e storage do navegador.
  */
-import { Component, OnInit, signal, inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { DOCUMENT } from '@angular/common';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  DestroyRef,
+  OnInit,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { EMPTY, Subject, catchError, map, of, switchMap, tap } from 'rxjs';
+import { CustomerChurnDrawerComponent } from '../../components/customer-churn-drawer/customer-churn-drawer.component';
+import { ListPagerComponent } from '../../components/list-pager/list-pager.component';
+import { DEFAULT_PAGE_LIMIT, PageRequest } from '../../models/analytics.model';
+import {
+  ChurnCustomersResponse,
+  ChurnStatusFilter,
+  ChurnSummaryKpi,
+  ChurnTableRow,
+  CustomerChurnDetailData,
+  InactiveChurnResponse,
+} from '../../models/churn.model';
+import { BrlPipe, PtDatePipe, PtDecimalPipe } from '../../pipes/pt-br-format.pipes';
 import { AnalyticsService } from '../../services/analytics.service';
 import {
-  ChurnCustomerItem,
-  ChurnSummaryKpi,
-  CustomerChurnDetailData,
-} from '../../models/churn.model';
-import { PageRequest } from '../../models/analytics.model';
-import { CustomerChurnDrawerComponent } from '../../components/customer-churn-drawer/customer-churn-drawer.component';
+  buildChurnCsvContent,
+  getChurnStatusDisplay,
+  mapActiveChurnRow,
+  mapInactiveChurnRow,
+  resolveChurnErrorMessage,
+} from './churn-page.helpers';
+
+interface ChurnListQuery {
+  status: ChurnStatusFilter;
+  offset: number;
+}
+
+type ChurnListPayload =
+  | { kind: 'active'; res: ChurnCustomersResponse }
+  | { kind: 'inactive'; res: InactiveChurnResponse };
 
 @Component({
   selector: 'app-churn-page',
   standalone: true,
-  imports: [CommonModule, CustomerChurnDrawerComponent],
+  imports: [
+    CustomerChurnDrawerComponent,
+    ListPagerComponent,
+    BrlPipe,
+    PtDecimalPipe,
+    PtDatePipe,
+  ],
   templateUrl: './churn-page.component.html',
   styleUrl: './churn-page.component.scss',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ChurnPageComponent implements OnInit {
   private readonly analyticsService = inject(AnalyticsService);
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly document = inject(DOCUMENT);
 
-  readonly statusFilter = signal<string>('EM_RISCO');
-  readonly customers = signal<ChurnCustomerItem[]>([]);
+  private readonly listTrigger$ = new Subject<ChurnListQuery>();
+  private readonly detailTrigger$ = new Subject<number | null>();
+
+  readonly limit = DEFAULT_PAGE_LIMIT;
+
+  readonly statusFilter = signal<ChurnStatusFilter>('EM_RISCO');
+  readonly customers = signal<ChurnTableRow[]>([]);
   readonly resumo = signal<ChurnSummaryKpi | null>(null);
-  readonly loading = signal<boolean>(true);
+  readonly inactiveTotalCount = signal<number | null>(null);
+  readonly dataReferencia = signal<string | null>(null);
+
+  readonly loading = signal<boolean>(false);
   readonly error = signal<string | null>(null);
 
-  // Paginação
-  readonly limit = 50;
+  readonly page = signal<number>(1);
   readonly offset = signal<number>(0);
   readonly totalItems = signal<number>(0);
+  readonly totalPages = signal<number>(1);
 
-  // Drawer
   readonly isDrawerOpen = signal<boolean>(false);
   readonly drawerLoading = signal<boolean>(false);
+  readonly drawerError = signal<string | null>(null);
   readonly selectedCustomer = signal<CustomerChurnDetailData | null>(null);
+  readonly selectedCustomerCode = signal<number | null>(null);
+  readonly drawerTriggerElement = signal<HTMLElement | null>(null);
 
-  // Exportação CSV
   readonly isExporting = signal<boolean>(false);
+
+  protected readonly isInactiveView = computed(
+    () => this.statusFilter() === 'INATIVO_RECUPERACAO',
+  );
+
+  protected readonly totalActiveCount = computed(() => {
+    const kpi = this.resumo();
+    if (!kpi) return null;
+    return kpi.totalEmRisco + kpi.totalAlerta + kpi.totalSaudavel;
+  });
+
+  protected readonly badgeInativosCount = computed(
+    () => this.resumo()?.totalInativos ?? this.inactiveTotalCount(),
+  );
+
+  protected readonly canExportCsv = computed(
+    () => !this.isExporting() && !this.loading() && !this.error() && this.customers().length > 0,
+  );
+
+  protected readonly liveAnnouncement = computed(() => {
+    if (this.loading()) {
+      return 'Carregando lista de clientes em risco de churn...';
+    }
+    const errMsg = this.error();
+    if (errMsg) {
+      return `Erro ao carregar clientes: ${errMsg}`;
+    }
+    const count = this.totalItems();
+    if (count === 0) {
+      return 'Nenhum cliente encontrado para o filtro selecionado.';
+    }
+    return `Exibindo página ${this.page()} de ${this.totalPages()}, com ${this.customers().length} de ${count} clientes.`;
+  });
+
+  constructor() {
+    this.listTrigger$
+      .pipe(
+        tap(({ status, offset }) => {
+          this.statusFilter.set(status);
+          this.offset.set(offset);
+          this.loading.set(true);
+          this.error.set(null);
+        }),
+        switchMap(({ status, offset }) => {
+          const pageRequest: PageRequest = { limit: this.limit, offset };
+          if (status === 'INATIVO_RECUPERACAO') {
+            return this.analyticsService.getInactiveChurn(pageRequest).pipe(
+              map((res): ChurnListPayload => ({ kind: 'inactive', res })),
+              catchError((err: unknown) => {
+                this.handleListError(
+                  err,
+                  'Não foi possível carregar os clientes inativos. Tente novamente.',
+                );
+                return EMPTY;
+              }),
+            );
+          }
+          return this.analyticsService.getChurnCustomers(status, pageRequest).pipe(
+            map((res): ChurnListPayload => ({ kind: 'active', res })),
+            catchError((err: unknown) => {
+              this.handleListError(
+                err,
+                'Não foi possível carregar a lista de churn. Tente novamente.',
+              );
+              return EMPTY;
+            }),
+          );
+        }),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe((payload) => {
+        if (payload.kind === 'active') {
+          this.resumo.set(payload.res.data.resumo);
+          this.inactiveTotalCount.set(payload.res.data.resumo.totalInativos);
+          this.customers.set(payload.res.data.items.map(mapActiveChurnRow));
+          this.totalItems.set(payload.res.meta.totalItems);
+          this.page.set(payload.res.meta.page);
+          this.totalPages.set(payload.res.meta.totalPages);
+          this.dataReferencia.set(payload.res.meta.dataReferencia);
+        } else {
+          this.inactiveTotalCount.set(payload.res.data.totalInativos);
+          this.customers.set(payload.res.data.items.map(mapInactiveChurnRow));
+          this.totalItems.set(payload.res.meta.totalItems);
+          this.page.set(payload.res.meta.page);
+          this.totalPages.set(payload.res.meta.totalPages);
+          this.dataReferencia.set(payload.res.meta.dataReferencia);
+        }
+        this.loading.set(false);
+      });
+
+    this.detailTrigger$
+      .pipe(
+        switchMap((customerCode) => {
+          if (customerCode === null) {
+            return of(null);
+          }
+          return this.analyticsService.getCustomerChurnDetail(customerCode).pipe(
+            catchError((err: unknown) => {
+              this.drawerError.set(
+                resolveChurnErrorMessage(
+                  err,
+                  'Não foi possível carregar os detalhes deste cliente. Tente novamente.',
+                ),
+              );
+              this.drawerLoading.set(false);
+              return EMPTY;
+            }),
+          );
+        }),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe((res) => {
+        if (res === null) return;
+        this.selectedCustomer.set(res.data);
+        this.drawerError.set(null);
+        this.drawerLoading.set(false);
+        if (!this.dataReferencia()) {
+          this.dataReferencia.set(res.meta.dataReferencia);
+        }
+      });
+  }
 
   ngOnInit(): void {
     this.fetchData();
   }
 
   fetchData(): void {
-    this.loading.set(true);
-    this.error.set(null);
-
-    const pageReq: PageRequest = { limit: this.limit, offset: this.offset() };
-    const currentStatus = this.statusFilter();
-
-    if (currentStatus === 'INATIVO_RECUPERACAO') {
-      this.analyticsService.getInactiveChurn(pageReq).subscribe({
-        next: (res) => {
-          const mapped: ChurnCustomerItem[] = res.data.items.map((item) => ({
-            customerCode: item.customerCode,
-            status: 'INATIVO_RECUPERACAO',
-            diasSemComprar: item.diasSemComprar,
-            gapTipico: null,
-            diasReferencia: 60,
-            fatorTempo: 2.0,
-            faturamentoMedioMensal: item.faturamentoMedioMensal,
-            scorePrioridade: item.faturamentoMedioMensal * 2.0,
-            historicoCurto: item.historicoCurto,
-          }));
-          this.customers.set(mapped);
-          this.totalItems.set(res.meta.totalItems);
-          this.loading.set(false);
-        },
-        error: () => {
-          this.error.set('Não foi possível carregar a lista de inativos. Verifique sua conexão.');
-          this.loading.set(false);
-        },
-      });
-    } else {
-      this.analyticsService.getChurnCustomers(currentStatus, pageReq).subscribe({
-        next: (res) => {
-          this.customers.set(res.data.items);
-          this.resumo.set(res.data.resumo);
-          this.totalItems.set(res.meta.totalItems);
-          this.loading.set(false);
-        },
-        error: () => {
-          this.error.set('Falha ao carregar clientes em risco de churn.');
-          this.loading.set(false);
-        },
-      });
-    }
-  }
-
-  setFilter(status: string): void {
-    if (this.statusFilter() === status) return;
-    this.statusFilter.set(status);
-    this.offset.set(0);
-    this.fetchData();
-  }
-
-  nextPage(): void {
-    if (this.offset() + this.limit < this.totalItems()) {
-      this.offset.update((o) => o + this.limit);
-      this.fetchData();
-    }
-  }
-
-  prevPage(): void {
-    if (this.offset() > 0) {
-      this.offset.update((o) => Math.max(0, o - this.limit));
-      this.fetchData();
-    }
-  }
-
-  openCustomerDetail(customer: ChurnCustomerItem): void {
-    this.isDrawerOpen.set(true);
-    this.drawerLoading.set(true);
-    this.selectedCustomer.set(null);
-
-    this.analyticsService.getCustomerChurnDetail(customer.customerCode).subscribe({
-      next: (res) => {
-        this.selectedCustomer.set(res.data);
-        this.drawerLoading.set(false);
-      },
-      error: () => {
-        // Fallback com dados da tabela se endpoint falhar
-        this.selectedCustomer.set({
-          customerCode: customer.customerCode,
-          status: customer.status,
-          diasSemComprar: customer.diasSemComprar,
-          dataUltimoPedido: null,
-          gapTipico: customer.gapTipico,
-          diasReferencia: customer.diasReferencia,
-          fatorTempo: customer.fatorTempo,
-          faturamentoMedioMensal: customer.faturamentoMedioMensal,
-          scorePrioridade: customer.scorePrioridade,
-          historicoCurto: customer.historicoCurto,
-          variacaoReceitaTrimestralPct: null,
-          historicoMensal: [],
-          produtosPerdidos: [],
-        });
-        this.drawerLoading.set(false);
-      },
+    this.listTrigger$.next({
+      status: this.statusFilter(),
+      offset: this.offset(),
     });
   }
 
-  closeDrawer(): void {
-    this.isDrawerOpen.set(false);
+  setFilter(status: ChurnStatusFilter): void {
+    if (this.statusFilter() === status && !this.error() && !this.loading()) {
+      return;
+    }
+    this.listTrigger$.next({ status, offset: 0 });
+  }
+
+  onPageChange(targetPage: number): void {
+    const nextOffset = (targetPage - 1) * this.limit;
+    this.listTrigger$.next({
+      status: this.statusFilter(),
+      offset: nextOffset,
+    });
+  }
+
+  protected onRowClick(
+    customer: ChurnTableRow,
+    triggerButton: HTMLButtonElement,
+    event: MouseEvent,
+  ): void {
+    const target = event.target as HTMLElement | null;
+    if (target?.closest('button, a')) return;
+    this.openCustomerDetail(customer, triggerButton);
+  }
+
+  openCustomerDetail(
+    customer: ChurnTableRow,
+    triggerElement: HTMLElement | null = null,
+  ): void {
+    const fallbackTrigger =
+      triggerElement ?? (this.document.activeElement as HTMLElement | null);
+    this.drawerTriggerElement.set(fallbackTrigger);
+    this.selectedCustomerCode.set(customer.customerCode);
     this.selectedCustomer.set(null);
+    this.drawerError.set(null);
+    this.drawerLoading.set(true);
+    this.isDrawerOpen.set(true);
+    this.detailTrigger$.next(customer.customerCode);
+  }
+
+  retryCustomerDetail(): void {
+    const code = this.selectedCustomerCode();
+    if (code === null) return;
+    this.drawerError.set(null);
+    this.drawerLoading.set(true);
+    this.detailTrigger$.next(code);
+  }
+
+  closeDrawer(): void {
+    this.detailTrigger$.next(null);
+    this.isDrawerOpen.set(false);
+    this.drawerLoading.set(false);
+    this.drawerError.set(null);
+    this.selectedCustomer.set(null);
+    this.selectedCustomerCode.set(null);
   }
 
   exportCsv(): void {
+    if (!this.canExportCsv()) return;
     this.isExporting.set(true);
-    const items = this.customers();
-    if (!items.length) {
+
+    const view = this.document.defaultView;
+    let blobUrl: string | null = null;
+    let link: HTMLAnchorElement | null = null;
+
+    try {
+      const csvContent = buildChurnCsvContent(this.customers(), this.statusFilter());
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      if (view?.URL && typeof view.URL.createObjectURL === 'function') {
+        blobUrl = view.URL.createObjectURL(blob);
+        link = this.document.createElement('a');
+        link.href = blobUrl;
+        link.download = `fitoherb-churn-${this.statusFilter().toLowerCase()}-p${this.page()}.csv`;
+        link.style.display = 'none';
+        this.document.body.appendChild(link);
+        link.click();
+      }
+    } finally {
+      if (link?.parentNode) {
+        link.parentNode.removeChild(link);
+      }
+      if (blobUrl && view?.URL && typeof view.URL.revokeObjectURL === 'function') {
+        view.URL.revokeObjectURL(blobUrl);
+      }
       this.isExporting.set(false);
-      return;
     }
-
-    const headers = ['Codigo Cliente', 'Status', 'Dias Sem Comprar', 'Cadencia Tipica (dias)', 'Faturamento Medio Mensal (R$)', 'Score Prioridade (R$)'];
-    const rows = items.map((c) => [
-      c.customerCode,
-      c.status,
-      c.diasSemComprar,
-      c.gapTipico ?? '—',
-      c.faturamentoMedioMensal.toFixed(2),
-      c.scorePrioridade.toFixed(2),
-    ]);
-
-    const csvContent = '\uFEFF' + [headers.join(';'), ...rows.map((r) => r.join(';'))].join('\r\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `churn-clientes-${this.statusFilter().toLowerCase()}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-    this.isExporting.set(false);
   }
 
-  formatCurrency(value: number): string {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+  protected getStatusDisplay(status: ChurnTableRow['status']) {
+    return getChurnStatusDisplay(status);
+  }
+
+  private handleListError(err: unknown, fallback: string): void {
+    this.error.set(resolveChurnErrorMessage(err, fallback));
+    this.customers.set([]);
+    this.totalItems.set(0);
+    this.page.set(1);
+    this.totalPages.set(1);
+    this.loading.set(false);
   }
 }

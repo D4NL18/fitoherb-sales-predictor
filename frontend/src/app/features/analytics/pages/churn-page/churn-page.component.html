@@ -1,192 +1,345 @@
-<div class="churn-page-container">
-  <!-- Cabeçalho -->
+<div class="churn-page-container" [attr.inert]="isDrawerOpen() ? '' : null">
   <header class="page-header">
-    <div class="header-content">
-      <h1>Churn de Clientes</h1>
+    <div class="header-text">
+      <div class="header-eyebrow-row">
+        <span class="eyebrow">Retenção de Carteira</span>
+        @if (dataReferencia(); as refDate) {
+          <span class="reference-pill tabular">Pedidos até {{ refDate | ptDate }}</span>
+        }
+      </div>
+      <h1 class="page-title">Churn de Clientes</h1>
       <p class="subtitle">
-        Clientes da carteira ordenados pelo Score de Retenção (Urgência Temporal × Faturamento Médio Mensal).
+        Priorização por score de impacto mensal para recuperação ativa dos clientes em risco.
       </p>
     </div>
 
-    <!-- Botão de Ação: Exportar CSV -->
     <div class="header-actions">
       <button
         type="button"
         class="btn-export"
+        [disabled]="!canExportCsv()"
         (click)="exportCsv()"
-        [disabled]="isExporting() || loading() || customers().length === 0"
-        aria-label="Exportar lista de clientes em risco para CSV">
-        <span *ngIf="!isExporting()">↓ Exportar Lista (CSV)</span>
-        <span *ngIf="isExporting()">Exportando...</span>
+      >
+        <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M10 3.5v9M6.5 9.5 10 13l3.5-3.5M4 15.5h12" />
+        </svg>
+        <span>@if (isExporting()) { Exportando... } @else { Exportar CSV }</span>
       </button>
     </div>
   </header>
 
-  <!-- Painel de KPIs de Impacto Financeiro -->
-  <section class="kpi-banner" *ngIf="resumo()">
-    <div class="kpi-card highlight">
-      <span class="kpi-label">Receita Mensal em Risco</span>
-      <span class="kpi-value mono">{{ formatCurrency(resumo()!.receitaMensalEmRisco) }}</span>
-      <span class="kpi-sub">Faturamento médio somado dos clientes em risco</span>
-    </div>
+  <section class="kpi-section" aria-label="Resumo da carteira de churn">
+    @if (resumo(); as kpi) {
+      <div class="kpi-banner">
+        <article class="kpi-card kpi-critical">
+          <span class="kpi-label">Em risco</span>
+          <span class="kpi-value tabular">{{ kpi.totalEmRisco | ptDecimal }}</span>
+          <span class="kpi-meta tabular">
+            Receita em risco: {{ kpi.receitaMensalEmRisco | brl }}/mês
+          </span>
+        </article>
 
-    <div class="kpi-card critical">
-      <span class="kpi-label">Clientes em Risco</span>
-      <span class="kpi-value mono">{{ resumo()!.totalEmRisco }}</span>
-      <span class="kpi-sub">≥ 60 dias ou ultrapassaram régua própria</span>
-    </div>
+        <article class="kpi-card kpi-warning">
+          <span class="kpi-label">Em alerta</span>
+          <span class="kpi-value tabular">{{ kpi.totalAlerta | ptDecimal }}</span>
+          <span class="kpi-meta">Acima da cadência típica (1,0×)</span>
+        </article>
 
-    <div class="kpi-card warning">
-      <span class="kpi-label">Clientes em Alerta</span>
-      <span class="kpi-value mono">{{ resumo()!.totalAlerta }}</span>
-      <span class="kpi-sub">Entre 50% e 100% da cadência habitual</span>
-    </div>
+        <article class="kpi-card kpi-positive">
+          <span class="kpi-label">Saudáveis</span>
+          <span class="kpi-value tabular">{{ kpi.totalSaudavel | ptDecimal }}</span>
+          <span class="kpi-meta">Dentro do ritmo esperado</span>
+        </article>
 
-    <div class="kpi-card neutral">
-      <span class="kpi-label">Inativos Antigos</span>
-      <span class="kpi-value mono">{{ resumo()!.totalInativos }}</span>
-      <span class="kpi-sub">Parados há mais de 180 dias</span>
-    </div>
+        <article class="kpi-card kpi-neutral">
+          <span class="kpi-label">Inativos antigos (&gt; 180d)</span>
+          <span class="kpi-value tabular">{{ kpi.totalInativos | ptDecimal }}</span>
+          <span class="kpi-meta">Fila separada de reativação</span>
+        </article>
+      </div>
+    } @else if (loading()) {
+      <div class="kpi-banner" aria-hidden="true">
+        @for (item of [1, 2, 3, 4]; track item) {
+          <div class="kpi-card kpi-skeleton">
+            <span class="skeleton-line sk-kpi-label"></span>
+            <span class="skeleton-box sk-kpi-value"></span>
+            <span class="skeleton-line sk-kpi-meta"></span>
+          </div>
+        }
+      </div>
+    }
   </section>
 
-  <!-- Filtros de Status (Pills) -->
-  <nav class="filter-bar" aria-label="Filtro de clientes por status de risco">
+  <nav class="filter-bar" aria-label="Filtrar clientes por status">
     <button
       type="button"
-      class="filter-pill"
+      class="filter-chip"
       [class.active]="statusFilter() === 'EM_RISCO'"
-      (click)="setFilter('EM_RISCO')">
-      Em Risco <span class="pill-badge" *ngIf="resumo()">({{ resumo()!.totalEmRisco }})</span>
+      [attr.aria-pressed]="statusFilter() === 'EM_RISCO'"
+      (click)="setFilter('EM_RISCO')"
+    >
+      <span>Em risco</span>
+      @if (resumo(); as kpi) {
+        <span class="chip-count tabular">{{ kpi.totalEmRisco | ptDecimal }}</span>
+      }
     </button>
+
     <button
       type="button"
-      class="filter-pill"
+      class="filter-chip"
       [class.active]="statusFilter() === 'ALERTA'"
-      (click)="setFilter('ALERTA')">
-      Em Alerta <span class="pill-badge" *ngIf="resumo()">({{ resumo()!.totalAlerta }})</span>
+      [attr.aria-pressed]="statusFilter() === 'ALERTA'"
+      (click)="setFilter('ALERTA')"
+    >
+      <span>Em alerta</span>
+      @if (resumo(); as kpi) {
+        <span class="chip-count tabular">{{ kpi.totalAlerta | ptDecimal }}</span>
+      }
     </button>
+
     <button
       type="button"
-      class="filter-pill"
+      class="filter-chip"
       [class.active]="statusFilter() === 'SAUDAVEL'"
-      (click)="setFilter('SAUDAVEL')">
-      Saudáveis <span class="pill-badge" *ngIf="resumo()">({{ resumo()!.totalSaudavel }})</span>
+      [attr.aria-pressed]="statusFilter() === 'SAUDAVEL'"
+      (click)="setFilter('SAUDAVEL')"
+    >
+      <span>Saudáveis</span>
+      @if (resumo(); as kpi) {
+        <span class="chip-count tabular">{{ kpi.totalSaudavel | ptDecimal }}</span>
+      }
     </button>
+
     <button
       type="button"
-      class="filter-pill"
+      class="filter-chip"
+      [class.active]="statusFilter() === 'TODOS'"
+      [attr.aria-pressed]="statusFilter() === 'TODOS'"
+      (click)="setFilter('TODOS')"
+    >
+      <span>Todos os ativos</span>
+      @if (totalActiveCount() !== null) {
+        <span class="chip-count tabular">{{ totalActiveCount()! | ptDecimal }}</span>
+      }
+    </button>
+
+    <button
+      type="button"
+      class="filter-chip filter-chip-secondary"
       [class.active]="statusFilter() === 'INATIVO_RECUPERACAO'"
-      (click)="setFilter('INATIVO_RECUPERACAO')">
-      Inativos Antigos (&gt; 180d)
+      [attr.aria-pressed]="statusFilter() === 'INATIVO_RECUPERACAO'"
+      (click)="setFilter('INATIVO_RECUPERACAO')"
+    >
+      <span>Inativos antigos (&gt; 180d)</span>
+      @if (badgeInativosCount() !== null) {
+        <span class="chip-count tabular">{{ badgeInativosCount()! | ptDecimal }}</span>
+      }
     </button>
   </nav>
 
-  <!-- Erro -->
-  <div class="error-banner" *ngIf="error()">
-    <span class="error-icon">⚠️</span>
-    <span class="error-msg">{{ error() }}</span>
-    <button type="button" class="btn-retry" (click)="fetchData()">Tentar Novamente</button>
-  </div>
+  <p class="sr-only" aria-live="polite" aria-atomic="true">
+    {{ liveAnnouncement() }}
+  </p>
 
-  <!-- Loading Skeleton -->
-  <div class="table-skeleton" *ngIf="loading()">
-    <div class="skeleton-row header"></div>
-    <div class="skeleton-row" *ngFor="let i of [1, 2, 3, 4, 5, 6]"></div>
-  </div>
+  <section class="results-section" [attr.aria-busy]="loading()">
+    @if (error(); as errMsg) {
+      <div class="error-banner" role="alert">
+        <div class="error-banner-copy">
+          <svg class="error-icon" viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <circle cx="10" cy="10" r="8" />
+            <path stroke-linecap="round" d="M10 6v4.5M10 13.75h.01" />
+          </svg>
+          <span>{{ errMsg }}</span>
+        </div>
+        <button type="button" class="btn-retry" (click)="fetchData()">
+          Tentar novamente
+        </button>
+      </div>
+    } @else if (loading()) {
+      <div class="table-container table-skeleton" aria-label="Carregando clientes">
+        <div class="skeleton-table-header">
+          <span class="skeleton-line sk-th"></span>
+          <span class="skeleton-line sk-th"></span>
+          <span class="skeleton-line sk-th"></span>
+          <span class="skeleton-line sk-th"></span>
+        </div>
+        @for (row of [1, 2, 3, 4, 5, 6]; track row) {
+          <div class="skeleton-table-row">
+            <span class="skeleton-box sk-cell-code"></span>
+            <span class="skeleton-box sk-cell-tag"></span>
+            <span class="skeleton-line sk-cell-num"></span>
+            <span class="skeleton-line sk-cell-num"></span>
+            <span class="skeleton-box sk-cell-btn"></span>
+          </div>
+        }
+      </div>
+    } @else if (customers().length > 0) {
+      <div class="table-container">
+        <table class="churn-table">
+          <caption class="sr-only">
+            Lista priorizada de clientes para retenção de churn
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">Cód. Cliente</th>
+              <th scope="col">Status</th>
+              <th scope="col" class="num-col">Dias s/ comprar</th>
+              @if (isInactiveView()) {
+                <th scope="col" class="num-col">Último pedido</th>
+              } @else {
+                <th scope="col" class="num-col">Cadência típica</th>
+              }
+              <th scope="col" class="num-col">Fat. médio/mês</th>
+              @if (!isInactiveView()) {
+                <th scope="col" class="num-col">Score prioridade</th>
+              }
+              <th scope="col" class="action-col">Diagnóstico</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (c of customers(); track c.customerCode) {
+              @let sd = getStatusDisplay(c.status);
+              <tr
+                class="data-row"
+                [class.row-selected]="isDrawerOpen() && selectedCustomerCode() === c.customerCode"
+                (click)="onRowClick(c, triggerBtn, $event)"
+              >
+                <td class="cell-code" data-label="Cód. Cliente">
+                  <span class="code-cell-inner">
+                    <span class="code-badge tabular">#{{ c.customerCode }}</span>
+                    @if (c.historicoCurto) {
+                      <span class="short-history-pill">Histórico curto</span>
+                    }
+                  </span>
+                </td>
 
-  <!-- Tabela de Clientes (Ledger) -->
-  <div class="table-container" *ngIf="!loading() && !error() && customers().length > 0">
-    <table class="churn-table" aria-label="Tabela de clientes priorizados por churn">
-      <thead>
-        <tr>
-          <th scope="col">Cliente</th>
-          <th scope="col">Status</th>
-          <th scope="col">Dias Parado</th>
-          <th scope="col">Cadência Habitual</th>
-          <th scope="col" class="num-col">Faturamento Médio Mensal</th>
-          <th scope="col" class="num-col">Score Prioridade</th>
-          <th scope="col" class="action-col"><span class="sr-only">Ações</span></th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr
-          *ngFor="let item of customers()"
-          (click)="openCustomerDetail(item)"
-          (keydown.enter)="openCustomerDetail(item)"
-          tabindex="0"
-          role="button"
-          [attr.aria-label]="'Abrir diagnóstico do cliente #' + item.customerCode">
-          <td class="code-cell">
-            <span class="customer-code mono">#{{ item.customerCode }}</span>
-            <span class="badge-short" *ngIf="item.historicoCurto" title="Cliente com menos de 3 pedidos de venda">
-              Histórico curto
-            </span>
-          </td>
-          <td>
-            <span class="tag" [ngClass]="{
-              'tag-critical': item.status === 'EM_RISCO',
-              'tag-warning': item.status === 'ALERTA',
-              'tag-neutral': item.status === 'SAUDAVEL' || item.status === 'INATIVO_RECUPERACAO'
-            }">
-              {{ item.status === 'INATIVO_RECUPERACAO' ? 'Inativo' : item.status }}
-            </span>
-          </td>
-          <td class="mono">
-            <strong>{{ item.diasSemComprar }} dias</strong>
-          </td>
-          <td>
-            <span *ngIf="item.gapTipico">{{ item.gapTipico }} dias <small class="text-muted">(ref: {{ item.diasReferencia }}d)</small></span>
-            <span *ngIf="!item.gapTipico" class="text-muted">—</span>
-          </td>
-          <td class="num-col mono">
-            {{ formatCurrency(item.faturamentoMedioMensal) }}
-          </td>
-          <td class="num-col mono score-cell">
-            <strong>{{ formatCurrency(item.scorePrioridade) }}</strong>
-          </td>
-          <td class="action-col">
-            <span class="chevron" aria-hidden="true">›</span>
-          </td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
+                <td data-label="Status">
+                  <span class="tag" [class]="sd.tagClass">
+                    @switch (sd.icon) {
+                      @case ('alert') {
+                        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M8 2.2 14 13H2L8 2.2Z" />
+                          <path stroke-linecap="round" d="M8 6.2v3.1M8 11.4h.01" />
+                        </svg>
+                      }
+                      @case ('clock') {
+                        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                          <circle cx="8" cy="8" r="6" />
+                          <path stroke-linecap="round" d="M8 4.8V8l2.2 1.4" />
+                        </svg>
+                      }
+                      @case ('check') {
+                        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M3.5 8.5 6.5 11.5 12.5 5" />
+                        </svg>
+                      }
+                      @default {
+                        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                          <circle cx="8" cy="8" r="6" />
+                          <path stroke-linecap="round" d="M6.4 5.5v5M9.6 5.5v5" />
+                        </svg>
+                      }
+                    }
+                    <span>{{ sd.label }}</span>
+                  </span>
+                </td>
 
-  <!-- Estado Vazio -->
-  <div class="empty-state" *ngIf="!loading() && !error() && customers().length === 0">
-    <div class="empty-icon">✓</div>
-    <h3>Nenhum cliente neste status</h3>
-    <p>Não há clientes classificados como {{ statusFilter() }} no momento.</p>
-  </div>
+                <td class="num-col tabular" data-label="Dias s/ comprar">
+                  <strong>{{ c.diasSemComprar | ptDecimal }}</strong> dias
+                </td>
 
-  <!-- Paginação -->
-  <footer class="pagination-footer" *ngIf="!loading() && !error() && totalItems() > limit">
-    <div class="page-info">
-      Exibindo {{ offset() + 1 }}–{{ offset() + customers().length }} de {{ totalItems() }} clientes
-    </div>
-    <div class="page-controls">
-      <button
-        type="button"
-        class="btn-pager"
-        (click)="prevPage()"
-        [disabled]="offset() === 0">
-        ‹ Anterior
-      </button>
-      <button
-        type="button"
-        class="btn-pager"
-        (click)="nextPage()"
-        [disabled]="offset() + limit >= totalItems()">
-        Próxima ›
-      </button>
-    </div>
-  </footer>
+                @if (isInactiveView()) {
+                  <td class="num-col tabular" data-label="Último pedido">
+                    @if (c.dataUltimoPedido) {
+                      {{ c.dataUltimoPedido | ptDate }}
+                    } @else {
+                      —
+                    }
+                  </td>
+                } @else {
+                  <td class="num-col tabular" data-label="Cadência típica">
+                    @if (!c.historicoCurto && c.gapTipico !== null) {
+                      {{ c.gapTipico | ptDecimal: 1 }}d
+                      <span class="cell-subtext">(régua {{ c.diasReferencia ?? '—' }}d)</span>
+                    } @else if (c.historicoCurto) {
+                      <span class="cell-muted">Régua {{ c.diasReferencia ?? '—' }}d</span>
+                    } @else {
+                      —
+                    }
+                  </td>
+                }
+
+                <td class="num-col tabular" data-label="Fat. médio/mês">
+                  {{ c.faturamentoMedioMensal | brl }}
+                </td>
+
+                @if (!isInactiveView()) {
+                  <td class="num-col tabular score-cell" data-label="Score prioridade">
+                    @if (c.scorePrioridade !== null) {
+                      <strong>{{ c.scorePrioridade | brl }}</strong>
+                    } @else {
+                      —
+                    }
+                  </td>
+                }
+
+                <td class="action-col" data-label="Diagnóstico">
+                  <button
+                    #triggerBtn
+                    type="button"
+                    class="btn-row-detail"
+                    [attr.aria-expanded]="isDrawerOpen() && selectedCustomerCode() === c.customerCode"
+                    [attr.aria-label]="'Ver diagnóstico do cliente #' + c.customerCode"
+                    (click)="openCustomerDetail(c, triggerBtn)"
+                  >
+                    <span>Detalhes</span>
+                    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M6 3.5 10.5 8 6 12.5" />
+                    </svg>
+                  </button>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+
+      <app-list-pager
+        [page]="page()"
+        [totalPages]="totalPages()"
+        [totalItems]="totalItems()"
+        [offset]="offset()"
+        [itemCount]="customers().length"
+        [disabled]="loading()"
+        (pageChange)="onPageChange($event)"
+      />
+    } @else {
+      <div class="empty-state">
+        <div class="empty-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+        </div>
+        <h2 class="empty-title">Nenhum cliente nesta categoria</h2>
+        <p class="empty-desc">
+          @if (isInactiveView()) {
+            Não existem clientes inativos há mais de 180 dias elegíveis no momento.
+          } @else {
+            Nenhum cliente ativo foi classificado no filtro selecionado na base atual.
+          }
+        </p>
+      </div>
+    }
+  </section>
 </div>
 
-<!-- Drawer Lateral de Diagnóstico -->
 <app-customer-churn-drawer
   [customer]="selectedCustomer()"
+  [customerCode]="selectedCustomerCode()"
   [isOpen]="isDrawerOpen()"
   [loading]="drawerLoading()"
-  (closeDrawer)="closeDrawer()">
-</app-customer-churn-drawer>
+  [error]="drawerError()"
+  [returnFocusTo]="drawerTriggerElement()"
+  (closeDrawer)="closeDrawer()"
+  (retry)="retryCustomerDetail()"
+/>

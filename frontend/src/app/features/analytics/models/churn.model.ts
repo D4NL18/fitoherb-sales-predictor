@@ -5,6 +5,10 @@ import { AnalyticsMeta, PagedMeta } from './analytics.model';
 
 export type ChurnStatus = 'EM_RISCO' | 'ALERTA' | 'SAUDAVEL' | 'INATIVO_RECUPERACAO';
 
+export type ChurnApiStatusFilter = 'EM_RISCO' | 'ALERTA' | 'SAUDAVEL' | 'TODOS';
+
+export type ChurnStatusFilter = ChurnApiStatusFilter | 'INATIVO_RECUPERACAO';
+
 export interface ChurnSummaryKpi {
   totalEmRisco: number;
   totalAlerta: number;
@@ -23,6 +27,20 @@ export interface ChurnCustomerItem {
   faturamentoMedioMensal: number;
   scorePrioridade: number;
   historicoCurto: boolean;
+}
+
+/** Linha unificada da tabela (ativos têm score/régua; inativos antigos usam faturamento e data do último pedido). */
+export interface ChurnTableRow {
+  customerCode: number;
+  status: ChurnStatus;
+  diasSemComprar: number;
+  gapTipico: number | null;
+  diasReferencia: number | null;
+  fatorTempo: number | null;
+  faturamentoMedioMensal: number;
+  scorePrioridade: number | null;
+  historicoCurto: boolean;
+  dataUltimoPedido: string | null;
 }
 
 export interface ChurnCustomersData {
@@ -72,7 +90,7 @@ export interface CustomerChurnDetailResponse {
 
 export interface InactiveCustomerItem {
   customerCode: number;
-  status: string;
+  status: ChurnStatus;
   diasSemComprar: number;
   dataUltimoPedido: string | null;
   faturamentoMedioMensal: number;
