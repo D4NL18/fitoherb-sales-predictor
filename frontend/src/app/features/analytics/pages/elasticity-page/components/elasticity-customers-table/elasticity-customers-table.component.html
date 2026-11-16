@@ -1,10 +1,10 @@
 <section class="customers-panel" aria-labelledby="customers-section-title">
   <header class="customers-header">
     <div>
-      <span class="section-eyebrow">Detalhamento de clientes</span>
-      <h2 id="customers-section-title" class="section-title">Elasticidade por cliente</h2>
+      <span class="section-eyebrow">Análise por comprador</span>
+      <h2 id="customers-section-title" class="section-title">Como cada cliente reage ao preço</h2>
       <p class="section-subtitle">
-        Selecione um cliente para visualizar o cálculo bayesiano individual e simular um reajuste específico.
+        Compare a sensibilidade de cada comprador e clique em "Simular" para testar um reajuste específico para ele.
       </p>
     </div>
 
@@ -22,9 +22,17 @@
   @if (customers().length > 0) {
     <form class="customers-toolbar" (submit)="onLookupSubmit($event)" novalidate>
       <div class="lookup-field">
-        <label for="customer-code-filter" class="lookup-label">
-          Filtrar nesta página ou consultar código exato
-        </label>
+        <div class="lookup-label-row">
+          <label for="customer-code-filter" class="lookup-label">
+            Buscar cliente pelo código
+          </label>
+          <app-info-help
+            topicLabel="Buscar cliente pelo código"
+            [content]="helpCopy.customerLookup"
+            size="sm"
+            preferredAlign="start"
+          />
+        </div>
         <div class="lookup-controls">
           <div class="lookup-input-wrap">
             <svg class="lookup-icon" aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -93,13 +101,22 @@
       </button>
     </div>
   } @else {
+    <div class="commercial-guide-strip" aria-label="Orientação comercial da tabela">
+      <strong class="guide-strip-title">Como decidir usando esta tabela:</strong>
+      <ul class="guide-strip-list">
+        <li><strong>Pouco sensível:</strong> compradores mais fiéis — permitem pequenos reajustes com menor perda de volume.</li>
+        <li><strong>Sensível:</strong> compradores que reduzem pedidos quando o preço sobe — priorize descontos pontuais ou contrapartida de volume.</li>
+        <li><strong>Volume (un.) + Sensibilidade usada:</strong> ordene por essas colunas para simular primeiro os clientes de maior impacto.</li>
+      </ul>
+    </div>
+
     <div class="table-wrap" [attr.aria-busy]="isBusy() ? 'true' : null">
       <table class="customers-table">
         <thead>
           <tr>
             <th scope="col" [attr.aria-sort]="ariaSortFor('customerCode')">
               <button type="button" class="sort-btn" (click)="toggleSort('customerCode')">
-                <span>Código</span>
+                <span>Cód. Cliente</span>
                 <span class="sort-indicator" aria-hidden="true">
                   @if (sortKey() === 'customerCode') {
                     {{ sortDir() === 'asc' ? '↑' : '↓' }}
@@ -123,7 +140,7 @@
             </th>
             <th scope="col" class="num-col" [attr.aria-sort]="ariaSortFor('totalUnits')">
               <button type="button" class="sort-btn sort-btn-right" (click)="toggleSort('totalUnits')">
-                <span>Volume (Un)</span>
+                <span>Volume (un.)</span>
                 <span class="sort-indicator" aria-hidden="true">
                   @if (sortKey() === 'totalUnits') {
                     {{ sortDir() === 'asc' ? '↑' : '↓' }}
@@ -133,21 +150,59 @@
                 </span>
               </button>
             </th>
-            <th scope="col" class="num-col">Peso cliente</th>
-            <th scope="col" class="num-col">Empírica</th>
-            <th scope="col" class="num-col" [attr.aria-sort]="ariaSortFor('shrinkageElasticity')">
-              <button type="button" class="sort-btn sort-btn-right" (click)="toggleSort('shrinkageElasticity')">
-                <span>Ajustada</span>
-                <span class="sort-indicator" aria-hidden="true">
-                  @if (sortKey() === 'shrinkageElasticity') {
-                    {{ sortDir() === 'asc' ? '↑' : '↓' }}
-                  } @else {
-                    ↕
-                  }
-                </span>
-              </button>
+            <th scope="col" class="num-col">
+              <div class="th-with-help th-num">
+                <span>Peso histórico</span>
+                <app-info-help
+                  topicLabel="Peso histórico"
+                  [content]="helpCopy.tableShrinkageWeight"
+                  size="sm"
+                  preferredAlign="center"
+                />
+              </div>
             </th>
-            <th scope="col">Classificação</th>
+            <th scope="col" class="num-col">
+              <div class="th-with-help th-num">
+                <span>Reação própria</span>
+                <app-info-help
+                  topicLabel="Reação própria"
+                  [content]="helpCopy.tableEmpiricalElasticity"
+                  size="sm"
+                  preferredAlign="center"
+                />
+              </div>
+            </th>
+            <th scope="col" class="num-col" [attr.aria-sort]="ariaSortFor('shrinkageElasticity')">
+              <div class="th-sort-with-help th-sort-with-help-right">
+                <button type="button" class="sort-btn sort-btn-right" (click)="toggleSort('shrinkageElasticity')">
+                  <span>Sensibilidade usada</span>
+                  <span class="sort-indicator" aria-hidden="true">
+                    @if (sortKey() === 'shrinkageElasticity') {
+                      {{ sortDir() === 'asc' ? '↑' : '↓' }}
+                    } @else {
+                      ↕
+                    }
+                  </span>
+                </button>
+                <app-info-help
+                  topicLabel="Sensibilidade usada"
+                  [content]="helpCopy.tableAdjustedElasticity"
+                  size="sm"
+                  preferredAlign="end"
+                />
+              </div>
+            </th>
+            <th scope="col">
+              <div class="th-with-help">
+                <span>Perfil</span>
+                <app-info-help
+                  topicLabel="Perfil de sensibilidade"
+                  [content]="helpCopy.tableProfile"
+                  size="sm"
+                  preferredAlign="end"
+                />
+              </div>
+            </th>
             <th scope="col" class="action-col">Ação</th>
           </tr>
         </thead>
@@ -156,25 +211,25 @@
             @let isSelected = selectedCustomerCode() === c.customerCode;
             @let clsMeta = classificationMeta(c.classification);
             <tr [class.is-selected]="isSelected">
-              <td data-label="Código" class="code-cell">
+              <td data-label="Cód. Cliente" class="code-cell">
                 #{{ c.customerCode }}
               </td>
               <td data-label="Pedidos" class="num-cell">
                 {{ c.ordersCount | ptDecimal: 0 }}
               </td>
-              <td data-label="Volume (Un)" class="num-cell">
+              <td data-label="Volume (un.)" class="num-cell">
                 {{ unitsLabel(c.totalUnits) }}
               </td>
-              <td data-label="Peso cliente" class="num-cell">
+              <td data-label="Peso histórico" class="num-cell">
                 {{ c.shrinkageWeight | ptPercent: 0 }}
               </td>
-              <td data-label="Empírica" class="num-cell muted-num">
+              <td data-label="Reação própria" class="num-cell muted-num">
                 {{ c.empiricalElasticity | ptDecimal: 2 }}
               </td>
-              <td data-label="Ajustada" class="num-cell strong-num">
+              <td data-label="Sensibilidade usada" class="num-cell strong-num">
                 {{ c.shrinkageElasticity | ptDecimal: 2 }}
               </td>
-              <td data-label="Classificação" class="tag-cell">
+              <td data-label="Perfil" class="tag-cell">
                 <span [class]="'tag ' + clsMeta.tagClass">
                   @if (clsMeta.icon === 'elastic') {
                     <svg aria-hidden="true" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">

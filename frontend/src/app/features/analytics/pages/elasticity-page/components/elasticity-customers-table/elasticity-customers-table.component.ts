@@ -1,9 +1,11 @@
 import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
 import { ErrorBannerComponent } from '../../../../components/error-banner/error-banner.component';
+import { InfoHelpComponent } from '../../../../components/info-help/info-help.component';
 import { ListPagerComponent } from '../../../../components/list-pager/list-pager.component';
 import { ResultStateComponent } from '../../../../components/result-state/result-state.component';
 import { CustomerElasticityItem } from '../../../../models/elasticity.models';
 import { PtDecimalPipe, PtPercentPipe } from '../../../../pipes/pt-br-format.pipes';
+import { ELASTICITY_HELP_COPY } from '../../../../utils/elasticity-help-copy';
 import {
   CustomerSortKey,
   SortDirection,
@@ -18,7 +20,7 @@ const POSITIVE_INT_PATTERN = /^[1-9]\d*$/;
 @Component({
   selector: 'app-elasticity-customers-table',
   standalone: true,
-  imports: [PtDecimalPipe, PtPercentPipe, ErrorBannerComponent, ListPagerComponent, ResultStateComponent],
+  imports: [PtDecimalPipe, PtPercentPipe, ErrorBannerComponent, InfoHelpComponent, ListPagerComponent, ResultStateComponent],
   templateUrl: './elasticity-customers-table.component.html',
   styleUrl: './elasticity-customers-table.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -46,6 +48,7 @@ export class ElasticityCustomersTableComponent {
   protected readonly localLookupError = signal<string | null>(null);
 
   protected readonly emptyCustomersState = buildElasticityEmptyCustomersState();
+  protected readonly helpCopy = ELASTICITY_HELP_COPY;
 
   protected readonly visibleCustomers = computed(() =>
     filterAndSortCustomers(this.customers(), this.filterQuery(), this.sortKey(), this.sortDir()),

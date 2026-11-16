@@ -13,6 +13,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { EMPTY, Subject, catchError, defer, map, of, switchMap, timer } from 'rxjs';
 import { CodeSearchFormComponent } from '../../components/code-search-form/code-search-form.component';
 import { ErrorBannerComponent } from '../../components/error-banner/error-banner.component';
+import { InfoHelpComponent } from '../../components/info-help/info-help.component';
 import { ResultStateComponent } from '../../components/result-state/result-state.component';
 import { DEFAULT_PAGE_LIMIT } from '../../models/analytics.model';
 import {
@@ -30,6 +31,7 @@ import {
   toElasticityApiError,
 } from '../../utils/analytics-error';
 import { ResultStateAction } from '../../utils/cross-sell-view';
+import { ELASTICITY_HELP_COPY } from '../../utils/elasticity-help-copy';
 import {
   PRICE_CHANGE_DEFAULT,
   PRICE_CHANGE_MAX,
@@ -79,6 +81,7 @@ const POSITIVE_INT_PATTERN = /^[1-9]\d*$/;
   imports: [
     CodeSearchFormComponent,
     ErrorBannerComponent,
+    InfoHelpComponent,
     ResultStateComponent,
     ElasticitySkeletonComponent,
     ElasticityDiagnosticCardComponent,
@@ -131,6 +134,7 @@ export class ElasticityPageComponent implements OnInit {
   protected readonly initialState = buildElasticityInitialState();
   protected readonly insufficientDataState = buildElasticityInsufficientDataState();
   protected readonly invalidSkuFormatMessage = PRODUCT_INVALID_FORMAT_MESSAGE;
+  protected readonly helpCopy = ELASTICITY_HELP_COPY;
 
   protected readonly totalClients = computed(
     () => this.productMeta()?.totalItems ?? this.productData()?.customers.length ?? 0,

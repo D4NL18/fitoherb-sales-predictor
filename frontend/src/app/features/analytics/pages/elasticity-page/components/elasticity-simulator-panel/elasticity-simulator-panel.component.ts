@@ -10,8 +10,10 @@ import {
   untracked,
   viewChild,
 } from '@angular/core';
+import { InfoHelpComponent } from '../../../../components/info-help/info-help.component';
 import { CustomerElasticityDetail, SimulationImpactData } from '../../../../models/elasticity.models';
 import { BrlPipe, PtDecimalPipe, PtPercentPipe } from '../../../../pipes/pt-br-format.pipes';
+import { ELASTICITY_HELP_COPY } from '../../../../utils/elasticity-help-copy';
 import {
   PRICE_CHANGE_MAX,
   PRICE_CHANGE_MIN,
@@ -28,7 +30,7 @@ import {
 @Component({
   selector: 'app-elasticity-simulator-panel',
   standalone: true,
-  imports: [BrlPipe, PtDecimalPipe, PtPercentPipe],
+  imports: [BrlPipe, PtDecimalPipe, PtPercentPipe, InfoHelpComponent],
   templateUrl: './elasticity-simulator-panel.component.html',
   styleUrl: './elasticity-simulator-panel.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -55,6 +57,7 @@ export class ElasticitySimulatorPanelComponent {
   protected readonly minPct = PRICE_CHANGE_MIN;
   protected readonly maxPct = PRICE_CHANGE_MAX;
   protected readonly presets = PRICE_PRESETS;
+  protected readonly helpCopy = ELASTICITY_HELP_COPY;
   protected readonly scaleMarks = [
     { value: -50, label: '-50%', leftPct: sliderMarkLeftPct(-50), align: 'start' as const },
     { value: 0, label: '0%', leftPct: sliderMarkLeftPct(0), align: 'center' as const },

@@ -1,14 +1,22 @@
 <section #simulatorRoot class="simulator-card" aria-labelledby="simulator-title">
   <header class="simulator-header">
     <div class="simulator-heading">
-      <h3 id="simulator-title" class="simulator-title">Simulador de Impacto Financeiro</h3>
+      <div class="simulator-title-row">
+        <h3 id="simulator-title" class="simulator-title">Simulador de Reajuste de Preço</h3>
+        <app-info-help
+          topicLabel="Simulador de Reajuste de Preço"
+          [content]="helpCopy.priceSimulator"
+          size="md"
+          preferredAlign="start"
+        />
+      </div>
       <p class="simulator-subtitle">
-        Ajuste o percentual de preço para projetar volume, faturamento e margem de contribuição.
+        Mova a barra ou escolha um percentual para ver na hora o efeito nas unidades vendidas, no faturamento e no lucro.
       </p>
     </div>
 
     <div class="quick-adjust-group" role="group" aria-label="Atalhos rápidos de reajuste">
-      <span class="quick-label">Atalhos:</span>
+      <span class="quick-label">Testar rápido:</span>
       @for (preset of presets; track preset) {
         <button
           type="button"
@@ -30,13 +38,13 @@
         <div class="customer-scope-identity">
           <span class="customer-scope-badge">Cliente #{{ customerCode }}</span>
           <h4 #customerFocusTarget tabindex="-1" class="customer-scope-title">
-            Simulação individualizada por cliente
+            Simulação personalizada para este cliente
           </h4>
         </div>
         <button
           type="button"
           class="btn-clear-customer"
-          [attr.aria-label]="'Remover cliente #' + customerCode + ' e voltar à visão geral do produto'"
+          [attr.aria-label]="'Remover cliente #' + customerCode + ' e voltar para visão geral do produto'"
           [disabled]="isSimulating()"
           (click)="clearCustomer.emit()"
         >
@@ -45,12 +53,12 @@
             <line x1="18" y1="6" x2="6" y2="18"></line>
             <line x1="6" y1="6" x2="18" y2="18"></line>
           </svg>
-          <span>Voltar à visão do produto</span>
+          <span>Voltar para visão geral do produto</span>
         </button>
       </div>
 
       @if (isCustomerLoading()) {
-        <p class="customer-scope-loading" role="status">Calculando elasticidade individual do cliente…</p>
+        <p class="customer-scope-loading" role="status">Calculando reação individual do cliente…</p>
       } @else {
         @if (customerError(); as cErr) {
           <p class="customer-scope-error" role="alert">{{ cErr }}</p>
@@ -68,19 +76,54 @@
 
               <dl class="customer-shrinkage-stats">
                 <div class="shrinkage-stat">
-                  <dt>Elasticidade do produto</dt>
+                  <dt class="dt-with-help">
+                    <span>Média geral do produto</span>
+                    <app-info-help
+                      topicLabel="Média geral do produto"
+                      [content]="helpCopy.productBaselineElasticity"
+                      size="sm"
+                      preferredAlign="start"
+                    />
+                  </dt>
                   <dd>{{ detail.productElasticity | ptDecimal:2 }}</dd>
                 </div>
                 <div class="shrinkage-stat">
-                  <dt>Empírica do cliente</dt>
+                  <dt class="dt-with-help">
+                    <span>Reação própria do cliente</span>
+                    <app-info-help
+                      topicLabel="Reação própria do cliente"
+                      [content]="helpCopy.customerEmpiricalElasticity"
+                      size="sm"
+                      preferredAlign="center"
+                    />
+                  </dt>
                   <dd>{{ detail.customerEmpiricalElasticity | ptDecimal:2 }}</dd>
                 </div>
                 <div class="shrinkage-stat shrinkage-stat-highlight">
-                  <dt>Shrinkage aplicada</dt>
-                  <dd>{{ detail.customerElasticity | ptDecimal:2 }}</dd>
+                  <dt class="dt-with-help">
+                    <span>Sensibilidade usada na simulação</span>
+                    <app-info-help
+                      topicLabel="Sensibilidade usada na simulação"
+                      [content]="helpCopy.shrinkageElasticity"
+                      size="sm"
+                      preferredAlign="center"
+                    />
+                  </dt>
+                  <dd>
+                    <span class="shrinkage-sub">Média ajustada (Shrinkage)</span>
+                    {{ detail.customerElasticity | ptDecimal:2 }}
+                  </dd>
                 </div>
                 <div class="shrinkage-stat">
-                  <dt>Peso do cliente (n={{ detail.ordersCount | ptDecimal }})</dt>
+                  <dt class="dt-with-help">
+                    <span>Peso do histórico dele ({{ detail.ordersCount | ptDecimal }} pedidos)</span>
+                    <app-info-help
+                      topicLabel="Peso do histórico do cliente"
+                      [content]="helpCopy.shrinkageWeight"
+                      size="sm"
+                      preferredAlign="end"
+                    />
+                  </dt>
                   <dd>{{ detail.shrinkageWeight | ptPercent:0 }} · {{ formatQty(detail.totalUnits) }} un.</dd>
                 </div>
               </dl>
@@ -94,7 +137,7 @@
 
   <div class="slider-control-row" [class.has-invalid]="localValidationError() !== null">
     <div class="slider-header-inline">
-      <label for="price-slider" class="slider-label">Variação de preço pretendida</label>
+      <label for="price-slider" class="slider-label">Quanto você quer alterar no preço?</label>
       <span class="slider-current-badge">{{ formatSignedPct(priceChangePct()) }}</span>
     </div>
 
@@ -128,10 +171,15 @@
             </span>
           }
         </div>
+        <div class="slider-legend" aria-hidden="true">
+          <span>Desconto</span>
+          <span>Preço atual</span>
+          <span>Aumento</span>
+        </div>
       </div>
 
       <div class="slider-input-group">
-        <label for="price-percent-input" class="sr-only">Percentual exato de variação de preço</label>
+        <label for="price-percent-input" class="sr-only">Percentual exato de alteração de preço</label>
         <input
           id="price-percent-input"
           type="number"
@@ -177,8 +225,14 @@
           Preço projetado: <strong>{{ sim.projectedPrice | brl }}</strong>
           ({{ formatSignedPct(sim.priceChangePct) }})
         </span>
-        <span class="summary-chip">
-          Elasticidade aplicada: <strong>{{ sim.appliedElasticity | ptDecimal:2 }}</strong>
+        <span class="summary-chip summary-chip-with-help">
+          <span>Sensibilidade aplicada: <strong>{{ sim.appliedElasticity | ptDecimal:2 }}</strong></span>
+          <app-info-help
+            topicLabel="Sensibilidade aplicada"
+            [content]="helpCopy.appliedElasticity"
+            size="sm"
+            preferredAlign="end"
+          />
         </span>
       </div>
 
@@ -192,7 +246,18 @@
 
     <div class="simulation-results-grid" [class.is-updating]="isSimulating()" [attr.aria-busy]="isSimulating() ? 'true' : null">
       <article class="sim-card">
-        <span class="sim-card-title">Volume Projetado</span>
+        <div class="sim-card-header">
+          <div class="sim-card-heading">
+            <span class="sim-card-title">Quantidade prevista</span>
+            <span class="sim-card-sub">Volume projetado</span>
+          </div>
+          <app-info-help
+            topicLabel="Quantidade prevista"
+            [content]="helpCopy.projectedVolume"
+            size="sm"
+            preferredAlign="start"
+          />
+        </div>
         <div class="sim-main-val">
           {{ formatQty(sim.projectedVolume) }} <span class="unit-label">un.</span>
         </div>
@@ -224,7 +289,18 @@
       </article>
 
       <article class="sim-card">
-        <span class="sim-card-title">Faturamento Projetado</span>
+        <div class="sim-card-header">
+          <div class="sim-card-heading">
+            <span class="sim-card-title">Faturamento previsto</span>
+            <span class="sim-card-sub">Receita bruta</span>
+          </div>
+          <app-info-help
+            topicLabel="Faturamento previsto"
+            [content]="helpCopy.projectedRevenue"
+            size="sm"
+            preferredAlign="center"
+          />
+        </div>
         <div class="sim-main-val">{{ sim.projectedRevenue | brl }}</div>
         <div class="sim-delta" [class]="'tone-' + revenueTone()">
           @switch (revenueTone()) {
@@ -255,7 +331,18 @@
       </article>
 
       <article class="sim-card sim-card-highlight">
-        <span class="sim-card-title">Margem de Contribuição</span>
+        <div class="sim-card-header">
+          <div class="sim-card-heading">
+            <span class="sim-card-title">Lucro bruto estimado</span>
+            <span class="sim-card-sub">Margem de Contribuição</span>
+          </div>
+          <app-info-help
+            topicLabel="Lucro bruto estimado"
+            [content]="helpCopy.projectedMargin"
+            size="sm"
+            preferredAlign="end"
+          />
+        </div>
         <div class="sim-main-val">{{ sim.projectedMargin | brl }}</div>
         <div class="sim-delta" [class]="'tone-' + marginTone()">
           @switch (marginTone()) {
@@ -312,7 +399,9 @@
           </svg>
         }
       }
-      <p class="rec-text">{{ sim.recommendation }}</p>
+      <p class="rec-text">
+        <span class="rec-prefix">Recomendação:</span> {{ sim.recommendation }}
+      </p>
     </div>
   }
 </section>

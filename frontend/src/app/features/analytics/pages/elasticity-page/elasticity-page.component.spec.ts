@@ -242,7 +242,7 @@ describe('ElasticityPageComponent', () => {
       expect(analyticsSpy.getProductElasticity).not.toHaveBeenCalled();
       expect(analyticsSpy.simulatePriceChange).not.toHaveBeenCalled();
       expect(normalizeText(fixture.nativeElement.textContent)).toContain(
-        'Analise a sensibilidade de preço por produto',
+        'Veja como o preço afeta as vendas antes de reajustar',
       );
     });
 
@@ -314,7 +314,7 @@ describe('ElasticityPageComponent', () => {
       queryParamMap$.next(convertToParamMap({}));
       fixture.detectChanges();
       expect(normalizeText(fixture.nativeElement.textContent)).toContain(
-        'Analise a sensibilidade de preço por produto',
+        'Veja como o preço afeta as vendas antes de reajustar',
       );
     });
   });
@@ -392,7 +392,7 @@ describe('ElasticityPageComponent', () => {
       expect(query('app-elasticity-diagnostic-card')).not.toBeNull();
     });
 
-    it('formata valores em pt-BR, exibe projectedPrice, appliedElasticity e deltas com sinal', () => {
+    it('formata valores em pt-BR, exibe linguagem cotidiana, tradução +10%, margem unitária e deltas com sinal', () => {
       createComponent({ sku: '1001' });
 
       const text = normalizeText(fixture.nativeElement.textContent);
@@ -401,8 +401,14 @@ describe('ElasticityPageComponent', () => {
       expect(text).toContain('R$ 15,00');
       expect(text).toContain('-1,42');
       expect(text).toContain('84,0%');
-      expect(text).toContain('Demanda elástica');
+      expect(text).toContain('Sensibilidade ao preço');
+      expect(text).toContain('A cada +10% no preço, as vendas tendem a cair cerca de 14,2%');
+      expect(text).toContain('Lucro por un.');
+      expect(text).toContain('R$ 14,90');
+      expect(text).toContain('Muito sensível a preço');
+      expect(text).toContain('Pouco sensível');
       expect(text).toContain('Confiança alta');
+      expect(text).toContain('Lucro bruto estimado');
       expect(text).toContain('R$ 31,39');
       expect(text).toContain('-R$ 232,21');
       expect(text).toContain('+R$ 122,90');
@@ -433,7 +439,10 @@ describe('ElasticityPageComponent', () => {
       createComponent({ sku: '1001' });
       const note = query('[role="note"]');
       expect(note).not.toBeNull();
-      expect(normalizeText(note!.textContent)).toContain('Estimador canônico defensivo (-1,20)');
+      expect(normalizeText(note!.textContent)).toContain('Estimativa padrão de segurança (-1,20)');
+      expect(normalizeText(fixture.nativeElement.textContent)).toContain(
+        'Confiança baixa (usar com cautela)',
+      );
     });
 
     it('exibe aviso de baixa confiabilidade estatística quando isReliable=false e fallbackApplied=false', () => {
@@ -459,7 +468,8 @@ describe('ElasticityPageComponent', () => {
       createComponent({ sku: '1001' });
       const note = query('[role="note"]');
       expect(note).not.toBeNull();
-      expect(normalizeText(note!.textContent)).toContain('Baixa confiabilidade estatística');
+      expect(normalizeText(note!.textContent)).toContain('Previsão com baixa precisão');
+      expect(normalizeText(fixture.nativeElement.textContent)).toContain('Pouco sensível a preço');
     });
 
     it('exibe empty state na tabela quando o produto não possui clientes no período', () => {
@@ -514,7 +524,7 @@ describe('ElasticityPageComponent', () => {
       createComponent({ sku: '1001' });
       expect(query('app-error-banner')).toBeNull();
       expect(normalizeText(fixture.nativeElement.textContent)).toContain(
-        'Histórico insuficiente para estimar elasticidade',
+        'Ainda não há histórico suficiente para este produto',
       );
     });
 
@@ -840,6 +850,92 @@ describe('ElasticityPageComponent', () => {
 
       const numberLabel = query<HTMLLabelElement>('label[for="price-percent-input"]');
       expect(numberLabel).not.toBeNull();
+    });
+  });
+
+  describe('Camada didática: guia comercial na tabela e popovers <app-info-help>', () => {
+    it('exibe guia comercial e cabeçalhos em linguagem cotidiana na tabela de clientes', () => {
+      // Arrange & Act
+      createComponent({ sku: '1001' });
+      const tableSection = query('app-elasticity-customers-table');
+
+      // Assert
+      expect(tableSection).not.toBeNull();
+      const tableText = normalizeText(tableSection!.textContent);
+      expect(tableText).toContain('Como cada cliente reage ao preço');
+      expect(tableText).toContain('Pouco sensível');
+      expect(tableText).toContain('Sensível');
+
+      const headerTexts = queryAll('app-elasticity-customers-table thead th').map((th) =>
+        normalizeText(th.textContent),
+      );
+      expect(headerTexts.some((h) => h.includes('Peso histórico'))).toBeTrue();
+      expect(headerTexts.some((h) => h.includes('Reação própria'))).toBeTrue();
+      expect(headerTexts.some((h) => h.includes('Sensibilidade usada'))).toBeTrue();
+      expect(headerTexts.some((h) => h.includes('Perfil'))).toBeTrue();
+
+      // Garante presença de orientação comercial acima da tabela
+      const tableEl = query('app-elasticity-customers-table table.customers-table');
+      expect(tableEl).not.toBeNull();
+      const textBeforeTable = normalizeText(
+        tableSection!.innerHTML.split('<table')[0].replace(/<[^>]+>/g, ' '),
+      );
+      expect(textBeforeTable).toContain('Pouco sensível');
+      expect(textBeforeTable).toContain('Sensível');
+    });
+
+    it('mantém botões <app-info-help> presentes e clicáveis sem interferir na simulação ou disparar chamadas HTTP', () => {
+      // Arrange
+      createComponent({ sku: '1001' });
+      analyticsSpy.simulatePriceChange.calls.reset();
+      analyticsSpy.getProductElasticity.calls.reset();
+      analyticsSpy.getCustomerElasticity.calls.reset();
+
+      const helpTriggers = queryAll<HTMLButtonElement>('app-info-help button[aria-label^="Ajuda sobre "]');
+      expect(helpTriggers.length).toBeGreaterThanOrEqual(8);
+
+      const simHelpTrigger = query<HTMLButtonElement>(
+        'app-elasticity-simulator-panel app-info-help button[aria-label^="Ajuda sobre "]',
+      )!;
+      const diagHelpTrigger = query<HTMLButtonElement>(
+        'app-elasticity-diagnostic-card app-info-help button[aria-label^="Ajuda sobre "]',
+      )!;
+      expect(simHelpTrigger).not.toBeNull();
+      expect(diagHelpTrigger).not.toBeNull();
+
+      // Act: abrir ajuda do diagnóstico e depois alternar para ajuda do simulador
+      diagHelpTrigger.click();
+      fixture.detectChanges();
+      expect(queryAll('[role="dialog"]').length).toBe(1);
+      expect(diagHelpTrigger.getAttribute('aria-expanded')).toBe('true');
+
+      simHelpTrigger.click();
+      fixture.detectChanges();
+
+      // Assert: apenas 1 popover aberto, nenhuma chamada HTTP disparada
+      expect(queryAll('[role="dialog"]').length).toBe(1);
+      expect(diagHelpTrigger.getAttribute('aria-expanded')).toBe('false');
+      expect(simHelpTrigger.getAttribute('aria-expanded')).toBe('true');
+      expect(analyticsSpy.simulatePriceChange).not.toHaveBeenCalled();
+      expect(analyticsSpy.getProductElasticity).not.toHaveBeenCalled();
+      expect(analyticsSpy.getCustomerElasticity).not.toHaveBeenCalled();
+
+      // Act: fechar por Escape e usar preset de simulação normalmente
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      fixture.detectChanges();
+      expect(queryAll('[role="dialog"]').length).toBe(0);
+      expect(document.activeElement).toBe(simHelpTrigger);
+
+      const zeroBtn = queryAll<HTMLButtonElement>('.btn-quick').find(
+        (btn) => normalizeText(btn.textContent) === '0% (Atual)',
+      )!;
+      zeroBtn.click();
+      fixture.detectChanges();
+      expect(analyticsSpy.simulatePriceChange).toHaveBeenCalledWith({
+        sku: 1001,
+        customerCode: null,
+        priceChangePct: 0,
+      });
     });
   });
 });

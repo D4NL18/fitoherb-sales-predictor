@@ -28,16 +28,21 @@ export interface ElasticityTagMeta {
   icon: 'elastic' | 'inelastic' | 'high' | 'medium' | 'low';
 }
 
+export interface UnitMarginSummary {
+  amount: number;
+  marginPct: number;
+}
+
 const CLASSIFICATION_META: Record<ElasticityClassification, ElasticityTagMeta> = {
   ELASTICO: {
-    label: 'Demanda elástica',
-    shortLabel: 'Elástico',
+    label: 'Muito sensível a preço',
+    shortLabel: 'Sensível',
     tagClass: 'tag-warning',
     icon: 'elastic',
   },
   INELASTICO: {
-    label: 'Demanda inelástica',
-    shortLabel: 'Inelástico',
+    label: 'Pouco sensível a preço',
+    shortLabel: 'Pouco sensível',
     tagClass: 'tag-positive',
     icon: 'inelastic',
   },
@@ -57,7 +62,7 @@ const CONFIDENCE_META: Record<ElasticityConfidenceLevel, ElasticityTagMeta> = {
     icon: 'medium',
   },
   BAIXA: {
-    label: 'Confiança baixa',
+    label: 'Confiança baixa (usar com cautela)',
     shortLabel: 'Baixa',
     tagClass: 'tag-neutral',
     icon: 'low',
@@ -99,12 +104,50 @@ export function deltaTone(value: number): DeltaTone {
   return 'neutral';
 }
 
+/** Traduz o coeficiente de elasticidade para o impacto prático de +10% no preço. */
+export function formatPriceReactionHint(coefficient: number): string {
+  if (!Number.isFinite(coefficient)) {
+    return 'Sem variação estimada no volume para ajustes de preço';
+  }
+  const deltaPct = normalizeZero(roundHalfUp(Math.abs(coefficient) * 10, 1));
+  if (deltaPct === 0) {
+    return 'Sem variação estimada no volume para ajustes de preço';
+  }
+  const direction = coefficient < 0 ? 'cair' : 'subir';
+  return `A cada +10% no preço, as vendas tendem a ${direction} cerca de ${formatDecimal(deltaPct, 1)}%`;
+}
+
+/** Traduz o intervalo de confiança (IC 95%) para faixa de impacto prático com +10% no preço. */
+export function formatPriceReactionRangeHint(interval: readonly [number, number]): string {
+  const first = normalizeZero(roundHalfUp(Math.abs(interval[0]) * 10, 1));
+  const second = normalizeZero(roundHalfUp(Math.abs(interval[1]) * 10, 1));
+  const low = Math.min(first, second);
+  const high = Math.max(first, second);
+  if (low === 0 && high === 0) {
+    return 'Sem variação estimada no volume para ajustes de preço';
+  }
+  if (interval[0] <= 0 && interval[1] <= 0) {
+    return `Com +10% no preço, queda estimada entre ${formatDecimal(low, 1)}% e ${formatDecimal(high, 1)}%`;
+  }
+  return `Com +10% no preço, variação estimada entre ${formatDecimal(low, 1)}% e ${formatDecimal(high, 1)}%`;
+}
+
+/** Calcula lucro unitário em reais e percentual sobre o preço atual, com guarda para preço <= 0. */
+export function computeUnitMargin(currentPrice: number, costPrice: number): UnitMarginSummary {
+  const amount = normalizeZero(currentPrice - costPrice);
+  if (!Number.isFinite(currentPrice) || currentPrice <= 0) {
+    return { amount, marginPct: 0 };
+  }
+  const marginPct = normalizeZero((amount / currentPrice) * 100);
+  return { amount, marginPct };
+}
+
 export function buildElasticityInitialState(): ResultStateView {
   return {
     icon: 'chart',
-    title: 'Analise a sensibilidade de preço por produto',
-    text: 'Digite o código ou parte da descrição de um produto para estimar a elasticidade da demanda, comparar clientes e simular cenários de reajuste.',
-    actionLabel: 'Ir para o campo',
+    title: 'Veja como o preço afeta as vendas antes de reajustar',
+    text: '1. Veja a sensibilidade do produto · 2. Teste cenários de aumento ou desconto · 3. Compare como cada cliente reage ao preço.',
+    actionLabel: 'Escolher um produto',
     action: 'focus-field',
     tone: 'neutral',
   };
@@ -113,8 +156,8 @@ export function buildElasticityInitialState(): ResultStateView {
 export function buildElasticityInsufficientDataState(): ResultStateView {
   return {
     icon: 'chart',
-    title: 'Histórico insuficiente para estimar elasticidade',
-    text: 'Este produto ainda não reúne meses ou volume líquido positivo suficientes para calcular a sensibilidade de preço.',
+    title: 'Ainda não há histórico suficiente para este produto',
+    text: 'Para estimar com segurança como os compradores reagem ao preço, este produto precisa reunir mais meses com vendas regulares líquidas de devoluções.',
     actionLabel: 'Buscar outro produto',
     action: 'new-search',
     tone: 'warning',
@@ -157,7 +200,7 @@ export function sliderMarkLeftPct(value: number): number {
 export function buildProductLiveAnnouncement(detail: ProductElasticityDetail, totalClients: number): string {
   const cls = getClassificationMeta(detail.elasticity.classification).label;
   const coef = formatDecimal(detail.elasticity.coefficient, 2);
-  return `Elasticidade carregada para ${detail.product.description}: ${cls}, coeficiente ${coef}, ${formatDecimal(totalClients)} clientes na base.`;
+  return `Análise carregada para ${detail.product.description}: ${cls}, sensibilidade ${coef}, ${formatDecimal(totalClients)} clientes na base.`;
 }
 
 export function buildSimulationLiveAnnouncement(sim: SimulationImpactData): string {

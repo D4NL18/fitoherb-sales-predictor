@@ -1,11 +1,16 @@
 import {
   buildProductLiveAnnouncement,
   buildSimulationLiveAnnouncement,
+  computeUnitMargin,
   deltaTone,
   filterAndSortCustomers,
+  formatPriceReactionHint,
+  formatPriceReactionRangeHint,
   formatSignedCurrency,
   formatSignedPercentValue,
   formatUnits,
+  getClassificationMeta,
+  getConfidenceMeta,
   sliderMarkLeftPct,
 } from './elasticity-view';
 import { CustomerElasticityItem, ProductElasticityDetail, SimulationImpactData } from '../models/elasticity.models';
@@ -110,5 +115,70 @@ describe('elasticity-view', () => {
     expect(buildProductLiveAnnouncement(detail, 12)).toContain('-1,45');
     expect(buildSimulationLiveAnnouncement(sim)).toContain('cliente 4501');
     expect(buildSimulationLiveAnnouncement(sim)).toContain('+10,0%');
+  });
+
+  it('traduz coeficiente e faixa de confiança para impacto prático em +10% no preço', () => {
+    // Arrange & Act & Assert
+    expect(formatPriceReactionHint(-1.45)).toBe(
+      'A cada +10% no preço, as vendas tendem a cair cerca de 14,5%',
+    );
+    expect(formatPriceReactionHint(-0.8)).toBe(
+      'A cada +10% no preço, as vendas tendem a cair cerca de 8,0%',
+    );
+    expect(formatPriceReactionHint(0)).toBe(
+      'Sem variação estimada no volume para ajustes de preço',
+    );
+    expect(formatPriceReactionHint(-0)).toBe(
+      'Sem variação estimada no volume para ajustes de preço',
+    );
+
+    expect(formatPriceReactionRangeHint([-1.8, -1.1])).toBe(
+      'Com +10% no preço, queda estimada entre 11,0% e 18,0%',
+    );
+    expect(formatPriceReactionRangeHint([-1.1, -1.8])).toBe(
+      'Com +10% no preço, queda estimada entre 11,0% e 18,0%',
+    );
+    expect(formatPriceReactionRangeHint([-2.04, -0.16])).toBe(
+      'Com +10% no preço, queda estimada entre 1,6% e 20,4%',
+    );
+  });
+
+  it('calcula margem unitária e trata preço atual zero ou custo superior ao preço', () => {
+    // Arrange & Act
+    const positive = computeUnitMargin(25.5, 12);
+    const exact = computeUnitMargin(20, 12);
+    const negative = computeUnitMargin(10, 15);
+    const zeroPrice = computeUnitMargin(0, 12);
+
+    // Assert
+    expect(positive.amount).toBeCloseTo(13.5, 2);
+    expect(positive.marginPct).toBeCloseTo(52.941, 2);
+
+    expect(exact).toEqual({ amount: 8, marginPct: 40 });
+    expect(negative).toEqual({ amount: -5, marginPct: -50 });
+
+    expect(zeroPrice.amount).toBe(-12);
+    expect(Number.isFinite(zeroPrice.marginPct)).toBeTrue();
+    expect(zeroPrice.marginPct).toBe(0);
+  });
+
+  it('retorna rótulos em linguagem cotidiana para classificação e confiança', () => {
+    // Arrange & Act
+    const elastic = getClassificationMeta('ELASTICO');
+    const inelastic = getClassificationMeta('INELASTICO');
+    const high = getConfidenceMeta('ALTA');
+    const medium = getConfidenceMeta('MEDIA');
+    const low = getConfidenceMeta('BAIXA');
+
+    // Assert
+    expect(elastic.label).toBe('Muito sensível a preço');
+    expect(elastic.shortLabel).toBe('Sensível');
+
+    expect(inelastic.label).toBe('Pouco sensível a preço');
+    expect(inelastic.shortLabel).toBe('Pouco sensível');
+
+    expect(high.label).toBe('Confiança alta');
+    expect(medium.label).toBe('Confiança média');
+    expect(low.label).toBe('Confiança baixa (usar com cautela)');
   });
 });
