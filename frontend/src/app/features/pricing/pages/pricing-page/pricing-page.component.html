@@ -180,7 +180,7 @@
         <div class="catalog-title-col">
           <h2 class="catalog-title">Tabela de Precificação Prescritiva</h2>
           <p class="catalog-subtitle">
-            Visualização completa dos 1.398 SKUs do catálogo com novos preços sugeridos e regras comerciais:
+            Visualização completa dos {{ roleCounts().all | number:'1.0-0' }} SKUs ativos do catálogo com novos preços sugeridos e regras comerciais:
           </p>
         </div>
         <div class="catalog-badges">
@@ -393,7 +393,7 @@
             <option [value]="25">25</option>
             <option [value]="50">50</option>
             <option [value]="100">100</option>
-            <option [value]="-1">Todos (1.398)</option>
+            <option [value]="-1">Todos ({{ roleCounts().all | number:'1.0-0' }})</option>
           </select>
         </div>
 
@@ -1050,7 +1050,7 @@
             <div class="tutorial-step-tag">Etapa 2 de 5 • Classificação</div>
             <h3 class="tutorial-step-heading">Os 3 Papéis Estratégicos dos Produtos</h3>
             <p class="tutorial-step-text">
-              Cada um dos 1.398 produtos do catálogo recebe uma classificação automática calculada a partir do histórico real de vendas:
+              Cada produto ativo do catálogo recebe uma classificação automática calculada a partir do histórico real de vendas:
             </p>
 
             <div class="tutorial-role-grid">
@@ -1122,7 +1122,7 @@
             <div class="tutorial-step-tag">Etapa 4 de 5 • Navegação</div>
             <h3 class="tutorial-step-heading">Explorando a Tabela de Preços</h3>
             <p class="tutorial-step-text">
-              A tabela reúne todos os 1.398 SKUs com preços atuais, preços novos sugeridos e regras comerciais:
+              A tabela reúne todos os SKUs ativos com preços atuais, preços novos sugeridos e regras comerciais:
             </p>
 
             <div class="tutorial-tips-grid">

@@ -105,7 +105,13 @@
     </nav>
 
     <div class="navbar-meta">
-      <span class="catalog-status-pill">Catálogo Ativo: 1.398 produtos</span>
+      <span class="catalog-status-pill tabular-nums">
+        @if (activeCatalogCount(); as count) {
+          Catálogo Ativo: {{ count | ptDecimal }} {{ count === 1 ? 'produto' : 'produtos' }}
+        } @else {
+          Catálogo Ativo
+        }
+      </span>
     </div>
   </div>
 </header>
