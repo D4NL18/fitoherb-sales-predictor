@@ -13,7 +13,6 @@ import {
   formatStockDays,
   formatUnits,
   getClassificationMeta,
-  getConfidenceMeta,
   getStockCoverageStatus,
   sliderMarkLeftPct,
 } from './elasticity-view';
@@ -144,13 +143,10 @@ describe('elasticity-view', () => {
     expect(zeroPrice.marginPct).toBe(0);
   });
 
-  it('retorna rótulos em linguagem cotidiana para classificação e confiança', () => {
+  it('retorna rótulos em linguagem cotidiana para classificação', () => {
     // Arrange & Act
     const elastic = getClassificationMeta('ELASTICO');
     const inelastic = getClassificationMeta('INELASTICO');
-    const high = getConfidenceMeta('ALTA');
-    const medium = getConfidenceMeta('MEDIA');
-    const low = getConfidenceMeta('BAIXA');
 
     // Assert
     expect(elastic.label).toBe('Muito sensível a preço');
@@ -158,10 +154,6 @@ describe('elasticity-view', () => {
 
     expect(inelastic.label).toBe('Pouco sensível a preço');
     expect(inelastic.shortLabel).toBe('Pouco sensível');
-
-    expect(high.label).toBe('Confiança alta');
-    expect(medium.label).toBe('Confiança média');
-    expect(low.label).toBe('Confiança baixa (usar com cautela)');
   });
 
   it('classifica cobertura de estoque para meta de 60 dias e extremos sem estoque ou sem giro', () => {

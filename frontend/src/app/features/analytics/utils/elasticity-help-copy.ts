@@ -13,20 +13,9 @@ export const ELASTICITY_HELP_COPY = {
     whatIs:
       'Esta ferramenta projeta como uma mudança de preço altera a margem unitária, o lucro bruto e a duração do estoque em um ciclo de 60 dias.',
     howToAnalyze:
-      '1. Busque o produto por código ou nome. 2. Confira o custo unitário do catálogo (ou informe um custo manual para simular). 3. Ajuste o percentual de preço e compare os 4 cartões de decisão.',
+      '1. Busque o produto por código ou nome. 2. Confira o preço atual e o custo unitário do catálogo (ou informe valores manuais para simular). 3. Ajuste o percentual de preço e compare os 4 cartões de decisão.',
     insight:
       'Nem todo aumento reduz o ganho financeiro: se o ganho por unidade superar a perda de volume, o lucro bruto dos 60 dias sobe e o estoque dura mais.',
-  },
-  classificationBadge: {
-    title: 'Classificação de sensibilidade',
-    whatIs:
-      'Resume se os compradores reagem muito ou pouco quando o preço deste produto muda.',
-    howToAnalyze:
-      'Muito sensível a preço (abaixo de -1,00): o volume cai em proporção maior que o aumento de preço. Pouco sensível a preço (entre -1,00 e 0): os clientes continuam comprando quase a mesma quantidade após pequenos reajustes.',
-    insight:
-      'Produtos pouco sensíveis têm espaço para recompor margem; nos muito sensíveis, prefira ajustes graduais ou ações para girar estoque.',
-    technicalNote:
-      'Ponto de corte econômico em |Beta| = 1,00: valores menores que -1,00 são elásticos e valores entre -1,00 e 0 são inelásticos.',
   },
   technicalSummary: {
     title: 'Detalhes estatísticos do produto',
@@ -38,6 +27,17 @@ export const ELASTICITY_HELP_COPY = {
       'Use o intervalo de confiança (IC 95%) para conferir se a decisão continua saudável mesmo no cenário mais conservador.',
     technicalNote:
       'Regressão linear log-log ponderada pelo tempo sobre vendas líquidas de devoluções, com fallback defensivo (-1,20) quando há poucos dados ou preço constante.',
+  },
+  currentPriceInput: {
+    title: 'Preço atual (R$)',
+    whatIs:
+      'É o preço de venda base sobre o qual o percentual de reajuste é aplicado para projetar o novo preço, a margem unitária e o lucro bruto.',
+    howToAnalyze:
+      'Por padrão, vem do preço de venda cadastrado no catálogo do ERP ([Pc.Venda]). Você pode digitar outro valor manualmente para simular cenários a partir de um preço diferente do cadastro.',
+    insight:
+      'Útil para testar o impacto de reajustes sobre um preço praticado em promoção ou sobre uma nova tabela de referência antes de aplicá-la.',
+    technicalNote:
+      'Origem exibida no selo ao lado: Catálogo ERP ou Editado manualmente (com botão para restaurar o valor do catálogo).',
   },
   unitCostInput: {
     title: 'Custo unitário (R$)',

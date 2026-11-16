@@ -56,14 +56,24 @@ export class AnalyticsService {
     });
   }
 
-  /** Simulação de impacto de reajuste de preço e custo opcional (P-101). */
+  /** Simulação de impacto de reajuste de preço, custo e preço atual opcionais (P-101). */
   simulatePriceChange(request: ElasticitySimulationRequest): Observable<ElasticitySimulationResponse> {
-    const { sku, priceChangePct, customerCode, costPrice } = request;
+    const {
+      sku,
+      priceChangePct: pct,
+      customerCode,
+      costPrice: reqCostPrice,
+      currentPrice: reqCurrentPrice,
+    } = request;
+
     const payload: ElasticitySimulationRequest = {
       sku,
-      priceChangePct,
+      priceChangePct: pct,
       ...(customerCode !== null && customerCode !== undefined ? { customerCode } : {}),
-      ...(costPrice !== null && costPrice !== undefined ? { costPrice } : {}),
+      ...(reqCostPrice !== null && reqCostPrice !== undefined ? { costPrice: reqCostPrice } : {}),
+      ...(reqCurrentPrice !== null && reqCurrentPrice !== undefined
+        ? { currentPrice: reqCurrentPrice }
+        : {}),
     };
     return this.http.post<ElasticitySimulationResponse>(`${this.baseUrl}/elasticity/simulate`, payload);
   }

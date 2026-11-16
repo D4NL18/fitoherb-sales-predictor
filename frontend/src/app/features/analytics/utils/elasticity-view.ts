@@ -4,7 +4,6 @@
  */
 import {
   ElasticityClassification,
-  ElasticityConfidenceLevel,
   ProductElasticityDetail,
   SimulationImpactData,
 } from '../models/elasticity.models';
@@ -26,7 +25,7 @@ export interface ElasticityTagMeta {
   label: string;
   shortLabel: string;
   tagClass: string;
-  icon: 'elastic' | 'inelastic' | 'high' | 'medium' | 'low';
+  icon: 'elastic' | 'inelastic';
 }
 
 export interface UnitMarginSummary {
@@ -56,33 +55,8 @@ const CLASSIFICATION_META: Record<ElasticityClassification, ElasticityTagMeta> =
   },
 };
 
-const CONFIDENCE_META: Record<ElasticityConfidenceLevel, ElasticityTagMeta> = {
-  ALTA: {
-    label: 'Confiança alta',
-    shortLabel: 'Alta',
-    tagClass: 'tag-positive',
-    icon: 'high',
-  },
-  MEDIA: {
-    label: 'Confiança média',
-    shortLabel: 'Média',
-    tagClass: 'tag-info',
-    icon: 'medium',
-  },
-  BAIXA: {
-    label: 'Confiança baixa (usar com cautela)',
-    shortLabel: 'Baixa',
-    tagClass: 'tag-neutral',
-    icon: 'low',
-  },
-};
-
 export function getClassificationMeta(classification: ElasticityClassification): ElasticityTagMeta {
   return CLASSIFICATION_META[classification];
-}
-
-export function getConfidenceMeta(level: ElasticityConfidenceLevel): ElasticityTagMeta {
-  return CONFIDENCE_META[level];
 }
 
 /** Classifica a cobertura de estoque em dias frente à meta corporativa (padrão 60 dias). */

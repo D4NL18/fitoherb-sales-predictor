@@ -96,12 +96,6 @@
   gap: var(--space-2) var(--space-3);
 }
 
-.badge-with-help {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-}
-
 .stats-help-pill {
   display: inline-flex;
   align-items: center;
@@ -227,18 +221,24 @@
 }
 
 .premises-grid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.money-inputs-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
-  gap: var(--space-5);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
   align-items: start;
 
-  @media (max-width: ui.$bp-tablet) {
+  @media (max-width: ui.$bp-mobile) {
     grid-template-columns: 1fr;
-    gap: var(--space-4);
   }
 }
 
 .price-control-block,
+.current-price-control-block,
 .cost-control-block {
   display: flex;
   flex-direction: column;
@@ -383,7 +383,7 @@
   color: var(--text-secondary);
 }
 
-.cost-origin-badge {
+.origin-badge {
   padding: 2px var(--space-2);
   font-size: 0.74rem;
   font-weight: 700;
@@ -408,12 +408,13 @@
   }
 }
 
-.cost-input-row {
+.money-input-row {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
 }
 
+.current-price-field-group,
 .cost-field-group {
   display: flex;
   align-items: center;
@@ -445,7 +446,7 @@
   margin-right: var(--space-2);
 }
 
-.cost-number-input {
+.money-number-input {
   flex: 1;
   min-width: 0;
   min-height: ui.$touch-target;
@@ -468,7 +469,7 @@
   }
 }
 
-.btn-reset-cost {
+.btn-reset-premise {
   @extend %button-secondary;
   align-self: flex-start;
   padding: var(--space-1) var(--space-3);

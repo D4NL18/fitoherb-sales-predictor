@@ -86,6 +86,7 @@ export interface ElasticitySimulationRequest {
   customerCode?: number | null;
   priceChangePct: number;
   costPrice?: number | null;
+  currentPrice?: number | null;
 }
 
 export interface SimulationImpactData {
@@ -110,6 +111,7 @@ export interface SimulationImpactData {
   costPrice?: number;
   isCostEstimated?: boolean;
   isCostOverride?: boolean;
+  isPriceOverride?: boolean;
   stock?: number;
   stockTargetDays?: number;
   currentUnitMargin?: number;

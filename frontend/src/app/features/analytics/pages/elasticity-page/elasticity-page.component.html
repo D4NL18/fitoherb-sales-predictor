@@ -75,6 +75,7 @@
           [elasticity]="detail.elasticity"
           [priceChangePct]="priceChangePct()"
           [customCostPrice]="customCostPrice()"
+          [customCurrentPrice]="customCurrentPrice()"
           [simulationResult]="simulationResult()"
           [isSimulating]="isSimulating()"
           [simulationError]="simulationError()"
@@ -83,6 +84,9 @@
           (priceNumberCommit)="onPriceImmediateChange($event)"
           (costChange)="onCostChange($event)"
           (resetCost)="onResetCost()"
+          (currentPriceChange)="onCurrentPriceChange($event)"
+          (currentPriceCommit)="onCurrentPriceCommit($event)"
+          (resetCurrentPrice)="onResetCurrentPrice()"
           (retrySimulation)="onRetrySimulation()"
         />
       }

@@ -66,8 +66,10 @@ function makeSimulationResponse(
   priceChangePct = 5,
   costPrice: number | null = null,
   overrides: Partial<SimulationImpactData> = {},
+  currentPriceOverride: number | null = null,
 ): ElasticitySimulationResponse {
-  const currentPrice = 30.0;
+  const currentPrice = overrides.currentPrice ?? currentPriceOverride ?? 30.0;
+  const isPriceOverride = overrides.isPriceOverride ?? currentPriceOverride !== null;
   const appliedCost = costPrice ?? 15.0;
   const isCostOverride = costPrice !== null;
   const stock = overrides.stock ?? 150;
@@ -136,6 +138,7 @@ function makeSimulationResponse(
       costPrice: appliedCost,
       isCostEstimated: false,
       isCostOverride,
+      isPriceOverride,
       stock,
       stockTargetDays: 60,
       currentUnitMargin,
@@ -236,7 +239,15 @@ describe('ElasticityPageComponent (Calculadora Unificada v3)', () => {
     analyticsSpy.searchProducts.and.returnValue(of(emptySearch));
     analyticsSpy.getProductElasticity.and.callFake((sku: number) => of(makeProductResponse(sku)));
     analyticsSpy.simulatePriceChange.and.callFake((req) =>
-      of(makeSimulationResponse(req.sku, req.priceChangePct, req.costPrice ?? null)),
+      of(
+        makeSimulationResponse(
+          req.sku,
+          req.priceChangePct,
+          req.costPrice ?? null,
+          {},
+          req.currentPrice ?? null,
+        ),
+      ),
     );
 
     const routeStub = {
@@ -437,30 +448,44 @@ describe('ElasticityPageComponent (Calculadora Unificada v3)', () => {
       expect(query('.customer-scope-card')).toBeNull();
     });
 
-    it('exibe cabeçalho compacto do produto, comparativo de margem unitária/total e cobertura de estoque 60d Hoje vs Proposto', () => {
+    it('exibe cabeçalho compacto do produto sem tags de sensibilidade/confiança, comparativo de margem unitária (% em destaque) e cobertura 60d', () => {
       // Arrange & Act: default +5% sobre preço 30,00, custo 15,00, estoque 150, vendas 60d 180 (beta -1,5)
-      // Preço proj = 31,50 | Margem unit: 15,00 (50,0%) -> 16,50 (52,4%) (+2,4 p.p.)
+      // Preço proj = 31,50 | Margem unit: 50,0% (R$ 15,00/un.) -> 52,4% (R$ 16,50/un.) (+2,4 p.p. (+R$ 1,50/un.))
       // Volume: 180 -> 166,5 (-7,5%) | Cobertura 60d: Hoje ~50 dias -> Proposto ~54 dias (+4 dias vs hoje)
       createComponent({ sku: '1001' });
 
       const simText = normalizeText(query('app-elasticity-simulator-panel')?.textContent);
 
-      // Assert — cabeçalho compacto
+      // Assert — cabeçalho compacto sem .badge-elasticity/.badge-confidence e mantendo .stats-help-pill
       expect(simText).toContain('SKU #1001');
       expect(simText).toContain('Chá Verde 500mg');
       expect(simText).toContain('Fitoherb');
       expect(simText).toContain('150');
       expect(simText).toContain('180');
-      expect(simText).toContain('Muito sensível a preço');
-      expect(simText).toContain('Confiança alta');
+      expect(query('.badge-elasticity')).toBeNull();
+      expect(query('.badge-confidence')).toBeNull();
+      expect(simText).not.toContain('Muito sensível a preço');
+      expect(simText).not.toContain('Pouco sensível a preço');
+      expect(simText).not.toContain('Confiança alta');
+      const statsPill = query('.stats-help-pill');
+      expect(statsPill).not.toBeNull();
+      expect(normalizeText(statsPill?.textContent)).toContain('Ver detalhes estatísticos');
       expect(simText).toContain('Catálogo ERP');
 
-      // Assert — margem unitária (R$/un., % e delta p.p.) e lucro bruto 60d
-      expect(simText).toContain('Margem unitária');
-      expect(simText).toContain('R$ 16,50');
-      expect(simText).toContain('52,4%');
-      expect(simText).toContain('+2,4 p.p.');
-      expect(simText).toContain('R$ 15,00');
+      // Assert — Card 1 (Margem unitária): % em .sim-main-val, R$ entre parênteses, p.p. primeiro no delta e baseline
+      const unitMarginCard = query('.sim-card-unit-margin');
+      expect(unitMarginCard).not.toBeNull();
+      expect(normalizeText(unitMarginCard?.querySelector('.sim-main-val')?.textContent)).toBe(
+        '52,4% (R$ 16,50/un.)',
+      );
+      expect(normalizeText(unitMarginCard?.querySelector('.sim-delta')?.textContent)).toBe(
+        '+2,4 p.p. (+R$ 1,50/un.)',
+      );
+      expect(normalizeText(unitMarginCard?.querySelector('.sim-baseline')?.textContent)).toBe(
+        'Atual: 50,0% (R$ 15,00/un.)',
+      );
+
+      // Assert — lucro bruto 60d
       expect(simText).toContain('Lucro bruto estimado');
       expect(simText).toContain('R$ 2.747,25');
       expect(simText).toContain('+R$ 47,25');
@@ -477,6 +502,70 @@ describe('ElasticityPageComponent (Calculadora Unificada v3)', () => {
       expect(simText).toContain('+4 dias vs hoje');
       expect(simText).toContain('Dentro da meta');
       expect(query('.stock-status-tag svg')).not.toBeNull();
+    });
+
+    it('formata Card 1 (Margem unitária) com % principal, R$/un. entre parênteses, delta p.p. primeiro e remove badges em produto inelástico', () => {
+      // Arrange
+      analyticsSpy.getProductElasticity.and.returnValue(
+        of(
+          makeProductResponse(
+            1001,
+            {
+              elasticity: {
+                coefficient: -0.6,
+                classification: 'INELASTICO',
+                rSquared: 0.42,
+                standardError: 0.14,
+                confidenceInterval: [-0.88, -0.32],
+                confidenceLevel: 'MEDIA',
+                isReliable: true,
+                observationsCount: 14,
+                fallbackApplied: false,
+                insightMessage: 'Demanda pouco sensível.',
+              },
+            },
+            { currentPrice: 229.99, costPrice: 122.41 },
+          ),
+        ),
+      );
+      analyticsSpy.simulatePriceChange.and.returnValue(
+        of(
+          makeSimulationResponse(1001, 10, null, {
+            currentPrice: 229.99,
+            projectedPrice: 252.99,
+            costPrice: 122.42,
+            currentUnitMargin: 107.58,
+            projectedUnitMargin: 130.57,
+            currentUnitMarginPct: 46.78,
+            projectedUnitMarginPct: 51.61,
+            unitMarginPctChangePp: 4.83,
+          }),
+        ),
+      );
+
+      // Act
+      createComponent({ sku: '1001' });
+
+      // Assert — Card 1
+      const unitMarginCard = query('.sim-card-unit-margin');
+      expect(unitMarginCard).not.toBeNull();
+      expect(normalizeText(unitMarginCard?.querySelector('.sim-main-val')?.textContent)).toBe(
+        '51,6% (R$ 130,57/un.)',
+      );
+      expect(normalizeText(unitMarginCard?.querySelector('.sim-delta')?.textContent)).toBe(
+        '+4,8 p.p. (+R$ 22,99/un.)',
+      );
+      expect(normalizeText(unitMarginCard?.querySelector('.sim-baseline')?.textContent)).toBe(
+        'Atual: 46,8% (R$ 107,58/un.)',
+      );
+
+      // Assert — cabeçalho sem .badge-elasticity / .badge-confidence e com .stats-help-pill
+      expect(query('.badge-elasticity')).toBeNull();
+      expect(query('.badge-confidence')).toBeNull();
+      const simText = normalizeText(query('app-elasticity-simulator-panel')?.textContent);
+      expect(simText).not.toContain('Pouco sensível a preço');
+      expect(simText).not.toContain('Confiança média');
+      expect(normalizeText(query('.stats-help-pill')?.textContent)).toContain('Ver detalhes estatísticos');
     });
 
     it('exibe aviso role="note" quando fallbackApplied=true ou isReliable=false', () => {
@@ -507,9 +596,10 @@ describe('ElasticityPageComponent (Calculadora Unificada v3)', () => {
       const note = query('[role="note"]');
       expect(note).not.toBeNull();
       expect(normalizeText(note!.textContent)).toContain('Estimativa padrão de segurança (-1,20)');
-      expect(normalizeText(fixture.nativeElement.textContent)).toContain(
-        'Confiança baixa (usar com cautela)',
-      );
+      expect(query('.badge-elasticity')).toBeNull();
+      expect(query('.badge-confidence')).toBeNull();
+      expect(normalizeText(fixture.nativeElement.textContent)).not.toContain('Confiança baixa');
+      expect(normalizeText(query('.stats-help-pill')?.textContent)).toContain('Ver detalhes estatísticos');
     });
 
     it('exibe aviso honesto e cobertura indisponível quando recentVolume60d <= 0 sem inventar giro', () => {
@@ -662,6 +752,166 @@ describe('ElasticityPageComponent (Calculadora Unificada v3)', () => {
       tick(180);
       expect(analyticsSpy.simulatePriceChange).toHaveBeenCalledWith(
         jasmine.objectContaining({ sku: 1001, costPrice: 18.5 }),
+      );
+    }));
+  });
+
+  describe('Preço atual editável, origem, restauração e validação <= 0', () => {
+    it('pré-preenche #current-price-input com product.currentPrice, exibe origem Catálogo ERP e envia currentPrice após debounce 180ms marcando Editado manualmente', fakeAsync(() => {
+      // Arrange: custo estimado para isolar visualmente o selo "Catálogo ERP" do preço atual
+      analyticsSpy.getProductElasticity.and.returnValue(
+        of(makeProductResponse(1001, {}, { currentPrice: 30, costPrice: 18, isCostEstimated: true })),
+      );
+      createComponent({ sku: '1001' });
+      analyticsSpy.simulatePriceChange.calls.reset();
+
+      const priceInput = query<HTMLInputElement>('#current-price-input');
+      expect(priceInput).not.toBeNull();
+      expect(Number(priceInput!.value)).toBe(30);
+      expect(priceInput!.getAttribute('step')).toBe('0.01');
+
+      const initialText = normalizeText(query('app-elasticity-simulator-panel')?.textContent);
+      expect(initialText).toContain('Catálogo ERP');
+      expect(initialText).not.toContain('Editado manualmente');
+
+      // Act: edita preço atual e aguarda 180ms
+      priceInput!.value = '250';
+      priceInput!.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+      tick(179);
+      expect(analyticsSpy.simulatePriceChange).not.toHaveBeenCalled();
+
+      tick(1);
+      fixture.detectChanges();
+
+      // Assert
+      expect(analyticsSpy.simulatePriceChange).toHaveBeenCalledTimes(1);
+      expect(analyticsSpy.simulatePriceChange).toHaveBeenCalledWith(
+        jasmine.objectContaining({
+          sku: 1001,
+          priceChangePct: 5,
+          currentPrice: 250,
+        }),
+      );
+      const updatedText = normalizeText(query('app-elasticity-simulator-panel')?.textContent);
+      expect(updatedText).toContain('Editado manualmente');
+      expect(updatedText).not.toContain('Catálogo ERP');
+    }));
+
+    it('envia currentPrice imediatamente ao pressionar Enter em #current-price-input', fakeAsync(() => {
+      // Arrange
+      createComponent({ sku: '1001' });
+      analyticsSpy.simulatePriceChange.calls.reset();
+
+      const priceInput = query<HTMLInputElement>('#current-price-input')!;
+
+      // Act
+      priceInput.value = '250';
+      priceInput.dispatchEvent(new Event('input'));
+      priceInput.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', bubbles: true }));
+      fixture.detectChanges();
+
+      // Assert — disparou imediatamente sem aguardar 180ms
+      expect(analyticsSpy.simulatePriceChange).toHaveBeenCalledTimes(1);
+      expect(analyticsSpy.simulatePriceChange).toHaveBeenCalledWith(
+        jasmine.objectContaining({
+          sku: 1001,
+          priceChangePct: 5,
+          currentPrice: 250,
+        }),
+      );
+      tick(180);
+    }));
+
+    it('restaura preço original do catálogo ao clicar em "Restaurar preço do catálogo" e limpa override', () => {
+      // Arrange: custo estimado para garantir que o retorno de "Catálogo ERP" vem do preço atual
+      analyticsSpy.getProductElasticity.and.returnValue(
+        of(makeProductResponse(1001, {}, { currentPrice: 30, costPrice: 18, isCostEstimated: true })),
+      );
+      createComponent({ sku: '1001' });
+      const priceInput = query<HTMLInputElement>('#current-price-input')!;
+      priceInput.value = '250';
+      priceInput.dispatchEvent(new Event('input'));
+      priceInput.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', bubbles: true }));
+      fixture.detectChanges();
+
+      const restoreBtn = queryAll<HTMLButtonElement>('app-elasticity-simulator-panel button').find((btn) =>
+        normalizeText(btn.textContent).includes('Restaurar preço do catálogo'),
+      );
+      expect(restoreBtn).toBeDefined();
+      analyticsSpy.simulatePriceChange.calls.reset();
+
+      // Act
+      restoreBtn!.click();
+      fixture.detectChanges();
+
+      // Assert
+      expect(analyticsSpy.simulatePriceChange).toHaveBeenCalledTimes(1);
+      const lastArg = analyticsSpy.simulatePriceChange.calls.mostRecent().args[0];
+      expect(lastArg.sku).toBe(1001);
+      expect(lastArg.currentPrice ?? null).toBeNull();
+      expect(Number(priceInput.value)).toBe(30);
+
+      const restoredText = normalizeText(query('app-elasticity-simulator-panel')?.textContent);
+      expect(restoredText).toContain('Catálogo ERP');
+      expect(restoredText).not.toContain('Editado manualmente');
+      expect(restoredText).not.toContain('Restaurar preço do catálogo');
+    });
+
+    it('valida preço atual <= 0 (0 e negativo) com aria-invalid="true", #current-price-validation-error e bloqueio cruzado de HTTP', fakeAsync(() => {
+      // Arrange
+      createComponent({ sku: '1001' });
+      analyticsSpy.simulatePriceChange.calls.reset();
+
+      const priceInput = query<HTMLInputElement>('#current-price-input')!;
+      const slider = query<HTMLInputElement>('#price-slider')!;
+      const costInput = query<HTMLInputElement>('#cost-price-input')!;
+
+      for (const invalidValue of ['0', '-10']) {
+        // Act — preço inválido
+        priceInput.value = invalidValue;
+        priceInput.dispatchEvent(new Event('input'));
+        priceInput.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', bubbles: true }));
+        fixture.detectChanges();
+        tick(250);
+
+        // Assert — marcado inválido e HTTP bloqueado
+        expect(priceInput.getAttribute('aria-invalid')).toBe('true');
+        expect(priceInput.getAttribute('aria-describedby')).toContain('current-price-validation-error');
+        const alert = query('#current-price-validation-error[role="alert"]');
+        expect(alert).not.toBeNull();
+        expect(analyticsSpy.simulatePriceChange).not.toHaveBeenCalled();
+      }
+
+      // Assert — bloqueio cruzado ao clicar preset, mexer no slider ou editar custo
+      const zeroBtn = queryAll<HTMLButtonElement>('.btn-quick').find(
+        (btn) => normalizeText(btn.textContent) === '0% (Atual)',
+      )!;
+      zeroBtn.click();
+      fixture.detectChanges();
+
+      slider.value = '15';
+      slider.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+
+      costInput.value = '18.5';
+      costInput.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+      tick(250);
+
+      expect(analyticsSpy.simulatePriceChange).not.toHaveBeenCalled();
+
+      // Act — ao corrigir preço atual para valor válido, volta a simular normalmente
+      priceInput.value = '250';
+      priceInput.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+      tick(180);
+
+      // Assert
+      expect(priceInput.getAttribute('aria-invalid')).toBeNull();
+      expect(query('#current-price-validation-error')).toBeNull();
+      expect(analyticsSpy.simulatePriceChange).toHaveBeenCalledWith(
+        jasmine.objectContaining({ sku: 1001, currentPrice: 250 }),
       );
     }));
   });
@@ -901,6 +1151,7 @@ describe('ElasticityPageComponent (Calculadora Unificada v3)', () => {
       expect(slider.getAttribute('aria-valuenow')).toBe('5');
       expect(slider.getAttribute('aria-valuetext')).toContain('+5,0%');
       expect(query<HTMLLabelElement>('label[for="price-percent-input"]')).not.toBeNull();
+      expect(query<HTMLLabelElement>('label[for="current-price-input"]')).not.toBeNull();
       expect(query<HTMLLabelElement>('label[for="cost-price-input"]')).not.toBeNull();
     });
 

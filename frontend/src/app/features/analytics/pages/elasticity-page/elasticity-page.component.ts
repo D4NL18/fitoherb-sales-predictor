@@ -47,6 +47,7 @@ interface SimulationTrigger {
   sku: number;
   priceChangePct: number;
   costPrice: number | null;
+  currentPrice: number | null;
   immediate: boolean;
 }
 
@@ -95,6 +96,7 @@ export class ElasticityPageComponent implements OnInit {
 
   protected readonly priceChangePct = signal<number>(PRICE_CHANGE_DEFAULT);
   protected readonly customCostPrice = signal<number | null>(null);
+  protected readonly customCurrentPrice = signal<number | null>(null);
 
   protected readonly simulationResult = signal<SimulationImpactData | null>(null);
   protected readonly isSimulating = signal<boolean>(false);
@@ -187,6 +189,7 @@ export class ElasticityPageComponent implements OnInit {
       sku,
       priceChangePct: pct,
       costPrice: this.customCostPrice(),
+      currentPrice: this.customCurrentPrice(),
       immediate: false,
     });
   }
@@ -201,6 +204,7 @@ export class ElasticityPageComponent implements OnInit {
       sku,
       priceChangePct: pct,
       costPrice: this.customCostPrice(),
+      currentPrice: this.customCurrentPrice(),
       immediate: true,
     });
   }
@@ -215,6 +219,7 @@ export class ElasticityPageComponent implements OnInit {
       sku,
       priceChangePct: this.priceChangePct(),
       costPrice,
+      currentPrice: this.customCurrentPrice(),
       immediate: false,
     });
   }
@@ -229,6 +234,45 @@ export class ElasticityPageComponent implements OnInit {
       sku,
       priceChangePct: this.priceChangePct(),
       costPrice: null,
+      currentPrice: this.customCurrentPrice(),
+      immediate: true,
+    });
+  }
+
+  protected onCurrentPriceChange(currentPrice: number): void {
+    this.submitCurrentPriceSimulation(currentPrice, false);
+  }
+
+  protected onCurrentPriceCommit(currentPrice: number): void {
+    this.submitCurrentPriceSimulation(currentPrice, true);
+  }
+
+  private submitCurrentPriceSimulation(currentPrice: number, immediate: boolean): void {
+    const sku = this.activeSku();
+    this.customCurrentPrice.set(currentPrice);
+    this.simulationError.set(null);
+    if (sku === null || this.loadState() !== 'loaded') return;
+
+    this.simulationRequest$.next({
+      sku,
+      priceChangePct: this.priceChangePct(),
+      costPrice: this.customCostPrice(),
+      currentPrice,
+      immediate,
+    });
+  }
+
+  protected onResetCurrentPrice(): void {
+    const sku = this.activeSku();
+    this.customCurrentPrice.set(null);
+    this.simulationError.set(null);
+    if (sku === null || this.loadState() !== 'loaded') return;
+
+    this.simulationRequest$.next({
+      sku,
+      priceChangePct: this.priceChangePct(),
+      costPrice: this.customCostPrice(),
+      currentPrice: null,
       immediate: true,
     });
   }
@@ -241,6 +285,7 @@ export class ElasticityPageComponent implements OnInit {
       sku,
       priceChangePct: this.priceChangePct(),
       costPrice: this.customCostPrice(),
+      currentPrice: this.customCurrentPrice(),
       immediate: true,
     });
   }
@@ -288,6 +333,7 @@ export class ElasticityPageComponent implements OnInit {
           sku,
           priceChangePct: this.priceChangePct(),
           costPrice: this.customCostPrice(),
+          currentPrice: this.customCurrentPrice(),
           immediate: true,
         });
       });
@@ -312,6 +358,11 @@ export class ElasticityPageComponent implements OnInit {
             return EMPTY;
           }
 
+          if (req.currentPrice !== null && (!Number.isFinite(req.currentPrice) || req.currentPrice <= 0)) {
+            this.isSimulating.set(false);
+            return EMPTY;
+          }
+
           const trigger$ = req.immediate ? of(req) : timer(SLIDER_DEBOUNCE_MS).pipe(map(() => req));
           return trigger$.pipe(
             switchMap((activeReq) =>
@@ -323,6 +374,9 @@ export class ElasticityPageComponent implements OnInit {
                   priceChangePct: activeReq.priceChangePct,
                   ...(activeReq.costPrice !== null && activeReq.costPrice !== undefined
                     ? { costPrice: activeReq.costPrice }
+                    : {}),
+                  ...(activeReq.currentPrice !== null && activeReq.currentPrice !== undefined
+                    ? { currentPrice: activeReq.currentPrice }
                     : {}),
                 });
               }),
@@ -355,6 +409,7 @@ export class ElasticityPageComponent implements OnInit {
     this.isSimulating.set(false);
     this.priceChangePct.set(PRICE_CHANGE_DEFAULT);
     this.customCostPrice.set(null);
+    this.customCurrentPrice.set(null);
     this.skuFieldError.set(null);
     this.bannerError.set(null);
     this.isLoadingProduct.set(true);
@@ -378,6 +433,7 @@ export class ElasticityPageComponent implements OnInit {
     this.bannerError.set(null);
     this.priceChangePct.set(PRICE_CHANGE_DEFAULT);
     this.customCostPrice.set(null);
+    this.customCurrentPrice.set(null);
     this.simulationResult.set(null);
     this.isSimulating.set(false);
     this.simulationError.set(null);

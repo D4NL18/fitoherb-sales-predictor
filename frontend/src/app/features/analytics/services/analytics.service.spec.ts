@@ -114,4 +114,46 @@ describe('AnalyticsService', () => {
     expect(reqWithCost.request.body).toEqual({ sku: 1001, priceChangePct: -10, costPrice: 13.5 });
     reqWithCost.flush({ data: {}, meta: { timestamp: '2026-11-16T12:00:00Z', version: '1.0.0' } });
   });
+
+  it('simulatePriceChange omite currentPrice quando null/undefined e envia currentPrice quando informado', () => {
+    // Arrange & Act — currentPrice null
+    service.simulatePriceChange({ sku: 1001, priceChangePct: 5, currentPrice: null }).subscribe();
+    const reqWithNull = http.expectOne('/api/v1/analytics/elasticity/simulate');
+
+    // Assert — omite currentPrice
+    expect(reqWithNull.request.method).toBe('POST');
+    expect(reqWithNull.request.body).toEqual({ sku: 1001, priceChangePct: 5 });
+    expect('currentPrice' in reqWithNull.request.body).toBeFalse();
+    reqWithNull.flush({ data: {}, meta: { timestamp: '2026-11-16T12:00:00Z', version: '1.0.0' } });
+
+    // Arrange & Act — currentPrice undefined
+    service.simulatePriceChange({ sku: 1001, priceChangePct: 5, currentPrice: undefined }).subscribe();
+    const reqWithUndefined = http.expectOne('/api/v1/analytics/elasticity/simulate');
+
+    // Assert — omite currentPrice
+    expect(reqWithUndefined.request.body).toEqual({ sku: 1001, priceChangePct: 5 });
+    expect('currentPrice' in reqWithUndefined.request.body).toBeFalse();
+    reqWithUndefined.flush({ data: {}, meta: { timestamp: '2026-11-16T12:00:00Z', version: '1.0.0' } });
+
+    // Arrange & Act — currentPrice informado (com e sem costPrice)
+    service.simulatePriceChange({ sku: 1001, priceChangePct: 10, currentPrice: 250 }).subscribe();
+    const reqWithPrice = http.expectOne('/api/v1/analytics/elasticity/simulate');
+
+    // Assert — envia currentPrice
+    expect(reqWithPrice.request.method).toBe('POST');
+    expect(reqWithPrice.request.body).toEqual({ sku: 1001, priceChangePct: 10, currentPrice: 250 });
+    reqWithPrice.flush({ data: {}, meta: { timestamp: '2026-11-16T12:00:00Z', version: '1.0.0' } });
+
+    service
+      .simulatePriceChange({ sku: 1001, priceChangePct: 10, currentPrice: 250, costPrice: 122.42 })
+      .subscribe();
+    const reqWithPriceAndCost = http.expectOne('/api/v1/analytics/elasticity/simulate');
+    expect(reqWithPriceAndCost.request.body).toEqual({
+      sku: 1001,
+      priceChangePct: 10,
+      currentPrice: 250,
+      costPrice: 122.42,
+    });
+    reqWithPriceAndCost.flush({ data: {}, meta: { timestamp: '2026-11-16T12:00:00Z', version: '1.0.0' } });
+  });
 });

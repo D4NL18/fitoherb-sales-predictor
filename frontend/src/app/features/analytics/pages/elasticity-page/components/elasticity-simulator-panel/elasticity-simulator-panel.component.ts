@@ -34,8 +34,6 @@ import {
   formatSignedUnits,
   formatStockDays,
   formatUnits,
-  getClassificationMeta,
-  getConfidenceMeta,
   getStockCoverageStatus,
   sliderMarkLeftPct,
 } from '../../../../utils/elasticity-view';
@@ -54,6 +52,7 @@ export class ElasticitySimulatorPanelComponent {
   readonly elasticity = input.required<ProductElasticityMetrics>();
   readonly priceChangePct = input.required<number>();
   readonly customCostPrice = input<number | null>(null);
+  readonly customCurrentPrice = input<number | null>(null);
   readonly simulationResult = input<SimulationImpactData | null>(null);
   readonly isSimulating = input<boolean>(false);
   readonly simulationError = input<string | null>(null);
@@ -63,6 +62,9 @@ export class ElasticitySimulatorPanelComponent {
   readonly priceNumberCommit = output<number>();
   readonly costChange = output<number>();
   readonly resetCost = output<void>();
+  readonly currentPriceChange = output<number>();
+  readonly currentPriceCommit = output<number>();
+  readonly resetCurrentPrice = output<void>();
   readonly retrySimulation = output<void>();
 
   protected readonly minPct = PRICE_CHANGE_MIN;
@@ -78,8 +80,17 @@ export class ElasticitySimulatorPanelComponent {
 
   protected readonly inputText = signal<string>('5');
   protected readonly localValidationError = signal<string | null>(null);
+  protected readonly currentPriceInputText = signal<string>('0');
+  protected readonly currentPriceValidationError = signal<string | null>(null);
   protected readonly costInputText = signal<string>('0');
   protected readonly costValidationError = signal<string | null>(null);
+
+  protected readonly hasAnyLocalValidationError = computed(
+    () =>
+      this.localValidationError() !== null ||
+      this.currentPriceValidationError() !== null ||
+      this.costValidationError() !== null,
+  );
 
   protected readonly pctOrApiError = computed(
     () => this.localValidationError() ?? this.simulationError(),
@@ -87,14 +98,6 @@ export class ElasticitySimulatorPanelComponent {
 
   protected readonly hasInlineApiError = computed(
     () => this.simulationError() !== null && this.localValidationError() === null,
-  );
-
-  protected readonly classificationMeta = computed(() =>
-    getClassificationMeta(this.elasticity().classification),
-  );
-
-  protected readonly confidenceMeta = computed(() =>
-    getConfidenceMeta(this.elasticity().confidenceLevel),
   );
 
   protected readonly technicalSummaryHelp = computed(() =>
@@ -109,6 +112,29 @@ export class ElasticitySimulatorPanelComponent {
 
   protected readonly stockTargetDays = computed(
     () => this.simulationResult()?.stockTargetDays ?? this.product().stockTargetDays ?? STOCK_TARGET_DAYS_DEFAULT,
+  );
+
+  protected readonly isPriceOverrideActive = computed(() => {
+    const custom = this.customCurrentPrice();
+    return custom !== null && custom !== undefined;
+  });
+
+  protected readonly currentPriceOriginLabel = computed(() =>
+    this.isPriceOverrideActive() ? 'Editado manualmente' : 'Catálogo ERP',
+  );
+
+  protected readonly currentPriceOriginTone = computed<'manual' | 'erp'>(() =>
+    this.isPriceOverrideActive() ? 'manual' : 'erp',
+  );
+
+  protected readonly currentPriceSourceShortLabel = computed(() => {
+    const sim = this.simulationResult();
+    if (sim?.isPriceOverride || this.isPriceOverrideActive()) return 'Manual';
+    return 'ERP';
+  });
+
+  protected readonly effectiveCurrentPrice = computed(
+    () => this.simulationResult()?.currentPrice ?? this.customCurrentPrice() ?? this.product().currentPrice,
   );
 
   protected readonly isCostOverrideActive = computed(() => {
@@ -150,28 +176,28 @@ export class ElasticitySimulatorPanelComponent {
   protected readonly currentUnitMargin = computed(() => {
     const sim = this.simulationResult();
     if (sim?.currentUnitMargin !== undefined) return sim.currentUnitMargin;
-    const price = sim?.currentPrice ?? this.product().currentPrice;
+    const price = sim?.currentPrice ?? this.effectiveCurrentPrice();
     return computeUnitMargin(price, this.effectiveCost()).amount;
   });
 
   protected readonly projectedUnitMargin = computed(() => {
     const sim = this.simulationResult();
     if (sim?.projectedUnitMargin !== undefined) return sim.projectedUnitMargin;
-    const price = sim?.projectedPrice ?? this.product().currentPrice;
+    const price = sim?.projectedPrice ?? this.effectiveCurrentPrice();
     return computeUnitMargin(price, this.effectiveCost()).amount;
   });
 
   protected readonly currentUnitMarginPct = computed(() => {
     const sim = this.simulationResult();
     if (sim?.currentUnitMarginPct !== undefined) return sim.currentUnitMarginPct;
-    const price = sim?.currentPrice ?? this.product().currentPrice;
+    const price = sim?.currentPrice ?? this.effectiveCurrentPrice();
     return computeUnitMargin(price, this.effectiveCost()).marginPct;
   });
 
   protected readonly projectedUnitMarginPct = computed(() => {
     const sim = this.simulationResult();
     if (sim?.projectedUnitMarginPct !== undefined) return sim.projectedUnitMarginPct;
-    const price = sim?.projectedPrice ?? this.product().currentPrice;
+    const price = sim?.projectedPrice ?? this.effectiveCurrentPrice();
     return computeUnitMargin(price, this.effectiveCost()).marginPct;
   });
 
@@ -283,7 +309,8 @@ export class ElasticitySimulatorPanelComponent {
     return sim ? deltaTone(sim.marginChangeAbs) : 'neutral';
   });
 
-  private lastSyncedSku: number | null = null;
+  private lastSyncedCostSku: number | null = null;
+  private lastSyncedPriceSku: number | null = null;
 
   constructor() {
     effect(() => {
@@ -298,19 +325,40 @@ export class ElasticitySimulatorPanelComponent {
       const prod = this.product();
       const customCost = this.customCostPrice();
       untracked(() => {
-        const skuChanged = this.lastSyncedSku !== prod.code;
-        this.lastSyncedSku = prod.code;
+        const skuChanged = this.lastSyncedCostSku !== prod.code;
+        this.lastSyncedCostSku = prod.code;
 
         if (customCost === null || customCost === undefined) {
-          this.costInputText.set(this.formatCostInputValue(prod.costPrice));
+          this.costInputText.set(this.formatMoneyInputValue(prod.costPrice));
           this.costValidationError.set(null);
           return;
         }
 
         const currentParsed = this.parseValidCost(this.costInputText());
         if (skuChanged || currentParsed !== customCost) {
-          this.costInputText.set(this.formatCostInputValue(customCost));
+          this.costInputText.set(this.formatMoneyInputValue(customCost));
           this.costValidationError.set(null);
+        }
+      });
+    }, { allowSignalWrites: true });
+
+    effect(() => {
+      const prod = this.product();
+      const customPrice = this.customCurrentPrice();
+      untracked(() => {
+        const skuChanged = this.lastSyncedPriceSku !== prod.code;
+        this.lastSyncedPriceSku = prod.code;
+
+        if (customPrice === null || customPrice === undefined) {
+          this.currentPriceInputText.set(this.formatMoneyInputValue(prod.currentPrice));
+          this.currentPriceValidationError.set(null);
+          return;
+        }
+
+        const currentParsed = this.parseValidCurrentPrice(this.currentPriceInputText());
+        if (skuChanged || currentParsed !== customPrice) {
+          this.currentPriceInputText.set(this.formatMoneyInputValue(customPrice));
+          this.currentPriceValidationError.set(null);
         }
       });
     }, { allowSignalWrites: true });
@@ -321,8 +369,8 @@ export class ElasticitySimulatorPanelComponent {
     if (!Number.isFinite(value)) return;
     this.inputText.set(String(value));
     this.localValidationError.set(null);
-    if (this.costValidationError() !== null) return;
-    this.syncPendingValidCostIfNeeded();
+    if (this.currentPriceValidationError() !== null || this.costValidationError() !== null) return;
+    this.syncPendingValidPremisesIfNeeded('pct');
     this.priceSliderInput.emit(value);
   }
 
@@ -335,8 +383,8 @@ export class ElasticitySimulatorPanelComponent {
       return;
     }
     this.localValidationError.set(null);
-    if (this.costValidationError() !== null) return;
-    this.syncPendingValidCostIfNeeded();
+    if (this.currentPriceValidationError() !== null || this.costValidationError() !== null) return;
+    this.syncPendingValidPremisesIfNeeded('pct');
     this.priceSliderInput.emit(parsed);
   }
 
@@ -347,9 +395,43 @@ export class ElasticitySimulatorPanelComponent {
       return;
     }
     this.localValidationError.set(null);
-    if (this.costValidationError() !== null) return;
-    this.syncPendingValidCostIfNeeded();
+    if (this.currentPriceValidationError() !== null || this.costValidationError() !== null) return;
+    this.syncPendingValidPremisesIfNeeded('pct');
     this.priceNumberCommit.emit(parsed);
+  }
+
+  protected onCurrentPriceInput(event: Event): void {
+    const raw = (event.target as HTMLInputElement).value;
+    this.currentPriceInputText.set(raw);
+    const parsed = this.parseValidCurrentPrice(raw);
+    if (parsed === null) {
+      this.currentPriceValidationError.set('Informe um preço atual maior que R$ 0,00.');
+      return;
+    }
+    this.currentPriceValidationError.set(null);
+    if (this.localValidationError() !== null || this.costValidationError() !== null) return;
+    this.syncPendingValidPremisesIfNeeded('currentPrice');
+    this.currentPriceChange.emit(parsed);
+  }
+
+  protected onCurrentPriceCommit(): void {
+    const parsed = this.parseValidCurrentPrice(this.currentPriceInputText());
+    if (parsed === null) {
+      this.currentPriceValidationError.set('Informe um preço atual maior que R$ 0,00.');
+      return;
+    }
+    this.currentPriceValidationError.set(null);
+    if (this.localValidationError() !== null || this.costValidationError() !== null) return;
+    this.syncPendingValidPremisesIfNeeded('currentPrice');
+    this.currentPriceCommit.emit(parsed);
+  }
+
+  protected onResetCurrentPriceClick(): void {
+    this.currentPriceValidationError.set(null);
+    this.currentPriceInputText.set(this.formatMoneyInputValue(this.product().currentPrice));
+    if (this.localValidationError() !== null || this.costValidationError() !== null) return;
+    this.syncPendingValidPremisesIfNeeded('currentPrice');
+    this.resetCurrentPrice.emit();
   }
 
   protected onCostInput(event: Event): void {
@@ -361,31 +443,49 @@ export class ElasticitySimulatorPanelComponent {
       return;
     }
     this.costValidationError.set(null);
-    if (this.localValidationError() !== null) return;
+    if (this.localValidationError() !== null || this.currentPriceValidationError() !== null) return;
+    this.syncPendingValidPremisesIfNeeded('cost');
     this.costChange.emit(parsed);
   }
 
   protected onResetCostClick(): void {
     this.costValidationError.set(null);
-    this.costInputText.set(this.formatCostInputValue(this.product().costPrice));
-    if (this.localValidationError() !== null) return;
+    this.costInputText.set(this.formatMoneyInputValue(this.product().costPrice));
+    if (this.localValidationError() !== null || this.currentPriceValidationError() !== null) return;
+    this.syncPendingValidPremisesIfNeeded('cost');
     this.resetCost.emit();
   }
 
   protected selectPreset(preset: number): void {
     this.inputText.set(String(preset));
     this.localValidationError.set(null);
-    if (this.costValidationError() !== null) return;
-    this.syncPendingValidCostIfNeeded();
+    if (this.currentPriceValidationError() !== null || this.costValidationError() !== null) return;
+    this.syncPendingValidPremisesIfNeeded('pct');
     this.pricePresetSelect.emit(preset);
   }
 
-  private syncPendingValidCostIfNeeded(): void {
-    const parsedCost = this.parseValidCost(this.costInputText());
-    if (parsedCost === null) return;
-    const activeCost = this.customCostPrice() ?? this.product().costPrice;
-    if (parsedCost !== activeCost) {
-      this.costChange.emit(parsedCost);
+  private syncPendingValidPremisesIfNeeded(exclude?: 'pct' | 'currentPrice' | 'cost'): void {
+    if (exclude !== 'pct') {
+      const parsedPct = this.parseValidPct(this.inputText());
+      if (parsedPct !== null && parsedPct !== this.priceChangePct()) {
+        this.priceSliderInput.emit(parsedPct);
+      }
+    }
+
+    if (exclude !== 'currentPrice') {
+      const parsedPrice = this.parseValidCurrentPrice(this.currentPriceInputText());
+      const activePrice = this.customCurrentPrice() ?? this.product().currentPrice;
+      if (parsedPrice !== null && parsedPrice !== activePrice) {
+        this.currentPriceChange.emit(parsedPrice);
+      }
+    }
+
+    if (exclude !== 'cost') {
+      const parsedCost = this.parseValidCost(this.costInputText());
+      const activeCost = this.customCostPrice() ?? this.product().costPrice;
+      if (parsedCost !== null && parsedCost !== activeCost) {
+        this.costChange.emit(parsedCost);
+      }
     }
   }
 
@@ -423,7 +523,7 @@ export class ElasticitySimulatorPanelComponent {
     return Math.min(100, Math.max(0, (days / STOCK_COVERAGE_BAR_MAX_DAYS) * 100));
   }
 
-  private formatCostInputValue(value: number): string {
+  private formatMoneyInputValue(value: number): string {
     if (!Number.isFinite(value) || value < 0) return '0.00';
     return value.toFixed(2);
   }
@@ -433,6 +533,14 @@ export class ElasticitySimulatorPanelComponent {
     if (normalized === '' || normalized === '-' || normalized === '+') return null;
     const num = Number(normalized);
     if (!Number.isFinite(num) || num < PRICE_CHANGE_MIN || num > PRICE_CHANGE_MAX) return null;
+    return num;
+  }
+
+  private parseValidCurrentPrice(raw: string): number | null {
+    const normalized = raw.trim().replace(',', '.');
+    if (normalized === '' || normalized === '-' || normalized === '+') return null;
+    const num = Number(normalized);
+    if (!Number.isFinite(num) || num <= 0) return null;
     return num;
   }
 

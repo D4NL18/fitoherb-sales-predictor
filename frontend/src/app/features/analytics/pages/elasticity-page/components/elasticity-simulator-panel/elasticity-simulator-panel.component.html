@@ -14,60 +14,6 @@
     </div>
 
     <div class="product-compact-badges">
-      <div class="badge-with-help">
-        <span class="tag badge-elasticity" [class]="classificationMeta().tagClass">
-          @if (classificationMeta().icon === 'elastic') {
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
-              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <polyline points="22 17 13.5 8.5 8.5 13.5 2 7"></polyline>
-              <polyline points="16 17 22 17 22 11"></polyline>
-            </svg>
-          } @else {
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
-              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-              <polyline points="9 12 11 14 15 10"></polyline>
-            </svg>
-          }
-          <span>{{ classificationMeta().label }}</span>
-        </span>
-        <app-info-help
-          topicLabel="Classificação de sensibilidade"
-          [content]="helpCopy.classificationBadge"
-          size="sm"
-          preferredAlign="end"
-        />
-      </div>
-
-      <span class="tag badge-confidence" [class]="confidenceMeta().tagClass">
-        @switch (confidenceMeta().icon) {
-          @case ('high') {
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
-              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <circle cx="12" cy="12" r="9"></circle>
-              <polyline points="8.5 12.5 11 15 16 9.5"></polyline>
-            </svg>
-          }
-          @case ('medium') {
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
-              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <circle cx="12" cy="12" r="9"></circle>
-              <line x1="12" y1="8" x2="12" y2="12"></line>
-              <line x1="12" y1="16" x2="12.01" y2="16"></line>
-            </svg>
-          }
-          @default {
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
-              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path>
-              <line x1="12" y1="9" x2="12" y2="13"></line>
-              <line x1="12" y1="17" x2="12.01" y2="17"></line>
-            </svg>
-          }
-        }
-        <span>{{ confidenceMeta().label }}</span>
-      </span>
-
       <span class="stats-help-pill">
         <span class="stats-help-label">Ver detalhes estatísticos</span>
         <app-info-help
@@ -124,7 +70,7 @@
     </div>
   }
 
-  <div class="controls-panel" [class.has-invalid]="localValidationError() !== null || costValidationError() !== null">
+  <div class="controls-panel" [class.has-invalid]="hasAnyLocalValidationError()">
     <div class="quick-adjust-bar">
       <div class="quick-adjust-group" role="group" aria-label="Atalhos rápidos de reajuste de preço">
         <span class="quick-label">Testar rápido:</span>
@@ -211,60 +157,121 @@
         </div>
       </div>
 
-      <div class="cost-control-block">
-        <div class="control-header-inline">
-          <div class="label-with-help">
-            <label for="cost-price-input" class="control-label">Custo unitário (R$)</label>
-            <app-info-help
-              topicLabel="Custo unitário"
-              [content]="helpCopy.unitCostInput"
-              size="sm"
-              preferredAlign="end"
-            />
+      <div class="money-inputs-grid">
+        <div class="current-price-control-block">
+          <div class="control-header-inline">
+            <div class="label-with-help">
+              <label for="current-price-input" class="control-label">Preço atual (R$)</label>
+              <app-info-help
+                topicLabel="Preço atual"
+                [content]="helpCopy.currentPriceInput"
+                size="sm"
+                preferredAlign="end"
+              />
+            </div>
+            <span class="origin-badge" [class]="'origin-' + currentPriceOriginTone()">
+              {{ currentPriceOriginLabel() }}
+            </span>
           </div>
-          <span class="cost-origin-badge" [class]="'origin-' + costOriginTone()">
-            {{ costOriginLabel() }}
-          </span>
+
+          <div class="money-input-row">
+            <div class="current-price-field-group" [class.has-invalid]="currentPriceValidationError() !== null">
+              <span class="currency-prefix" aria-hidden="true">R$</span>
+              <input
+                id="current-price-input"
+                type="number"
+                min="0.01"
+                step="0.01"
+                class="money-number-input"
+                [value]="currentPriceInputText()"
+                (input)="onCurrentPriceInput($event)"
+                (change)="onCurrentPriceCommit()"
+                (keyup.enter)="onCurrentPriceCommit()"
+                [attr.aria-invalid]="currentPriceValidationError() !== null ? 'true' : null"
+                [attr.aria-describedby]="currentPriceValidationError() !== null ? 'current-price-validation-error' : null"
+              />
+            </div>
+
+            @if (currentPriceValidationError(); as currentPriceErr) {
+              <div id="current-price-validation-error" class="simulation-error" role="alert">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="12" y1="8" x2="12" y2="12"></line>
+                  <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                </svg>
+                <span>{{ currentPriceErr }}</span>
+              </div>
+            }
+
+            @if (isPriceOverrideActive()) {
+              <button
+                type="button"
+                class="btn-reset-premise"
+                [disabled]="isSimulating()"
+                (click)="onResetCurrentPriceClick()"
+              >
+                Restaurar preço do catálogo ({{ product().currentPrice | brl }})
+              </button>
+            }
+          </div>
         </div>
 
-        <div class="cost-input-row">
-          <div class="cost-field-group" [class.has-invalid]="costValidationError() !== null">
-            <span class="currency-prefix" aria-hidden="true">R$</span>
-            <input
-              id="cost-price-input"
-              type="number"
-              min="0"
-              step="0.01"
-              class="cost-number-input"
-              [value]="costInputText()"
-              (input)="onCostInput($event)"
-              [attr.aria-invalid]="costValidationError() !== null ? 'true' : null"
-              [attr.aria-describedby]="costValidationError() !== null ? 'cost-validation-error' : null"
-            />
+        <div class="cost-control-block">
+          <div class="control-header-inline">
+            <div class="label-with-help">
+              <label for="cost-price-input" class="control-label">Custo unitário (R$)</label>
+              <app-info-help
+                topicLabel="Custo unitário"
+                [content]="helpCopy.unitCostInput"
+                size="sm"
+                preferredAlign="end"
+              />
+            </div>
+            <span class="origin-badge" [class]="'origin-' + costOriginTone()">
+              {{ costOriginLabel() }}
+            </span>
           </div>
 
-          @if (costValidationError(); as costErr) {
-            <div id="cost-validation-error" class="simulation-error" role="alert">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
-                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <circle cx="12" cy="12" r="10"></circle>
-                <line x1="12" y1="8" x2="12" y2="12"></line>
-                <line x1="12" y1="16" x2="12.01" y2="16"></line>
-              </svg>
-              <span>{{ costErr }}</span>
+          <div class="money-input-row">
+            <div class="cost-field-group" [class.has-invalid]="costValidationError() !== null">
+              <span class="currency-prefix" aria-hidden="true">R$</span>
+              <input
+                id="cost-price-input"
+                type="number"
+                min="0"
+                step="0.01"
+                class="money-number-input"
+                [value]="costInputText()"
+                (input)="onCostInput($event)"
+                [attr.aria-invalid]="costValidationError() !== null ? 'true' : null"
+                [attr.aria-describedby]="costValidationError() !== null ? 'cost-validation-error' : null"
+              />
             </div>
-          }
 
-          @if (isCostOverrideActive()) {
-            <button
-              type="button"
-              class="btn-reset-cost"
-              [disabled]="isSimulating()"
-              (click)="onResetCostClick()"
-            >
-              Restaurar custo do catálogo ({{ product().costPrice | brl }})
-            </button>
-          }
+            @if (costValidationError(); as costErr) {
+              <div id="cost-validation-error" class="simulation-error" role="alert">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="12" y1="8" x2="12" y2="12"></line>
+                  <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                </svg>
+                <span>{{ costErr }}</span>
+              </div>
+            }
+
+            @if (isCostOverrideActive()) {
+              <button
+                type="button"
+                class="btn-reset-premise"
+                [disabled]="isSimulating()"
+                (click)="onResetCostClick()"
+              >
+                Restaurar custo do catálogo ({{ product().costPrice | brl }})
+              </button>
+            }
+          </div>
         </div>
       </div>
     </div>
@@ -289,7 +296,7 @@
     <div class="simulation-summary-strip" [attr.aria-busy]="isSimulating() ? 'true' : null">
       <div class="price-projection-summary">
         <span class="summary-chip">
-          Preço atual: <strong>{{ sim.currentPrice | brl }}</strong>
+          Preço atual: <strong>{{ effectiveCurrentPrice() | brl }}</strong> ({{ currentPriceSourceShortLabel() }})
         </span>
         <span class="summary-arrow" aria-hidden="true">→</span>
         <span class="summary-chip summary-chip-accent">
@@ -334,8 +341,7 @@
           />
         </div>
         <div class="sim-main-val">
-          {{ projectedUnitMargin() | brl }}
-          <span class="unit-label">/ un. ({{ formattedProjectedUnitMarginPct() }})</span>
+          {{ formattedProjectedUnitMarginPct() }} <span class="unit-label">({{ projectedUnitMargin() | brl }}/un.)</span>
         </div>
         <div class="sim-delta" [class]="'tone-' + unitMarginTone()">
           @switch (unitMarginTone()) {
@@ -360,10 +366,10 @@
               </svg>
             }
           }
-          <span>{{ formatSignedBrl(unitMarginDiff()) }}/un. ({{ formatSignedPpValue(unitMarginPctChangePp()) }})</span>
+          <span>{{ formatSignedPpValue(unitMarginPctChangePp()) }} ({{ formatSignedBrl(unitMarginDiff()) }}/un.)</span>
         </div>
         <span class="sim-baseline">
-          Atual: {{ currentUnitMargin() | brl }}/un. ({{ formattedCurrentUnitMarginPct() }})
+          Atual: {{ formattedCurrentUnitMarginPct() }} ({{ currentUnitMargin() | brl }}/un.)
         </span>
         @if (projectedUnitMargin() <= 0) {
           <p class="unit-margin-warning" role="note">Atenção: preço igual ou abaixo do custo</p>
