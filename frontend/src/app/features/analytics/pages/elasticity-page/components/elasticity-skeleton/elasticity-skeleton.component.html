@@ -1,0 +1,42 @@
+<div class="skeleton-wrapper" role="status" aria-busy="true" aria-label="Carregando calculadora de preço, margem e estoque">
+  <span class="sr-only">Consultando histórico de vendas, custo e estoque do produto…</span>
+
+  <section class="skeleton-panel" aria-hidden="true">
+    <div class="skeleton-header">
+      <div class="skeleton-header-meta">
+        <span class="skeleton-line bar-sku"></span>
+        <span class="skeleton-line bar-title"></span>
+        <span class="skeleton-line bar-subtitle"></span>
+      </div>
+      <div class="skeleton-badges">
+        <span class="skeleton-box bar-tag"></span>
+        <span class="skeleton-box bar-tag"></span>
+      </div>
+    </div>
+
+    <div class="skeleton-controls">
+      <div class="skeleton-controls-top">
+        <span class="skeleton-line bar-section-title"></span>
+        <span class="skeleton-box bar-presets"></span>
+      </div>
+      <div class="skeleton-controls-inputs">
+        <span class="skeleton-box bar-slider"></span>
+        <span class="skeleton-box bar-cost"></span>
+      </div>
+    </div>
+
+    <span class="skeleton-box bar-strip"></span>
+
+    <div class="skeleton-sim-grid">
+      @for (item of cardPlaceholders; track item) {
+        <div class="skeleton-tile">
+          <span class="skeleton-line bar-label"></span>
+          <span class="skeleton-line bar-value"></span>
+          <span class="skeleton-line bar-sub"></span>
+        </div>
+      }
+    </div>
+
+    <span class="skeleton-box bar-recommendation"></span>
+  </section>
+</div>

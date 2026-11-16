@@ -8,6 +8,11 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { AnalyticsHealthResponse, PageRequest } from '../models/analytics.model';
 import {
+  ElasticitySimulationRequest,
+  ElasticitySimulationResponse,
+  ProductElasticityResponse,
+} from '../models/elasticity.models';
+import {
   CustomerCrossSellResponse,
   ProductCrossSellResponse,
   ProductSearchResponse,
@@ -42,6 +47,35 @@ export class AnalyticsService {
     return this.http.get<ProductSearchResponse>(`${this.baseUrl}/products/search`, {
       params: toPageParams(page).set('q', query),
     });
+  }
+
+  /** Elasticidade do produto (P-096, P-103). */
+  getProductElasticity(sku: number, page: PageRequest): Observable<ProductElasticityResponse> {
+    return this.http.get<ProductElasticityResponse>(`${this.baseUrl}/elasticity/product/${sku}`, {
+      params: toPageParams(page),
+    });
+  }
+
+  /** Simulação de impacto de reajuste de preço, custo e preço atual opcionais (P-101). */
+  simulatePriceChange(request: ElasticitySimulationRequest): Observable<ElasticitySimulationResponse> {
+    const {
+      sku,
+      priceChangePct: pct,
+      customerCode,
+      costPrice: reqCostPrice,
+      currentPrice: reqCurrentPrice,
+    } = request;
+
+    const payload: ElasticitySimulationRequest = {
+      sku,
+      priceChangePct: pct,
+      ...(customerCode !== null && customerCode !== undefined ? { customerCode } : {}),
+      ...(reqCostPrice !== null && reqCostPrice !== undefined ? { costPrice: reqCostPrice } : {}),
+      ...(reqCurrentPrice !== null && reqCurrentPrice !== undefined
+        ? { currentPrice: reqCurrentPrice }
+        : {}),
+    };
+    return this.http.post<ElasticitySimulationResponse>(`${this.baseUrl}/elasticity/simulate`, payload);
   }
 }
 

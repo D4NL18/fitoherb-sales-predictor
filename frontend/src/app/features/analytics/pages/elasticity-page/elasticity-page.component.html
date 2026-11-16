@@ -1,0 +1,95 @@
+<section class="elasticity-page" aria-labelledby="elasticity-page-title">
+  <section class="search-panel">
+    <header class="page-intro">
+      <div class="intro-copy">
+        <span class="intro-eyebrow">Decisão de Preço &amp; Lucro</span>
+        <div class="intro-title-row">
+          <h2 id="elasticity-page-title" class="intro-title">Simulador de Preço e Reação de Vendas</h2>
+          <app-info-help
+            topicLabel="Simulador de Preço e Reação de Vendas"
+            [content]="helpCopy.elasticityOverview"
+            size="md"
+            preferredAlign="start"
+          />
+        </div>
+        <p class="intro-subtitle">
+          Teste aumentos ou descontos para ver na hora o impacto na margem unitária, no lucro bruto e na cobertura de estoque para 60 dias.
+        </p>
+      </div>
+    </header>
+
+    <app-code-search-form
+      label="Escolha o produto"
+      hint="Digite o código ou nome do produto e selecione na lista."
+      placeholder="Ex.: 1001 ou Chá Verde"
+      submitLabel="Analisar produto"
+      [loading]="isLoadingProduct()"
+      [fieldError]="skuFieldError()"
+      [initialValue]="skuInput()"
+      [enableProductSearch]="true"
+      [invalidFormatMessage]="invalidSkuFormatMessage"
+      (search)="onSearchSku($event)"
+    />
+  </section>
+
+  <p class="sr-only" role="status" aria-live="polite">{{ liveAnnouncement() }}</p>
+
+  @switch (loadState()) {
+    @case ('initial') {
+      <section class="result-panel" aria-label="Estado inicial da calculadora de elasticidade">
+        <app-result-state
+          [view]="initialState"
+          (action)="onStateAction($event)"
+        />
+      </section>
+    }
+
+    @case ('loading') {
+      <app-elasticity-skeleton />
+    }
+
+    @case ('insufficient-data') {
+      <section class="result-panel" aria-label="Histórico insuficiente para elasticidade">
+        <app-result-state
+          [view]="insufficientDataState"
+          (action)="onStateAction($event)"
+        />
+      </section>
+    }
+
+    @case ('error') {
+      @if (bannerError(); as err) {
+        <app-error-banner
+          [message]="err.message"
+          [code]="err.code"
+          retryLabel="Tentar novamente"
+          (retry)="onRetryProduct()"
+        />
+      }
+    }
+
+    @case ('loaded') {
+      @if (productData(); as detail) {
+        <app-elasticity-simulator-panel
+          [product]="detail.product"
+          [elasticity]="detail.elasticity"
+          [priceChangePct]="priceChangePct()"
+          [customCostPrice]="customCostPrice()"
+          [customCurrentPrice]="customCurrentPrice()"
+          [simulationResult]="simulationResult()"
+          [isSimulating]="isSimulating()"
+          [simulationError]="simulationError()"
+          (priceSliderInput)="onPriceSliderInput($event)"
+          (pricePresetSelect)="onPriceImmediateChange($event)"
+          (priceNumberCommit)="onPriceImmediateChange($event)"
+          (costChange)="onCostChange($event)"
+          (resetCost)="onResetCost()"
+          (currentPriceChange)="onCurrentPriceChange($event)"
+          (currentPriceCommit)="onCurrentPriceCommit($event)"
+          (resetCurrentPrice)="onResetCurrentPrice()"
+          (retrySimulation)="onRetrySimulation()"
+        />
+      }
+    }
+  }
+</section>
