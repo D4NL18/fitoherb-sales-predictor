@@ -9,6 +9,7 @@ import {
   CrossSellParameters,
 } from '../models/analytics.model';
 import {
+  CatalogListResponse,
   CustomerCrossSellResponse,
   ProductCrossSellResponse,
   ProductSearchResponse,
@@ -163,6 +164,50 @@ export function searchResponse(): ProductSearchResponse {
       { codigo: 1002, descricao: 'CHA VERDE COM LIMAO 50G', fornecedor: 'CATARINENSE' },
     ],
     meta: { ...BASE_META, page: 1, limit: 20, offset: 0, totalItems: 2, totalPages: 1 },
+  };
+}
+
+export function catalogResponse(items?: CatalogListResponse['data']): CatalogListResponse {
+  const data = items ?? [
+    {
+      codigo: 2002,
+      descricao: 'WHEY 100% PURE GELATO 900G',
+      fornecedor: 'INTEGRALMEDICA',
+      estoque: 18,
+      precoVenda: 159.9,
+    },
+    {
+      codigo: 1001,
+      descricao: 'CHA VERDE 100G',
+      fornecedor: 'CATARINENSE',
+      estoque: 42,
+      precoVenda: 24.5,
+    },
+    {
+      codigo: 1003,
+      descricao: 'CAMOMILA P/ CHÁ 30G',
+      fornecedor: 'CATARINENSE',
+      estoque: 0,
+      precoVenda: 12.9,
+    },
+    {
+      codigo: 1042,
+      descricao: 'EXTRATO DE PRÓPOLIS 30ML',
+      fornecedor: 'APIS FLORA',
+      estoque: 120,
+      precoVenda: 28.5,
+    },
+  ];
+  return {
+    data,
+    meta: {
+      ...BASE_META,
+      page: 1,
+      limit: 2000,
+      offset: 0,
+      totalItems: data.length,
+      totalPages: data.length > 0 ? 1 : 0,
+    },
   };
 }
 

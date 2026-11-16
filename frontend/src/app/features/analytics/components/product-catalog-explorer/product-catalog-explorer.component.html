@@ -1,0 +1,454 @@
+<section class="catalog-explorer" [attr.aria-labelledby]="ids.title">
+  <header class="explorer-header">
+    <div class="explorer-heading-group">
+      <div class="explorer-title-row">
+        <h3 [id]="ids.title" class="explorer-title">{{ title() }}</h3>
+        @if (!isLoading() && !loadError()) {
+          <span class="catalog-count-badge tabular-nums">
+            {{ totalCatalogCount() | ptDecimal }} {{ totalCatalogCount() === 1 ? 'produto' : 'produtos' }}
+          </span>
+        }
+      </div>
+      <p class="explorer-subtitle">{{ subtitle() }}</p>
+    </div>
+  </header>
+
+  @if (isLoading()) {
+    <div class="explorer-skeleton" role="status" aria-busy="true" aria-label="Carregando catálogo de produtos">
+      <div class="skeleton-toolbar">
+        <div class="skeleton-box skeleton-search"></div>
+        <div class="skeleton-box skeleton-select"></div>
+        <div class="skeleton-box skeleton-select"></div>
+      </div>
+      <div class="skeleton-table-rows">
+        @for (row of skeletonRows; track row) {
+          <div class="skeleton-line skeleton-row"></div>
+        }
+      </div>
+    </div>
+  } @else if (loadError()) {
+    <app-error-banner
+      [message]="loadError()!"
+      retryLabel="Tentar novamente"
+      (retry)="loadCatalog()"
+    />
+  } @else if (totalCatalogCount() === 0) {
+    <div class="catalog-empty-state" role="status">
+      <h4 class="empty-title">Nenhum produto cadastrado no catálogo</h4>
+      <p class="empty-text">
+        Não há produtos disponíveis no momento para seleção. Tente atualizar mais tarde.
+      </p>
+      <button type="button" class="btn-secondary-action" (click)="loadCatalog()">
+        Atualizar catálogo
+      </button>
+    </div>
+  } @else {
+    <div
+      class="explorer-toolbar"
+      [class.has-seasonality]="showSeasonality()"
+      role="search"
+      aria-label="Filtros e ordenação do catálogo de produtos"
+    >
+      <div class="filter-field filter-search">
+        <label [for]="ids.search" class="filter-label">Busca inteligente</label>
+        <div class="search-input-wrap">
+          <span class="search-icon" aria-hidden="true">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+          </span>
+          <input
+            #searchEl
+            [id]="ids.search"
+            type="search"
+            class="filter-input"
+            autocomplete="off"
+            spellcheck="false"
+            [value]="searchQuery()"
+            placeholder="Ex.: whey 100% gelato, p cha, fornecedor ou SKU..."
+            (input)="onSearchInput(searchEl.value)"
+          />
+          @if (searchQuery().length > 0) {
+            <button
+              type="button"
+              class="btn-clear-search"
+              aria-label="Limpar busca do catálogo"
+              (click)="clearSearchInput()"
+            >
+              ×
+            </button>
+          }
+        </div>
+      </div>
+
+      <div class="filter-field filter-supplier" #supplierCombobox>
+        <label [for]="ids.supplier" class="filter-label">Fornecedor</label>
+        <div class="supplier-combobox-wrap">
+          <button
+            #supplierTrigger
+            [id]="ids.supplier"
+            type="button"
+            class="supplier-trigger"
+            [class.has-selection]="selectedSupplier() !== ''"
+            [class.is-open]="supplierDropdownOpen()"
+            aria-haspopup="listbox"
+            [attr.aria-expanded]="supplierDropdownOpen()"
+            [attr.aria-controls]="supplierDropdownOpen() ? ids.supplierListbox : null"
+            (click)="toggleSupplierDropdown()"
+            (keydown)="onSupplierKeydown($event)"
+          >
+            <span class="supplier-trigger-label">
+              @if (selectedSupplier(); as activeSup) {
+                {{ activeSup }}
+              } @else {
+                Todos os fornecedores ({{ totalSuppliersCount() | ptDecimal }})
+              }
+            </span>
+            <span class="supplier-trigger-chevron" aria-hidden="true">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="6 9 12 15 18 9"></polyline>
+              </svg>
+            </span>
+          </button>
+
+          @if (selectedSupplier() !== '') {
+            <button
+              type="button"
+              class="btn-clear-supplier"
+              aria-label="Limpar filtro de fornecedor"
+              (click)="clearSupplierFilter($event)"
+            >
+              ×
+            </button>
+          }
+
+          @if (supplierDropdownOpen()) {
+            <div class="supplier-dropdown">
+              <div class="supplier-search-box">
+                <span class="supplier-search-icon" aria-hidden="true">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                  </svg>
+                </span>
+                <input
+                  #supplierSearchEl
+                  [id]="ids.supplierSearch"
+                  type="search"
+                  class="supplier-search-input"
+                  autocomplete="off"
+                  spellcheck="false"
+                  placeholder="Buscar fornecedor..."
+                  aria-label="Buscar fornecedor"
+                  [value]="supplierSearchQuery()"
+                  (input)="onSupplierSearchInput(supplierSearchEl.value)"
+                  (keydown)="onSupplierKeydown($event)"
+                />
+              </div>
+
+              <ul
+                [id]="ids.supplierListbox"
+                class="supplier-listbox"
+                role="listbox"
+                aria-label="Fornecedores disponíveis"
+              >
+                @if (supplierSearchQuery().trim() === '') {
+                  <li
+                    class="supplier-option"
+                    role="option"
+                    [class.is-selected]="selectedSupplier() === ''"
+                    [attr.aria-selected]="selectedSupplier() === ''"
+                    (mousedown)="$event.preventDefault()"
+                    (click)="onSupplierChange('')"
+                  >
+                    <span class="supplier-option-name">
+                      Todos os fornecedores ({{ totalSuppliersCount() | ptDecimal }})
+                    </span>
+                    <span class="supplier-option-count tabular-nums">
+                      {{ totalCatalogCount() | ptDecimal }}
+                    </span>
+                  </li>
+                }
+
+                @for (sup of filteredSupplierOptions(); track sup.name) {
+                  <li
+                    class="supplier-option"
+                    role="option"
+                    [class.is-selected]="selectedSupplier() === sup.name"
+                    [class.is-active]="supplierActiveIndex() === $index"
+                    [attr.aria-selected]="selectedSupplier() === sup.name"
+                    (mousedown)="$event.preventDefault()"
+                    (click)="onSupplierChange(sup.name)"
+                  >
+                    <span class="supplier-option-name">{{ sup.name }}</span>
+                    <span class="supplier-option-count tabular-nums">{{ sup.count | ptDecimal }}</span>
+                  </li>
+                } @empty {
+                  <li class="supplier-option-empty" role="option" aria-disabled="true" aria-selected="false">
+                    Nenhum fornecedor encontrado para "{{ supplierSearchQuery().trim() }}".
+                  </li>
+                }
+              </ul>
+            </div>
+          }
+        </div>
+      </div>
+
+      <div class="filter-field">
+        <label [for]="ids.stock" class="filter-label">Estoque</label>
+        <select
+          #stockEl
+          [id]="ids.stock"
+          class="filter-select"
+          [value]="stockFilter()"
+          (change)="onStockFilterChange(stockEl.value)"
+        >
+          <option value="all">Todos</option>
+          <option value="in-stock">Com estoque</option>
+          <option value="out-of-stock">Sem estoque</option>
+        </select>
+      </div>
+
+      @if (showSeasonality()) {
+        <div class="filter-field">
+          <label [for]="ids.strength" class="filter-label">Força sazonal</label>
+          <select
+            #strengthEl
+            [id]="ids.strength"
+            class="filter-select"
+            [value]="strengthFilter()"
+            (change)="onStrengthFilterChange(strengthEl.value)"
+          >
+            <option value="all">Todas</option>
+            <option value="FORTE">Forte</option>
+            <option value="MODERADA">Moderada</option>
+            <option value="FRACA">Fraca</option>
+            <option value="measurable">Mensuráveis (Forte/Mod./Fraca)</option>
+            <option value="INSUFICIENTE">Pouco mensuráveis / Inativos</option>
+          </select>
+        </div>
+      }
+
+      <div class="filter-field">
+        <label [for]="ids.sort" class="filter-label">Ordenação</label>
+        <select
+          #sortEl
+          [id]="ids.sort"
+          class="filter-select"
+          [value]="sortBy()"
+          (change)="onSortChange(sortEl.value)"
+        >
+          <option value="supplier-asc">Fornecedor (A→Z) · Produto (A→Z)</option>
+          <option value="relevance">Mais relevantes</option>
+          @if (showSeasonality()) {
+            <option value="amplitude-desc">Mais sazonais (Amplitude ↓)</option>
+            <option value="amplitude-asc">Menor amplitude sazonal (↑)</option>
+            <option value="revenue-desc">Maior faturamento (↓)</option>
+          }
+          <option value="name-asc">Produto (A→Z)</option>
+          <option value="name-desc">Produto (Z→A)</option>
+          <option value="price-desc">Preço (maior)</option>
+          <option value="price-asc">Preço (menor)</option>
+          <option value="stock-desc">Estoque (maior)</option>
+          <option value="stock-asc">Estoque (menor)</option>
+          <option value="sku-asc">SKU (crescente)</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="explorer-subbar">
+      <div class="subbar-left">
+        <span class="results-summary tabular-nums" aria-live="polite">{{ rangeSummary() }}</span>
+        @if (hasActiveFilters()) {
+          <button type="button" class="btn-clear-filters" (click)="clearAllFilters()">
+            Limpar filtros
+          </button>
+        }
+      </div>
+    </div>
+
+    @if (totalFilteredCount() === 0) {
+      <div class="catalog-empty-state" role="status">
+        <h4 class="empty-title">Nenhum produto encontrado para os filtros aplicados</h4>
+        <p class="empty-text">
+          Tente remover palavras da busca ou limpar os filtros de fornecedor e estoque para visualizar o catálogo completo.
+        </p>
+        <button type="button" class="btn-secondary-action" (click)="clearAllFilters()">
+          Limpar filtros
+        </button>
+      </div>
+    } @else {
+      <div class="table-scroll-wrap">
+        <table class="catalog-table" [class.has-seasonality]="showSeasonality()">
+          <caption class="sr-only">Lista exploradora de produtos do catálogo</caption>
+          <thead>
+            <tr>
+              <th scope="col" [attr.aria-sort]="getAriaSort('sku')">
+                <button type="button" class="sort-header-btn" (click)="onColumnSort('sku')">
+                  <span>SKU</span>
+                  @if (sortBy() === 'sku-asc' || sortBy() === 'sku-desc') {
+                    <span class="sort-indicator" aria-hidden="true">{{ sortBy() === 'sku-asc' ? '▲' : '▼' }}</span>
+                  }
+                </button>
+              </th>
+              <th scope="col" [attr.aria-sort]="getAriaSort('name')">
+                <button type="button" class="sort-header-btn" (click)="onColumnSort('name')">
+                  <span>Produto</span>
+                  @if (sortBy() === 'name-asc' || sortBy() === 'name-desc') {
+                    <span class="sort-indicator" aria-hidden="true">{{ sortBy() === 'name-asc' ? '▲' : '▼' }}</span>
+                  }
+                </button>
+              </th>
+              <th scope="col" [attr.aria-sort]="getAriaSort('supplier')">
+                <button type="button" class="sort-header-btn" (click)="onColumnSort('supplier')">
+                  <span>Fornecedor</span>
+                  @if (sortBy() === 'supplier-asc' || sortBy() === 'supplier-desc') {
+                    <span class="sort-indicator" aria-hidden="true">{{ sortBy() === 'supplier-asc' ? '▲' : '▼' }}</span>
+                  }
+                </button>
+              </th>
+              <th scope="col" class="num-col" [attr.aria-sort]="getAriaSort('stock')">
+                <button type="button" class="sort-header-btn is-numeric" (click)="onColumnSort('stock')">
+                  <span>Estoque</span>
+                  @if (sortBy() === 'stock-asc' || sortBy() === 'stock-desc') {
+                    <span class="sort-indicator" aria-hidden="true">{{ sortBy() === 'stock-asc' ? '▲' : '▼' }}</span>
+                  }
+                </button>
+              </th>
+              <th scope="col" class="num-col" [attr.aria-sort]="getAriaSort('price')">
+                <button type="button" class="sort-header-btn is-numeric" (click)="onColumnSort('price')">
+                  <span>Preço venda</span>
+                  @if (sortBy() === 'price-asc' || sortBy() === 'price-desc') {
+                    <span class="sort-indicator" aria-hidden="true">{{ sortBy() === 'price-asc' ? '▲' : '▼' }}</span>
+                  }
+                </button>
+              </th>
+              @if (showSeasonality()) {
+                <th scope="col" [attr.aria-sort]="getAriaSort('strength')">
+                  <button type="button" class="sort-header-btn" (click)="onColumnSort('strength')">
+                    <span>Força</span>
+                  </button>
+                </th>
+                <th scope="col" class="num-col" [attr.aria-sort]="getAriaSort('amplitude')">
+                  <button type="button" class="sort-header-btn is-numeric" (click)="onColumnSort('amplitude')">
+                    <span>Amplitude</span>
+                    @if (sortBy() === 'amplitude-asc' || sortBy() === 'amplitude-desc') {
+                      <span class="sort-indicator" aria-hidden="true">{{ sortBy() === 'amplitude-asc' ? '▲' : '▼' }}</span>
+                    }
+                  </button>
+                </th>
+                <th scope="col" class="plain-col">Pico</th>
+                <th scope="col" class="plain-col">Vale</th>
+                <th scope="col" class="num-col" [attr.aria-sort]="getAriaSort('revenue')">
+                  <button type="button" class="sort-header-btn is-numeric" (click)="onColumnSort('revenue')">
+                    <span>Faturamento</span>
+                    @if (sortBy() === 'revenue-desc') {
+                      <span class="sort-indicator" aria-hidden="true">▼</span>
+                    }
+                  </button>
+                </th>
+              }
+              <th scope="col" class="action-col">Ação</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            @for (group of groupedRows(); track group.supplier) {
+              <tr class="supplier-group-row">
+                <th [attr.colspan]="showSeasonality() ? 11 : 6" scope="colgroup">
+                  <div class="supplier-group-bar">
+                    <div class="supplier-group-meta">
+                      <span class="supplier-group-name">{{ group.supplier }}</span>
+                      <span class="supplier-group-count tabular-nums">
+                        {{ group.items.length | ptDecimal }}
+                        {{ group.items.length === 1 ? 'produto' : 'produtos' }}
+                      </span>
+                    </div>
+                  </div>
+                </th>
+              </tr>
+              @for (item of group.items; track item.codigo) {
+                <ng-container
+                  [ngTemplateOutlet]="catalogRowTemplate"
+                  [ngTemplateOutletContext]="{ $implicit: item }"
+                />
+              }
+            }
+          </tbody>
+        </table>
+      </div>
+
+      <ng-template #catalogRowTemplate let-item>
+        <tr
+          class="catalog-row"
+          [class.is-selected]="selectedSku() === item.codigo"
+          [class.is-out-of-stock]="item.estoque <= 0"
+          (click)="selectProduct(item)"
+        >
+          <td class="sku-cell tabular-nums">{{ item.codigo }}</td>
+          <td class="desc-cell">{{ item.descricao }}</td>
+          <td class="supplier-cell">{{ item.fornecedor }}</td>
+          <td class="num-cell tabular-nums">
+            @if (item.estoque > 0) {
+              <span class="stock-qty">{{ item.estoque | ptDecimal:0 }} un.</span>
+            } @else {
+              <span class="tag tag-critical">Sem estoque</span>
+            }
+          </td>
+          <td class="num-cell price-cell tabular-nums">{{ item.precoVenda | brl }}</td>
+          @if (showSeasonality()) {
+            <td>
+              <span class="tag" [class]="getStrengthTagClass(item.forca)">
+                <span class="tag-dot" aria-hidden="true"></span>
+                <span>{{ getStrengthShortLabel(item.forca) }}</span>
+              </span>
+            </td>
+            @if (item.forca === 'INSUFICIENTE') {
+              <td class="num-cell tabular-nums muted-cell">—</td>
+              <td colspan="2" class="reason-cell">
+                {{ getInsufficientReasonShort(item.motivoInsuficiencia) }}
+              </td>
+            } @else {
+              <td class="num-cell amplitude-cell tabular-nums">
+                @if (item.amplitude !== null && item.amplitude !== undefined) {
+                  <strong>{{ item.amplitude | ptDecimal:2 }}x</strong>
+                } @else {
+                  <span class="muted-cell">—</span>
+                }
+              </td>
+              <td class="period-cell">{{ item.mesPico || '—' }}</td>
+              <td class="period-cell">{{ item.mesVale || '—' }}</td>
+            }
+            <td class="num-cell revenue-cell tabular-nums">
+              @if (item.faturamentoTotal !== null && item.faturamentoTotal !== undefined) {
+                {{ item.faturamentoTotal | brl }}
+              } @else {
+                <span class="muted-cell">—</span>
+              }
+            </td>
+          }
+          <td class="action-col">
+            <button
+              type="button"
+              class="btn-row-action"
+              [attr.aria-label]="actionLabel() + ' ' + item.codigo + ' ' + item.descricao"
+              (click)="$event.stopPropagation(); selectProduct(item)"
+            >
+              {{ actionLabel() }}
+            </button>
+          </td>
+        </tr>
+      </ng-template>
+
+      <app-list-pager
+        [page]="safePage()"
+        [totalPages]="totalPages()"
+        [totalItems]="totalFilteredCount()"
+        [offset]="pageOffset()"
+        [itemCount]="pagedItems().length"
+        (pageChange)="onPageChange($event)"
+      />
+    }
+  }
+</section>
