@@ -77,6 +77,20 @@
     background: var(--brand-primary);
     border-color: var(--brand-primary);
     color: var(--text-on-brand);
+
+    @include ui.hover {
+      &:hover:not(:disabled) {
+        background: var(--brand-primary-hover);
+        border-color: var(--brand-primary-hover);
+        color: var(--text-on-brand);
+      }
+    }
+
+    &:active:not(:disabled) {
+      background: var(--brand-primary-active);
+      border-color: var(--brand-primary-active);
+      color: var(--text-on-brand);
+    }
   }
 }
 

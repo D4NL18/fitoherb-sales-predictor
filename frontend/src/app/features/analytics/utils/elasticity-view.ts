@@ -119,6 +119,9 @@ export function formatPriceReactionHint(coefficient: number): string {
 
 /** Traduz o intervalo de confiança (IC 95%) para faixa de impacto prático com +10% no preço. */
 export function formatPriceReactionRangeHint(interval: readonly [number, number]): string {
+  if (!Number.isFinite(interval[0]) || !Number.isFinite(interval[1])) {
+    return 'Sem variação estimada no volume para ajustes de preço';
+  }
   const first = normalizeZero(roundHalfUp(Math.abs(interval[0]) * 10, 1));
   const second = normalizeZero(roundHalfUp(Math.abs(interval[1]) * 10, 1));
   const low = Math.min(first, second);

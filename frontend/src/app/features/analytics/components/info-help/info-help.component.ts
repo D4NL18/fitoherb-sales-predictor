@@ -75,19 +75,11 @@ export class InfoHelpComponent {
   };
 
   private readonly handleDocumentPointerDown = (event: PointerEvent): void => {
-    if (!this.isOpen()) return;
-    const target = event.target as Node | null;
-    if (target && !this.hostRef.nativeElement.contains(target)) {
-      this.coordinator.close(this.helpId);
-    }
+    this.closeIfOutsideHost(event.target);
   };
 
   private readonly handleDocumentClick = (event: MouseEvent): void => {
-    if (!this.isOpen()) return;
-    const target = event.target as Node | null;
-    if (target && !this.hostRef.nativeElement.contains(target)) {
-      this.coordinator.close(this.helpId);
-    }
+    this.closeIfOutsideHost(event.target);
   };
 
   private readonly handleViewportChange = (): void => {
@@ -161,6 +153,13 @@ export class InfoHelpComponent {
     }
   }
 
+  private closeIfOutsideHost(target: EventTarget | null): void {
+    if (!this.isOpen() || !(target instanceof Node)) return;
+    if (!this.hostRef.nativeElement.contains(target)) {
+      this.coordinator.close(this.helpId);
+    }
+  }
+
   private repositionPopover(dialogEl: HTMLElement | undefined = this.popoverRef()?.nativeElement): void {
     const win = this.document.defaultView;
     const triggerEl = this.triggerRef()?.nativeElement;
@@ -189,6 +188,11 @@ export class InfoHelpComponent {
         : Math.min(DESKTOP_POPOVER_MAX_WIDTH, Math.max(MIN_POPOVER_WIDTH, vw - VIEWPORT_MARGIN_PX * 2));
     const height = dialogRect && dialogRect.height > 0 ? dialogRect.height : ESTIMATED_POPOVER_HEIGHT;
 
+    this.popoverTopPx.set(Math.round(this.resolvePopoverTop(triggerRect, height, vh)));
+    this.popoverLeftPx.set(Math.round(this.resolvePopoverLeft(triggerRect, width, vw)));
+  }
+
+  private resolvePopoverLeft(triggerRect: DOMRect, width: number, vw: number): number {
     let left: number;
     switch (this.preferredAlign()) {
       case 'start':
@@ -201,10 +205,11 @@ export class InfoHelpComponent {
         left = triggerRect.left + triggerRect.width / 2 - width / 2;
         break;
     }
-
     const maxLeft = Math.max(VIEWPORT_MARGIN_PX, vw - width - VIEWPORT_MARGIN_PX);
-    left = Math.min(Math.max(VIEWPORT_MARGIN_PX, left), maxLeft);
+    return Math.min(Math.max(VIEWPORT_MARGIN_PX, left), maxLeft);
+  }
 
+  private resolvePopoverTop(triggerRect: DOMRect, height: number, vh: number): number {
     const spaceBelow = vh - triggerRect.bottom - VIEWPORT_MARGIN_PX - POPOVER_GAP_PX;
     const spaceAbove = triggerRect.top - VIEWPORT_MARGIN_PX - POPOVER_GAP_PX;
     const topCandidate =
@@ -213,9 +218,6 @@ export class InfoHelpComponent {
         : triggerRect.top - height - POPOVER_GAP_PX;
 
     const maxTop = Math.max(VIEWPORT_MARGIN_PX, vh - height - VIEWPORT_MARGIN_PX);
-    const top = Math.min(Math.max(VIEWPORT_MARGIN_PX, topCandidate), maxTop);
-
-    this.popoverTopPx.set(Math.round(top));
-    this.popoverLeftPx.set(Math.round(left));
+    return Math.min(Math.max(VIEWPORT_MARGIN_PX, topCandidate), maxTop);
   }
 }

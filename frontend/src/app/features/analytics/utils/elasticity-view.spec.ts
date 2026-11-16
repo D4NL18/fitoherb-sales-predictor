@@ -141,6 +141,12 @@ describe('elasticity-view', () => {
     expect(formatPriceReactionRangeHint([-2.04, -0.16])).toBe(
       'Com +10% no preço, queda estimada entre 1,6% e 20,4%',
     );
+    expect(formatPriceReactionRangeHint([Number.NaN, -1.2])).toBe(
+      'Sem variação estimada no volume para ajustes de preço',
+    );
+    expect(formatPriceReactionRangeHint([-1.8, Number.POSITIVE_INFINITY])).toBe(
+      'Sem variação estimada no volume para ajustes de preço',
+    );
   });
 
   it('calcula margem unitária e trata preço atual zero ou custo superior ao preço', () => {

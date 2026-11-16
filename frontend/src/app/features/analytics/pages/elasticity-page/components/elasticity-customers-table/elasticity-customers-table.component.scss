@@ -104,7 +104,7 @@
 .lookup-input {
   width: 100%;
   min-height: ui.$touch-target;
-  padding: var(--space-2) var(--space-8) var(--space-2) calc(var(--space-3) + 22px);
+  padding: var(--space-2) calc(var(--space-8) + var(--space-2)) var(--space-2) calc(var(--space-3) + 22px);
   border-radius: var(--radius-xs);
   border: 1px solid var(--border-strong);
   background: var(--bg-surface);
@@ -142,6 +142,12 @@
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: -3px;
+  }
 
   &:focus-visible {
     outline: 2px solid var(--border-focus);
@@ -403,6 +409,20 @@
     background: var(--brand-primary);
     border-color: var(--brand-primary);
     color: var(--text-on-brand);
+
+    @include ui.hover {
+      &:hover:not(:disabled) {
+        background: var(--brand-primary-hover);
+        border-color: var(--brand-primary-hover);
+        color: var(--text-on-brand);
+      }
+    }
+
+    &:active:not(:disabled) {
+      background: var(--brand-primary-active);
+      border-color: var(--brand-primary-active);
+      color: var(--text-on-brand);
+    }
   }
 }
 
