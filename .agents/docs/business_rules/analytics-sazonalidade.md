@@ -9,7 +9,7 @@
 | **Feature** | Detecção de Sazonalidade por Produto (Fase 4 do Plano Mestre / F1) |
 | **Módulo** | `analytics` (subdomínio: Sazonalidade de Vendas) |
 | **Branch** | `feature/analytics-sazonalidade` |
-| **Faixa de Regras** | P-106 a P-116 |
+| **Faixa de Regras** | P-106 a P-117 |
 | **Prefixo de Erros** | `SEA-XXX` |
 | **Origem** | Plano mestre `.agents/docs/tasks/ia-analytics-vendas.md` (§2, §6) e decisões D1-D4 |
 | **Autor** | Analista (Etapa 1) |
@@ -127,16 +127,29 @@
   - `order=most`: Produtos elegíveis com força `FORTE` ou `MODERADA`, cuja participação de faturamento seja $\ge MIN\_REVENUE\_SHARE$ (0,05% do total da empresa), ordenados decrescentemente por amplitude de índice sazonal.
   - `order=least`: Produtos ativos com classificação `INSUFICIENTE`, ordenados decrescentemente por faturamento total do produto, informando o motivo estruturado (`HISTORICO_CURTO` ou `VENDA_ESPORADICA`).
 - **Paginação:** Suporta `limit` (padrão 50, máx 200) e `offset` (>= 0), retornando metadados `totalItems`, `totalPages`, `page` e `limit`.
+- **Nota de Integração no Catálogo:** Além da rota dedicada `/seasonality/ranking` (preservada integralmente), o resumo de sazonalidade de todos os SKUs (`FORTE`, `MODERADA`, `FRACA` e `INSUFICIENTE`) pode ser embutido diretamente na listagem de catálogo (`P-117`) via `includeSeasonality=true`.
 
-### `P-115`: Busca de Produtos com Autocomplete
-- **Declaração Mandatória:** O sistema DEVE oferecer busca por código ou descrição sem exigir recarga de base nem consulta lenta de transações, retornando até `AUTOCOMPLETE_LIMIT` (20) itens ativos.
-- **Validação:** Query `q` deve ter entre 1 e 100 caracteres. A busca é insensível a maiúsculas e acentos.
+### `P-115`: Busca Inteligente de Produtos com Autocomplete
+- **Declaração Mandatória:** O sistema DEVE oferecer busca inteligente por código, descrição ou combinação de palavras (incluindo fornecedor) sem exigir recarga de base nem consulta lenta de transações, retornando até `AUTOCOMPLETE_LIMIT` (20) itens ativos na rota de autocomplete.
+- **Validação e Normalização:** Em `/products/search`, `q` exige após trim 1 a 60 caracteres se só dígitos e 2 a 60 nos demais casos (`XSL-004`). A busca é insensível a maiúsculas e acentos, trata separadores (`/`, `-`, `+`, `_`, `.`, `,`, `(`, `)`) como espaço mantendo `%`, suporta tokens em ordem ou fora de ordem, combinação descrição + fornecedor e tolerância leve a erro de digitação (Damerau-Levenshtein ≤ 1) apenas para tokens com `len >= 5`.
 
 ### `P-116`: Tratamento de Erros e Códigos Internos `SEA-XXX`
 - **Declaração Mandatória:** Erros de negócio da feature de sazonalidade DEVEM ser mapeados para códigos estruturados `SEA-XXX`:
   - `SEA-001` (HTTP 404): Produto não encontrado no catálogo ativo ou sem registros de vendas na base.
   - `SEA-002` (HTTP 400): Parâmetros de consulta inválidos (ex: SKU $\le 0$, `order` diferente de `most` ou `least`, `limit` fora do intervalo $[1, 200]$ ou query `q` inválida).
   - `SEA-003` (HTTP 422): Base de dados agregada insuficiente para cálculo de sazonalidade (ex: total de produtos ativos no sistema com histórico $< 20$).
+
+### `P-117`: Listagem Paginada do Catálogo Ativo (`GET /api/v1/analytics/products`)
+- **Declaração Mandatória:** O sistema DEVE expor listagem paginada de todo o catálogo ativo em cache (`analytics_cache.get_catalog()`), sem disparar carga das cestas (`_build_snapshot`).
+- **Ordenação Padrão e Suportadas:**
+  - Padrão (`sortBy=supplier_product`, `sortDir=asc`): `fornecedor` A→Z, depois `descricao` A→Z, desempate por `codigo` ↑.
+  - Modos suportados (`sortBy`): `supplier_product`, `product`, `sku`, `stock`, `price`, `relevance` (combinados com `sortDir=asc|desc`).
+- **Filtros:**
+  - `q` (opcional, até 60 caracteres): aplica a busca inteligente (`P-115`); quando nulo ou vazio após trim, não aplica filtro textual; quando não vazio após trim, aceita inclusive 1 caractere.
+  - `supplier` (opcional, até 120 caracteres): filtra pelo fornecedor normalizado.
+  - `stockFilter` (`all` | `in_stock` | `out_of_stock`, padrão `all`): filtra todos, com `estoque > 0` ou `estoque <= 0`.
+- **Integração Opcional de Sazonalidade (`includeSeasonality`):** Quando `includeSeasonality=false` (padrão), não consulta vendas mensais e os campos sazonais (`forca`, `amplitude`, `mesPico`, `mesVale`, `faturamentoTotal`, `motivoInsuficiencia`) permanecem `null`. Quando `includeSeasonality=true`, utiliza o agregado mensal em cache (`get_monthly_sales()`) para preencher o resumo sazonal de cada SKU do catálogo (inclusive `FRACA` e `INSUFICIENTE`, onde SKUs sem histórico retornam `forca="INSUFICIENTE"`, `motivoInsuficiencia="HISTORICO_CURTO"` e `faturamentoTotal=0.0`).
+- **Paginação e Dados:** `limit` padrão `2000` (faixa `1..5000`), `offset` >= `0`. Retorna exclusivamente dados de catálogo e agregados por SKU (`codigo`, `descricao`, `fornecedor`, `estoque`, `precoVenda` e resumo sazonal opcional) no envelope `data` / `meta` (`PagedMeta`), sem dados de cliente (PII).
 
 ---
 

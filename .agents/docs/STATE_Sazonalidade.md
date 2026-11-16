@@ -5,8 +5,8 @@
 **Branch:** `feature/analytics-sazonalidade`
 **Por que um arquivo à parte:** O `STATE.md` principal é coordenado pelo orquestrador central. Este arquivo isolado registra o progresso exclusivo da FASE F1.
 **Categoria:** A — Engenharia de Software, tipo **T1** (Full-Stack: FastAPI + Angular), estendendo o módulo `analytics`
-**Etapa atual:** 4 — Quality Gate 360 e Finalização
-**Faixa de IDs:** Regras `P-106` a `P-116`; prefixo de erro `SEA-XXX`
+**Etapa atual:** 5 — Release e Pull Request
+**Faixa de IDs:** Regras `P-106` a `P-117`; prefixo de erro `SEA-XXX`
 
 ---
 
@@ -56,3 +56,7 @@
   - [x] Execução de testes de frontend e build de produção (`ng build` exit 0, 112/112 specs aprovados)
   - [x] Verificação de governança, remoção de cores hardcoded, responsividade mobile e ausência de regressões em arquivos compartilhados
   - [x] **Auditoria Sênior UI/UX & Frontend (revisão pós-implementação):** correção de `correlacaoYoy`, error handling dedicado (`SEA-001`..`003`/`ANL-001`..`002`), alinhamento matemático da linha `1,00x`, guarda de série plana, inspetor interativo e cobertura completa em `.spec.ts`
+- [x] **Etapa 5 — Evolução de UX de Catálogo, Padronização 90d & PR (`devops`)**
+  - [x] Catálogo unificado `<app-product-catalog-explorer>` sempre agrupado por fornecedor em sequência (50 itens/página), busca inteligente por tokens (`P-115`/`P-117`), filtro pesquisável de fornecedor e integração do resumo sazonal na tabela de Sazonalidade, Cross-Sell e Elasticidade
+  - [x] Padronização global do catálogo ativo (ativos `Pc.Venda > 0`, `inativo_pro = 0` e com vendas nos últimos 90 dias) em Analytics, Pricing, Inventory, Tendência de Vendas e Navbar, além de trava contra fallback sintético no cache de Pricing
+  - [x] Validação final pós-edição: `480 passed` no `pytest`, `256 passed` no Karma/ChromeHeadless e `ng build` com exit code `0`
