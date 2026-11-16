@@ -40,6 +40,10 @@ ERROR_STATUS_BY_CODE: Dict[str, int] = {
     "SEA-003": 422,
     "ANL-001": 503,
     "ANL-002": 429,
+    "ELA-001": 404,
+    "ELA-002": 404,
+    "ELA-003": 422,
+    "ELA-004": 400,
 }
 
 
@@ -71,10 +75,14 @@ async def _handle_validation_error(request: Request, exc: RequestValidationError
     """400 `SEA-002` ou `XSL-004` nas rotas do módulo; demais rotas mantêm o 422 padrão do FastAPI (DA-08)."""
     if not request.url.path.startswith(ANALYTICS_PATH_PREFIX):
         return await request_validation_exception_handler(request, exc)
+    fields = _invalid_field_names(exc.errors())
     if request.url.path.startswith(SEASONALITY_PATH_PREFIX):
-        error = SeasonalityInvalidParametersError(fields=_invalid_field_names(exc.errors()))
+        error = SeasonalityInvalidParametersError(fields=fields)
         return _error_response(error.code, error.message, error.fields)
-    error = InvalidParametersError(fields=_invalid_field_names(exc.errors()))
+    if "/elasticity" in request.url.path:
+        msg = f"Parâmetros inválidos: {', '.join(fields)}." if fields else "Parâmetros inválidos."
+        return _error_response("ELA-004", msg, fields)
+    error = InvalidParametersError(fields=fields)
     return _error_response(error.code, error.message, error.fields)
 
 

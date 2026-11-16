@@ -22,6 +22,10 @@ from src.modules.analytics.api.schemas import (
     ProductSearchResponse,
     SeasonalityRankingResponse,
     SeasonalityResponse,
+    CustomerElasticityResponse,
+    ElasticitySimulationRequest,
+    ElasticitySimulationResponse,
+    ProductElasticityResponse,
 )
 from src.modules.analytics.domain.pagination import DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT, PageRequest
 from src.modules.analytics.domain.product_search import (
@@ -137,3 +141,55 @@ def get_seasonality_ranking(order: RankingOrderQuery = "most", limit: LimitQuery
                       description="Retorna a curva mensal de sazonalidade, pico, vale, força e confiança (P-106 a P-113).")
 def get_product_seasonality(sku: SkuPath) -> SeasonalityResponse:
     return analytics_service.get_product_seasonality(sku)
+
+
+# ------------------------------------------------------------------ Elasticidade (F5 / P-095..P-105)
+
+_ELASTICITY_ERRORS = {
+    400: {**_ERROR, "description": "ELA-004: parâmetros inválidos."},
+    404: {**_ERROR, "description": "ELA-001 (produto) ou ELA-002 (cliente)."},
+    422: {**_ERROR, "description": "ELA-003: histórico de vendas insuficiente."},
+    503: {**_ERROR, "description": "ANL-001: base de dados indisponível."},
+}
+
+
+@analytics_router.get(
+    "/elasticity/product/{sku}",
+    response_model=ProductElasticityResponse,
+    summary="Elasticidade-preço do produto e clientes",
+    responses=_ELASTICITY_ERRORS,
+    description="Estimação econométrica log-log de elasticidade do produto e lista paginada de clientes (P-096, P-099, P-103).",
+)
+def get_product_elasticity(
+    sku: SkuPath,
+    limit: LimitQuery = DEFAULT_PAGE_LIMIT,
+    offset: OffsetQuery = MIN_OFFSET,
+) -> ProductElasticityResponse:
+    return analytics_service.get_product_elasticity(sku, PageRequest(limit=limit, offset=offset))
+
+
+@analytics_router.get(
+    "/elasticity/product/{sku}/customer/{customerCode}",
+    response_model=CustomerElasticityResponse,
+    summary="Elasticidade individualizada do cliente no produto",
+    responses=_ELASTICITY_ERRORS,
+    description="Elasticidade calculada via suavização hierárquica (shrinkage bayesiano) para o par produto x cliente (P-097).",
+)
+def get_customer_elasticity(
+    sku: SkuPath,
+    customer_code: CustomerCodePath,
+) -> CustomerElasticityResponse:
+    return analytics_service.get_customer_elasticity(sku, customer_code)
+
+
+@analytics_router.post(
+    "/elasticity/simulate",
+    response_model=ElasticitySimulationResponse,
+    summary="Simulação de variação de preço",
+    responses=_ELASTICITY_ERRORS,
+    description="Simula o impacto em volume, receita e margem monetária para uma alteração de preço (P-101).",
+)
+def simulate_price_impact(
+    request: ElasticitySimulationRequest,
+) -> ElasticitySimulationResponse:
+    return analytics_service.simulate_price_change(request)

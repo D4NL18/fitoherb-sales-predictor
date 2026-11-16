@@ -21,6 +21,11 @@ export const ANALYTICS_ROUTES: Routes = [
         loadComponent: () =>
           import('./pages/seasonality-page/seasonality-page.component').then((m) => m.SeasonalityPageComponent),
       },
+      {
+        path: 'elasticity',
+        loadComponent: () =>
+          import('./pages/elasticity-page/elasticity-page.component').then((m) => m.ElasticityPageComponent),
+      },
     ],
   },
 ];

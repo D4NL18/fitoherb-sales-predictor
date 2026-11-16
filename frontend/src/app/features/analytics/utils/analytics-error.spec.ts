@@ -1,14 +1,24 @@
 /**
- * T-13 — Type guard de erros do módulo Analytics (contrato §4, F-03).
- * `toAnalyticsApiError` aceita só corpos do contrato e devolve `null` (genérico) no resto: 500, rede (0),
- * código desconhecido, corpo malformado ou objeto que não é HttpErrorResponse.
+ * T-13 — Type guard de erros do módulo Analytics (contrato §4, F-03; F5 P-102).
+ * `toAnalyticsApiError` / `toElasticityApiError` aceitam só corpos do contrato e devolvem `null` (genérico)
+ * no resto: 500, rede (0), código desconhecido, corpo malformado ou objeto que não é HttpErrorResponse.
  */
 import { HttpErrorResponse } from '@angular/common/http';
-import { ANALYTICS_ERROR_MESSAGES, toAnalyticsApiError } from './analytics-error';
+import {
+  ANALYTICS_ERROR_MESSAGES,
+  ELASTICITY_ERROR_MESSAGES,
+  ELASTICITY_GENERIC_ERROR_MESSAGE,
+  ElasticityErrorCode,
+  resolveElasticityErrorMessage,
+  resolveElasticitySkuFieldError,
+  toAnalyticsApiError,
+  toElasticityApiError,
+} from './analytics-error';
 import { AnalyticsErrorCode } from '../models/analytics.model';
 import { contractError } from '../testing/cross-sell-test-data';
 
 const ALL_CODES: AnalyticsErrorCode[] = ['XSL-001', 'XSL-002', 'XSL-003', 'XSL-004', 'ANL-001', 'ANL-002'];
+const ALL_ELASTICITY_CODES: ElasticityErrorCode[] = ['ELA-001', 'ELA-002', 'ELA-003', 'ELA-004', 'ANL-001', 'ANL-002'];
 
 function httpError(status: number, error: unknown): HttpErrorResponse {
   return new HttpErrorResponse({ status, statusText: 'Error', error });
@@ -74,5 +84,33 @@ describe('ANALYTICS_ERROR_MESSAGES', () => {
     expect(ANALYTICS_ERROR_MESSAGES['XSL-002']).toBe('Cliente sem histórico de compras.');
     expect(ANALYTICS_ERROR_MESSAGES['XSL-003']).toContain('pedidos suficientes');
     expect(ANALYTICS_ERROR_MESSAGES['XSL-004']).toBe('Digite só números, sem pontos ou letras.');
+  });
+});
+
+describe('toElasticityApiError', () => {
+  it('converte todos os códigos do contrato de elasticidade', () => {
+    for (const code of ALL_ELASTICITY_CODES) {
+      const err = httpError(400, { error: { code, message: 'msg', fields: [] } });
+      const parsed = toElasticityApiError(err);
+      expect(parsed?.code).withContext(code).toBe(code);
+      expect(ELASTICITY_ERROR_MESSAGES[code]).withContext(code).toBeTruthy();
+    }
+  });
+
+  it('retorna null para erro de rede, 500 ou corpo desconhecido', () => {
+    expect(toElasticityApiError(httpError(500, 'Internal Server Error'))).toBeNull();
+    expect(toElasticityApiError(httpError(0, new ProgressEvent('error')))).toBeNull();
+    expect(resolveElasticityErrorMessage(null)).toBe(ELASTICITY_GENERIC_ERROR_MESSAGE);
+  });
+
+  it('resolve erro inline de campo apenas para ELA-001 e ELA-004 em sku', () => {
+    expect(resolveElasticitySkuFieldError({ code: 'ELA-001', message: 'raw', fields: [] })).toBe(
+      ELASTICITY_ERROR_MESSAGES['ELA-001'],
+    );
+    expect(resolveElasticitySkuFieldError({ code: 'ELA-004', message: 'raw', fields: ['sku'] })).toBe(
+      ANALYTICS_ERROR_MESSAGES['XSL-004'],
+    );
+    expect(resolveElasticitySkuFieldError({ code: 'ELA-004', message: 'raw', fields: ['limit'] })).toBeNull();
+    expect(resolveElasticitySkuFieldError({ code: 'ANL-001', message: 'raw', fields: [] })).toBeNull();
   });
 });
