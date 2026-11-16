@@ -9,7 +9,7 @@ Autenticação: middleware HTTP Basic global em produção (P-033, LGPD-10).
 """
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Literal, Optional
 
 from fastapi import APIRouter, Path, Query
 from pydantic import AfterValidator
@@ -17,6 +17,7 @@ from pydantic import AfterValidator
 from src.modules.analytics.api.schemas import (
     AnalyticsErrorResponse,
     AnalyticsHealthResponse,
+    CatalogListResponse,
     CustomerCrossSellResponse,
     ProductCrossSellResponse,
     ProductSearchResponse,
@@ -29,7 +30,10 @@ from src.modules.analytics.api.schemas import (
 )
 from src.modules.analytics.domain.pagination import DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT, PageRequest
 from src.modules.analytics.domain.product_search import (
+    DEFAULT_CATALOG_LIMIT,
     DEFAULT_SEARCH_LIMIT,
+    MAX_CATALOG_LIMIT,
+    MAX_QUERY_LENGTH,
     MAX_SEARCH_LIMIT,
     is_valid_search_query,
 )
@@ -65,6 +69,12 @@ SearchQuery = Annotated[
 SearchLimitQuery = Annotated[
     int, Query(ge=MIN_PAGE_LIMIT, le=MAX_SEARCH_LIMIT, description="Máximo de resultados (1 a 20)."),
 ]
+CatalogLimitQuery = Annotated[
+    int, Query(ge=MIN_PAGE_LIMIT, le=MAX_CATALOG_LIMIT, description="Tamanho da página do catálogo (1 a 5000)."),
+]
+StockFilterLiteral = Literal["all", "in_stock", "out_of_stock"]
+CatalogSortByLiteral = Literal["product", "sku", "stock", "price", "relevance", "supplier_product"]
+SortDirLiteral = Literal["asc", "desc"]
 RankingOrderQuery = Annotated[
     str, Query(description="Ordenação do ranking: 'most' ou 'least'."), AfterValidator(_validate_ranking_order),
 ]
@@ -114,6 +124,40 @@ def get_product_cross_sell(sku: SkuPath, limit: LimitQuery = DEFAULT_PAGE_LIMIT,
 def get_customer_cross_sell(customer_code: CustomerCodePath, limit: LimitQuery = DEFAULT_PAGE_LIMIT,
                             offset: OffsetQuery = MIN_OFFSET) -> CustomerCrossSellResponse:
     return analytics_service.get_customer_cross_sell(customer_code, PageRequest(limit=limit, offset=offset))
+
+
+@analytics_router.get(
+    "/products",
+    response_model=CatalogListResponse,
+    summary="Listagem paginada do catálogo ativo",
+    description="Lista o catálogo ativo em cache com filtros e ordenação, sem carregar as cestas (contrato §3.7).",
+    responses={400: _CROSS_SELL_ERRORS[400], 503: _CROSS_SELL_ERRORS[503]},
+)
+def list_products(
+    q: Optional[str] = Query(default=None, max_length=MAX_QUERY_LENGTH, description="Busca inteligente opcional."),
+    supplier: Optional[str] = Query(default=None, max_length=120, description="Filtro por fornecedor."),
+    stock_filter: StockFilterLiteral = Query(default="all", alias="stockFilter", description="Filtro de estoque."),
+    sort_by: CatalogSortByLiteral = Query(
+        default="supplier_product", alias="sortBy", description="Critério de ordenação."
+    ),
+    sort_dir: SortDirLiteral = Query(default="asc", alias="sortDir", description="Direção da ordenação."),
+    limit: CatalogLimitQuery = DEFAULT_CATALOG_LIMIT,
+    offset: OffsetQuery = MIN_OFFSET,
+    include_seasonality: bool = Query(
+        default=False,
+        alias="includeSeasonality",
+        description="Quando true, inclui métricas resumidas de sazonalidade por SKU.",
+    ),
+) -> CatalogListResponse:
+    return analytics_service.list_catalog_products(
+        PageRequest(limit=limit, offset=offset),
+        query=q,
+        supplier=supplier,
+        stock_filter=stock_filter,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+        include_seasonality=include_seasonality,
+    )
 
 
 @analytics_router.get("/products/search", response_model=ProductSearchResponse,

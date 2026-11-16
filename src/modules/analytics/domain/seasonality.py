@@ -105,6 +105,18 @@ class SeasonalityRankingItem:
     motivo_insuficiencia: Optional[str]
 
 
+@dataclass(frozen=True)
+class SeasonalityCatalogSummary:
+    """Resumo de sazonalidade por SKU para integração na listagem do catálogo."""
+
+    forca: str
+    amplitude: float
+    mes_pico: Optional[str]
+    mes_vale: Optional[str]
+    faturamento_total: float
+    motivo_insuficiencia: Optional[str]
+
+
 def _format_period_name(start_m: int, end_m: int) -> str:
     """Formata período de meses (ex: 'Março' ou 'Mai–Jul' ou 'Nov–Jan')."""
     if start_m == end_m:
@@ -540,3 +552,66 @@ def calculate_seasonality_rankings(
         total_items = len(items_least)
         paged = items_least[offset : offset + limit]
         return paged, total_items
+
+
+def _insufficient_catalog_summary(
+    reason: Optional[str] = REASON_SHORT_HISTORY,
+    amplitude: float = 0.0,
+    revenue: float = 0.0,
+) -> SeasonalityCatalogSummary:
+    return SeasonalityCatalogSummary(
+        forca=STRENGTH_INSUFFICIENT,
+        amplitude=amplitude,
+        mes_pico=None,
+        mes_vale=None,
+        faturamento_total=round(revenue, 2),
+        motivo_insuficiencia=reason,
+    )
+
+
+def calculate_seasonality_summaries(
+    monthly_sales_df: pd.DataFrame,
+    catalog_dict: Dict[int, Dict[str, Any]],
+) -> Dict[int, SeasonalityCatalogSummary]:
+    """
+    Calcula o resumo de sazonalidade para TODOS os SKUs do catálogo
+    (inclusive FRACA, MODERADA, FORTE e INSUFICIENTE).
+    """
+    grouped = (
+        {int(sku): group for sku, group in monthly_sales_df.groupby("sku")}
+        if not monthly_sales_df.empty
+        else {}
+    )
+    summaries: Dict[int, SeasonalityCatalogSummary] = {}
+
+    for sku, cat in catalog_dict.items():
+        prod_sales = grouped.get(sku)
+        if prod_sales is None or prod_sales.empty:
+            summaries[sku] = _insufficient_catalog_summary()
+            continue
+
+        try:
+            res = compute_product_seasonality(sku=sku, product_sales_df=prod_sales, catalog_info=cat)
+        except SeasonalityProductNotFoundError:
+            summaries[sku] = _insufficient_catalog_summary()
+            continue
+
+        total_sku_revenue = float(prod_sales["net_revenue"].sum())
+
+        if not res.elegivel:
+            summaries[sku] = _insufficient_catalog_summary(
+                reason=res.motivo_insuficiencia,
+                amplitude=res.amplitude,
+                revenue=total_sku_revenue,
+            )
+        else:
+            summaries[sku] = SeasonalityCatalogSummary(
+                forca=res.forca,
+                amplitude=res.amplitude,
+                mes_pico=res.pico.nome_periodo,
+                mes_vale=res.vale.nome_periodo,
+                faturamento_total=round(total_sku_revenue, 2),
+                motivo_insuficiencia=None,
+            )
+
+    return summaries

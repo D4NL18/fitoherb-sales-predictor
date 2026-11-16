@@ -28,7 +28,9 @@ from src.modules.analytics.domain.seasonality import (
     STRENGTH_INSUFFICIENT,
     STRENGTH_MODERATE,
     SeasonalityResult,
+    SeasonalityCatalogSummary,
     calculate_seasonality_rankings,
+    calculate_seasonality_summaries,
     compute_product_seasonality,
     get_seasonality_index,
 )
@@ -298,3 +300,61 @@ def test_calculate_seasonality_rankings():
     item3 = next(it for it in items_least if it.sku == 3)
     assert item3.forca == STRENGTH_INSUFFICIENT
     assert item3.motivo_insuficiencia == REASON_SHORT_HISTORY
+
+
+def test_calculate_seasonality_summaries_covers_all_catalog_skus():
+    """Calcula resumo para FORTE, FRACA, INSUFICIENTE (histórico curto/esparso) e sem vendas."""
+    df_forte = _build_synthetic_monthly_sales(
+        sku=1, months_count=22, base_qty=100.0, peak_month=3, peak_factor=1.8, valley_month=9, valley_factor=0.5
+    )
+    df_fraca = _build_synthetic_monthly_sales(sku=2, months_count=22, base_qty=100.0)
+    df_curto = _build_synthetic_monthly_sales(sku=3, months_count=8, base_qty=50.0)
+    df_esparso = pd.DataFrame([
+        {"sku": 4, "sale_year": 2025, "sale_month": 1, "net_quantity": 10, "net_revenue": 100.0},
+        {"sku": 4, "sale_year": 2026, "sale_month": 10, "net_quantity": 15, "net_revenue": 150.0},
+    ])
+    combined_df = pd.concat([df_forte, df_fraca, df_curto, df_esparso], ignore_index=True)
+
+    catalog = {
+        1: {"Codigo": 1, "Descricao": "PROD 1 FORTE", "Fornecedor": "F1", "Estoque": 10, "Pc.Venda": 10.0},
+        2: {"Codigo": 2, "Descricao": "PROD 2 FRACA", "Fornecedor": "F2", "Estoque": 10, "Pc.Venda": 10.0},
+        3: {"Codigo": 3, "Descricao": "PROD 3 CURTO", "Fornecedor": "F3", "Estoque": 10, "Pc.Venda": 10.0},
+        4: {"Codigo": 4, "Descricao": "PROD 4 ESPARSO", "Fornecedor": "F4", "Estoque": 10, "Pc.Venda": 10.0},
+        5: {"Codigo": 5, "Descricao": "PROD 5 SEM VENDAS", "Fornecedor": "F5", "Estoque": 10, "Pc.Venda": 10.0},
+    }
+
+    summaries = calculate_seasonality_summaries(monthly_sales_df=combined_df, catalog_dict=catalog)
+
+    assert set(summaries.keys()) == {1, 2, 3, 4, 5}
+    assert all(isinstance(v, SeasonalityCatalogSummary) for v in summaries.values())
+
+    assert summaries[1].forca == STRENGTH_STRONG
+    assert summaries[1].mes_pico == "Março"
+    assert summaries[1].mes_vale == "Setembro"
+    assert summaries[1].motivo_insuficiencia is None
+    assert summaries[1].faturamento_total == round(float(df_forte["net_revenue"].sum()), 2)
+
+    assert summaries[2].forca == STRENGTH_WEAK
+    assert summaries[2].mes_pico is not None
+    assert summaries[2].mes_vale is not None
+    assert summaries[2].motivo_insuficiencia is None
+
+    assert summaries[3].forca == STRENGTH_INSUFFICIENT
+    assert summaries[3].mes_pico is None
+    assert summaries[3].mes_vale is None
+    assert summaries[3].motivo_insuficiencia == REASON_SHORT_HISTORY
+
+    assert summaries[4].forca == STRENGTH_INSUFFICIENT
+    assert summaries[4].mes_pico is None
+    assert summaries[4].mes_vale is None
+    assert summaries[4].motivo_insuficiencia == REASON_SPARSE_SALES
+    assert summaries[4].faturamento_total == 250.0
+
+    assert summaries[5] == SeasonalityCatalogSummary(
+        forca=STRENGTH_INSUFFICIENT,
+        amplitude=0.0,
+        mes_pico=None,
+        mes_vale=None,
+        faturamento_total=0.0,
+        motivo_insuficiencia=REASON_SHORT_HISTORY,
+    )

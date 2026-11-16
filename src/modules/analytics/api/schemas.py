@@ -290,6 +290,38 @@ class ProductSearchResponse(CamelModel):
 ProductSearchItem = ConsultedProduct  # nome do contrato §3.6 / checklist B-20
 
 
+class CatalogProductItem(CamelModel):
+    """Item da listagem paginada do catálogo ativo (contrato §3.7, P-117; sem dado pessoal)."""
+
+    codigo: int = Field(description="Código do SKU.")
+    descricao: str = Field(description="Descrição do produto.")
+    fornecedor: str = Field(description="Fornecedor do produto.")
+    estoque: float = Field(description="Estoque atual (1 casa).")
+    preco_venda: float = Field(description="Preço de venda praticado (2 casas).")
+    forca: Optional[str] = Field(default=None, description="Grau de sazonalidade (quando includeSeasonality=true).")
+    amplitude: Optional[float] = Field(default=None, description="Amplitude do índice sazonal (quando includeSeasonality=true).")
+    mes_pico: Optional[str] = Field(default=None, description="Mês ou período de pico (quando includeSeasonality=true e elegível).")
+    mes_vale: Optional[str] = Field(default=None, description="Mês ou período de vale (quando includeSeasonality=true e elegível).")
+    faturamento_total: Optional[float] = Field(default=None, description="Faturamento líquido total no período (quando includeSeasonality=true).")
+    motivo_insuficiencia: Optional[str] = Field(default=None, description="Motivo de insuficiência quando forca=INSUFICIENTE.")
+
+
+class CatalogListResponse(CamelModel):
+    """Resposta de `GET /products` (catálogo completo em cache; sem dado pessoal)."""
+
+    model_config = ConfigDict(json_schema_extra={"example": {
+        "data": [{
+            "codigo": 1001, "descricao": "CHA VERDE 100G", "fornecedor": "CATARINENSE",
+            "estoque": 10.0, "precoVenda": 24.9,
+        }],
+        "meta": {"timestamp": "2026-11-05T15:10:00.000Z", "version": "1.1.0", "dataReferencia": "2026-11-05",
+                 "page": 1, "limit": 2000, "offset": 0, "totalItems": 1, "totalPages": 1},
+    }})
+
+    data: List[CatalogProductItem] = Field(description="Página de produtos do catálogo.")
+    meta: PagedMeta = Field(description="Paginação.")
+
+
 # ------------------------------------------------------------------ sazonalidade por produto (contrato 1.0.0; P-106..P-116)
 
 class SeasonalityProduct(CamelModel):

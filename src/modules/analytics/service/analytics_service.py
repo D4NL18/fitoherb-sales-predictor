@@ -11,11 +11,12 @@ from __future__ import annotations
 import math
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
-from typing import Any, Tuple, Union
+from typing import Any, Optional, Tuple, Union
 
 from src.modules.analytics.api import mappers
 from src.modules.analytics.api.schemas import (
     AnalyticsHealthResponse,
+    CatalogListResponse,
     CustomerCrossSellResponse,
     CustomerElasticityDetail,
     CustomerElasticityItem,
@@ -52,7 +53,10 @@ from src.modules.analytics.domain.exceptions import (
     InsufficientBaseError,
 )
 from src.modules.analytics.domain.pagination import PageRequest, paginate
-from src.modules.analytics.domain.product_search import search_products as search_catalog
+from src.modules.analytics.domain.product_search import (
+    filter_and_sort_catalog,
+    search_products as search_catalog,
+)
 from src.modules.analytics.domain.recommendation_curation import curate
 from src.modules.analytics.repository import sales_repository
 from src.modules.analytics.service import analytics_cache
@@ -118,6 +122,38 @@ def search_products(query: str, page_request: PageRequest) -> ProductSearchRespo
     return mappers.to_search_response(paginate(matches, page_request), context)
 
 
+def list_catalog_products(
+    page_request: PageRequest,
+    query: Optional[str] = None,
+    supplier: Optional[str] = None,
+    stock_filter: str = "all",
+    sort_by: str = "supplier_product",
+    sort_dir: str = "asc",
+    include_seasonality: bool = False,
+) -> CatalogListResponse:
+    """Lista, filtra e ordena o catálogo ativo em cache sem carregar as cestas (contrato §3.7, P-117)."""
+    catalog = analytics_cache.get_catalog()
+    filtered = filter_and_sort_catalog(
+        catalog.search_index,
+        query=query,
+        supplier=supplier,
+        stock_filter=stock_filter,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+    )
+    seasonality_summaries = None
+    if include_seasonality:
+        sales_df = _get_monthly_sales_df()
+        catalog_dict = _get_catalog_dict()
+        seasonality_summaries = calculate_seasonality_summaries(sales_df, catalog_dict)
+    context = mappers.PageContext(page_request, catalog.reference_date.isoformat())
+    return mappers.to_catalog_response(
+        paginate(filtered, page_request),
+        context,
+        seasonality_summaries=seasonality_summaries,
+    )
+
+
 # ------------------------------------------------------------------ sazonalidade por produto (P-106..P-116; ADR-005)
 
 import pandas as pd
@@ -135,6 +171,7 @@ from src.modules.analytics.api.schemas import (
 )
 from src.modules.analytics.domain.seasonality import (
     calculate_seasonality_rankings,
+    calculate_seasonality_summaries,
     get_seasonality_index,
 )
 

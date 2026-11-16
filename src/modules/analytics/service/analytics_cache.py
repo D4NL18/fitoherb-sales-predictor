@@ -130,9 +130,11 @@ def business_date(moment: datetime) -> date:
 
 def reset_cache() -> None:
     """Volta ao estado frio: limpa snapshot, catálogo, flag de carga e duração (apoio a teste)."""
-    global _SNAPSHOT, _CATALOG, _is_loading, _load_duration_ms
+    global _SNAPSHOT, _CATALOG, _MONTHLY_SALES_DF, _MONTHLY_SALES_LOADED_AT, _is_loading, _load_duration_ms
     _SNAPSHOT = None
     _CATALOG = None
+    _MONTHLY_SALES_DF = None
+    _MONTHLY_SALES_LOADED_AT = None
     _is_loading = False
     _load_duration_ms = None
 
