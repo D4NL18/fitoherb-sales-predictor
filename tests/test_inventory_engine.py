@@ -237,12 +237,16 @@ class TestMinMaxLevels:
         item, _ = run_single(stock=1.0, sold_in_window=0)
         assert (item["estoqueMinimo"], item["estoqueMaximo"], item["qtdSugeridaCompra"]) == (0, 0, 0)
 
-    def test_p057_inactive_sku_is_excluded_from_list_and_kpis(self):
+    def test_standardized_active_catalog_evaluates_zero_stock_zero_vmd_as_healthy(self):
+        """Catálogo ativo padronizado (90d no SQL) preserva todos os SKUs para paridade entre telas."""
         rows = [make_catalog_row(1, 0.0, 10.0, 20.0), make_catalog_row(2, 5.0, 10.0, 20.0),
                 make_catalog_row(3, 0.0, 10.0, 20.0)]
         result = run_engine(rows, make_velocity({3: (60, 1200.0)}))
-        assert sorted(by_code(result)) == [2, 3]
-        assert result["kpis"]["totalSkusAnalisados"] == 2
+        items = by_code(result)
+        assert sorted(items) == [1, 2, 3]
+        assert result["kpis"]["totalSkusAnalisados"] == 3
+        assert items[1]["status"] == "HEALTHY"
+        assert items[1]["qtdSugeridaCompra"] == 0
 
     def test_ca_p053_07_volatility_does_not_change_levels(self, sample_sales_data):
         """101 (2 un/dia) e 102 (10 un a cada 5 dias) têm a mesma VMD 2,0 -> mesmo mínimo/máximo."""
@@ -430,10 +434,10 @@ def mixed_scenario_result():
 class TestKpisAndContract:
     def test_ca_p055_09_status_counts_sum_to_total(self, mixed_scenario_result):
         kpis = mixed_scenario_result["kpis"]
-        assert kpis["totalSkusAnalisados"] == 8  # S9 (estoque 0, VMD 0) excluído por P-057
+        assert kpis["totalSkusAnalisados"] == 9  # Todo o catálogo ativo padronizado (90d) é avaliado
         assert kpis["skusEmRupturaCritica"] == 1
         assert kpis["skusNecessitamReposicao"] == 3
-        assert kpis["skusEstoqueSaudavel"] == 2
+        assert kpis["skusEstoqueSaudavel"] == 3
         assert kpis["skusEmOverstock"] == 2
         assert (kpis["skusEmRupturaCritica"] + kpis["skusNecessitamReposicao"]
                 + kpis["skusEstoqueSaudavel"] + kpis["skusEmOverstock"]) == kpis["totalSkusAnalisados"]

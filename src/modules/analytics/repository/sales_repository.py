@@ -23,7 +23,12 @@ import numpy as np
 import pandas as pd
 import pyodbc
 
-from src.core.database import DatabaseSecurityError, get_db_connection_string, is_readonly_query
+from src.core.database import (
+    ACTIVE_CATALOG_FILTER_SQL,
+    DatabaseSecurityError,
+    get_db_connection_string,
+    is_readonly_query,
+)
 from src.modules.analytics.domain.cross_sell import ORDER_DAY_EPOCH, SALE_OPERATION
 from src.modules.analytics.repository.errors import AnalyticsDataSourceError
 
@@ -61,10 +66,9 @@ FROM (
 ) AS b
 """.strip()
 
-_CATALOG_SQL = """
-SELECT [Codigo], [Descricao], [Fornecedor], [Estoque], [Pc.Ultimo Custo], [Pc.Venda]
-FROM Externo01.Produto
-WHERE [Pc.Venda] > 0
+_CATALOG_SQL = f"""
+SELECT p.[Codigo], p.[Descricao], p.[Fornecedor], p.[Estoque], p.[Pc.Ultimo Custo], p.[Pc.Venda]
+{ACTIVE_CATALOG_FILTER_SQL}
 """.strip()
 
 
