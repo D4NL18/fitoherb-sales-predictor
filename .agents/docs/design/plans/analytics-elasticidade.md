@@ -74,8 +74,7 @@ Organizada em **5 faixas verticais claras** dentro de `section.simulator-card`:
   - `h3.product-description`: `{{ product().description }}`
   - `.product-compact-meta`: `Fornecedor: {{ product().supplier }}` · `Estoque atual: {{ formattedStock() }} un.` · `Vendas líquidas 60d: {{ formattedRecentVolume60d() }} un.`
 - **Direita (`.product-compact-badges`):**
-  - Tag de Sensibilidade (`getClassificationMeta(elasticity().classification)`): `Muito sensível a preço` / `Pouco sensível a preço` + `<app-info-help>` (`classificationBadge`).
-  - Tag de Confiança (`getConfidenceMeta(elasticity().confidenceLevel)`): `Confiança alta` / `Confiança média` / `Confiança baixa (usar com cautela)` + `<app-info-help>` (`technicalDiagnostics` — exibe em texto limpo os detalhes técnicos: **Beta (`coefficient`), IC 95% (`confidenceInterval`), $R^2$ (`rSquared`), Erro padrão (`standardError`), Meses válidos (`observationsCount`)** e tradução prática em `+10%`).
+  - Mantém apenas a pílula compacta **`Ver detalhes estatísticos`** + `<app-info-help>` (`technicalSummary` — exibe em texto limpo os detalhes técnicos: **Beta (`coefficient`), IC 95% (`confidenceInterval`), $R^2$ (`rSquared`), Erro padrão (`standardError`), Meses válidos (`observationsCount`)** e tradução prática em `+10%`), removendo as tags visuais de classificação e confiança da barra superior.
 - **Avisos Contextuais `role="note"` (logo abaixo do cabeçalho compacto):**
   - Se `elasticity().fallbackApplied`: aviso `--brand-secondary-subtle` explicando o uso da estimativa padrão de segurança (`-1,20`).
   - Senão se `!elasticity().isReliable`: aviso `--brand-secondary-subtle` explicando baixa precisão estatística.
@@ -86,13 +85,10 @@ Disposição responsiva em dois blocos coordenados dentro da área de controle (
 1. **Controle de Variação de Preço (`%`):**
    - Linha de atalhos rápidos (`Testar rápido:` `-10%`, `-5%`, `0% (Atual)`, `+5%`, `+10%`, `+20%`) com `aria-pressed`.
    - Slider contínuo (`-50%` a `+100%`, marcações `-50%`, `0%`, `+50%`, `+100%`, legenda `Desconto · Preço atual · Aumento`) + input numérico (`%`).
-2. **Controle de Custo Unitário Editável (`R$`):**
-   - Header do bloco: `<label for="cost-price-input">Custo unitário (R$)</label>` + `<app-info-help>` (`unitCostControl`) + **badge/pill discreto de origem**:
-     - `Catálogo ERP` (`!isCostEstimated && !isCostOverride`)
-     - `Estimado (60% do preço)` (`isCostEstimated && !isCostOverride`, quando `[Pc.Ultimo Custo]` está zerado no ERP)
-     - `Editado manualmente` (`isCostOverride`)
-   - Campo numérico com prefixo `R$` (`min="0"`, `step="0.01"`, `font-family: var(--font-family-mono)`, `min-height: 40px`), validando valores `>= 0` (se `< 0` ou inválido: `aria-invalid="true"` e alerta inline sem chamar a API).
-   - **Ação de Restauração:** quando `isCostOverride` estiver ativo (ou valor editado diferente do catálogo), exibe botão secundário `"Restaurar custo do catálogo ({{ catalogCost | brl }})"` (`@extend %button-secondary`, `min-height: 40px`) que limpa o override e dispara nova simulação com o custo original do catálogo.
+2. **Controles Lado a Lado de Preço Atual e Custo Unitário Editáveis (`R$`):**
+   - **Preço atual (R$)** (`#current-price-input`, `min="0.01"`, `step="0.01"`): badge `Catálogo ERP` vs `Editado manualmente`, `<app-info-help>` (`currentPriceInput`), validação `> 0`, commit imediato com `Enter`/`change` e botão `"Restaurar preço do catálogo ({{ catalogPrice | brl }})"`.
+   - **Custo unitário (R$)** (`#cost-price-input`, `min="0"`, `step="0.01"`): badge de origem (`Catálogo ERP`, `Estimado (60% do preço)`, `Editado manualmente`), `<app-info-help>` (`unitCostInput`), validação `>= 0` e botão `"Restaurar custo do catálogo ({{ catalogCost | brl }})"`.
+   - Validação cruzada: qualquer campo inválido exibe alerta próprio (`aria-invalid="true"`, `role="alert"`) e bloqueia novas simulações até correção.
 
 #### Faixa C — Faixa Resumo da Simulação (`.simulation-summary-strip`)
 - Chips horizontais com wrap fluido:
@@ -104,11 +100,11 @@ Disposição responsiva em dois blocos coordenados dentro da área de controle (
 #### Faixa D — Grid de Impacto e Decisão (4 Cards em Grid 2×2 Desktop / 1 Coluna Mobile)
 `grid-template-columns: repeat(2, minmax(0, 1fr))` acima de `640px` (1 coluna abaixo de `640px`):
 
-1. **Card 1 — Margem Unitária (`R$/un.` e `%`):**
-   - Subtítulo: `Ganho por unidade vendida` + `<app-info-help>` (`unitMarginImpact`)
-   - Valor principal: `{{ projectedUnitMargin | brl }}` `<span class="unit-label">/ un. ({{ projectedUnitMarginPct | ptPercent }})</span>`
-   - Delta com ícone direcional (`tone-positive` / `tone-negative` / `tone-neutral`): `{{ formatSignedBrl(unitMarginDiff) }}/un. ({{ formatSignedPp(unitMarginPctChangePp) }})`
-   - Baseline: `Atual: {{ currentUnitMargin | brl }}/un. ({{ currentUnitMarginPct }})` — se `projectedUnitMargin <= 0`, exibe alerta semântico `"Atenção: preço igual ou abaixo do custo"`.
+1. **Card 1 — Margem Unitária (`%` principal + `R$/un.` entre parênteses):**
+   - Subtítulo: `Ganho por unidade vendida` + `<app-info-help>` (`unitMarginCard`)
+   - Valor principal: `{{ projectedUnitMarginPct }}` `<span class="unit-label">({{ projectedUnitMargin | brl }}/un.)</span>`
+   - Delta com ícone direcional (`tone-positive` / `tone-negative` / `tone-neutral`): `{{ formatSignedPp(unitMarginPctChangePp) }} ({{ formatSignedBrl(unitMarginDiff) }}/un.)`
+   - Baseline: `Atual: {{ currentUnitMarginPct }} ({{ currentUnitMargin | brl }}/un.)` — se `projectedUnitMargin <= 0`, exibe alerta semântico `"Atenção: preço igual ou abaixo do custo"`.
 
 2. **Card 2 — Lucro Bruto Estimado (60 dias)** *(Destaque `.sim-card-highlight`)*:
    - Subtítulo: `Margem de Contribuição no ciclo` + `<app-info-help>` (`projectedMargin`)

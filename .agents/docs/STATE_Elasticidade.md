@@ -115,3 +115,15 @@
 - [x] **Etapa 3 (TDD + Implementação):** Concluída em Backend (`283 passed` em `tests/analytics/`) e Frontend (`206/206 SUCCESS` Karma + `ng build` exit code 0) — baseline de vendas líquidas dos últimos 60 dias (`fetch_product_recent_volume_60d`), custo unitário editável (`costPrice` opcional em `POST /simulate`), cálculo de margem unitária (`R$/un.`, `%`, `p.p.`), cobertura de estoque em dias (Hoje `0%` vs Proposto contra meta de `60 dias`) e remoção de `<app-elasticity-diagnostic-card>` e `<app-elasticity-customers-table>`.
 - [x] **Etapa 4 (Quality Gate 360):** **APROVADO** por `ux_reviewer` (escala `320px`, skeleton `320px`, ícone colorblind-safe em `.stock-status-tag`, validação/borda crítica do custo e Papel & Tinta) e `reviewer` (46 passed backend elasticidade, 116 SUCCESS analytics frontend, remoção de fallbacks `100.0`/`10.0`, validação cruzada `% × R$`, limpeza de código morto e zero violações XSS/LGPD/governança).
 
+---
+
+## 7. Ajuste Delta v3.1 — Margem em %, Preço Atual Editável e Limpeza de Tags (2026-11-16)
+
+- **Escopo implementado:**
+  1. Card `Margem unitária` invertido para destaque em **%** (`51,6%`) com valor em reais entre parênteses (`(R$ 130,57/un.)`), delta com `p.p.` em primeiro plano (`+4,8 p.p. (+R$ 22,99/un.)`) e baseline `Atual: 46,8% (R$ 107,58/un.)`.
+  2. Campo editável **`Preço atual (R$)`** (`#current-price-input`) ao lado de `Custo unitário (R$)`, com suporte backend opcional em `POST /simulate` (`currentPrice > 0`, `isPriceOverride`), selo `Catálogo ERP` / `Editado manualmente`, atalho `Enter` e botão de restauração.
+  3. Removidas as tags `.badge-elasticity` (`Muito sensível`) e `.badge-confidence` (`Confiança`) do cabeçalho compacto, preservando `Ver detalhes estatísticos` via `<app-info-help>`.
+- **Validação pós-Delta v3.1:**
+  - Backend: `python -m pytest tests/analytics/ -q` → **`287 passed, 1 warning`**.
+  - Frontend: `npm test -- --watch=false --browsers=ChromeHeadless` → **`212 of 212 SUCCESS`** e `npm run build` → **exit code 0**.
+

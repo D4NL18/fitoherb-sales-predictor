@@ -230,17 +230,18 @@ Mantido intacto para compatibilidade retroativa da API e cobertura de testes (`t
 
 ### 3.3 `POST /api/v1/analytics/elasticity/simulate`
 
-Simula o impacto em volume (baseline 60 dias), faturamento, margem unitária (`R$/un.`, `%`, `p.p.`), lucro bruto total e cobertura de estoque em dias contra a meta de 60 dias, aceitando custo unitário manual opcional (`costPrice >= 0`).
+Simula o impacto em volume (baseline 60 dias), faturamento, margem unitária (`%` e `R$/un.`, variação `p.p.`), lucro bruto total e cobertura de estoque em dias contra a meta de 60 dias, aceitando custo unitário manual opcional (`costPrice >= 0`) e preço atual manual opcional (`currentPrice > 0`).
 
 #### Payload de Requisição
 ```json
 {
   "sku": 1001,
   "priceChangePct": 5.0,
+  "currentPrice": 25.50,
   "costPrice": 13.50
 }
 ```
-> *Nota:* `customerCode` (opcional `> 0`) e `costPrice` (opcional `>= 0`) podem ser omitidos ou enviados como `null`.
+> *Nota:* `customerCode` (opcional `> 0`), `currentPrice` (opcional `> 0`) e `costPrice` (opcional `>= 0`) podem ser omitidos ou enviados como `null`.
 
 #### Exemplo de Resposta 200 OK
 ```json
@@ -267,6 +268,7 @@ Simula o impacto em volume (baseline 60 dias), faturamento, margem unitária (`R
     "costPrice": 13.50,
     "isCostEstimated": false,
     "isCostOverride": true,
+    "isPriceOverride": false,
     "stock": 420.0,
     "stockTargetDays": 60,
     "currentUnitMargin": 12.00,
@@ -324,6 +326,7 @@ export interface ElasticitySimulationRequest {
   customerCode?: number | null;
   priceChangePct: number;
   costPrice?: number | null;
+  currentPrice?: number | null;
 }
 
 export interface SimulationImpactData {
@@ -348,6 +351,7 @@ export interface SimulationImpactData {
   costPrice?: number;
   isCostEstimated?: boolean;
   isCostOverride?: boolean;
+  isPriceOverride?: boolean;
   stock?: number;
   stockTargetDays?: number;
   currentUnitMargin?: number;
