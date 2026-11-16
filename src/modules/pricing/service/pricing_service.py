@@ -326,8 +326,16 @@ _PREDICTION_FILE = (
 )
 
 
+_MIN_LIVE_CATALOG_SKUS = 50  # Templates sintéticos têm 8 SKUs; nunca persistir fallback sintético como previsão oficial
+
+
 def save_shared_prediction(data: Dict[str, Any]) -> None:
     """Salva a previsão calculada para que seja compartilhada entre todos os usuários."""
+    source = _DATA_CACHE.get("data_source")
+    product_count = len(data.get("previewProducts", []))
+    if source == "templates" or (source is not None and product_count < _MIN_LIVE_CATALOG_SKUS and _DATA_CACHE.get("raw_products_count", 0) >= _MIN_LIVE_CATALOG_SKUS):
+        logger.warning("Ignorando persistência de previsão gerada com base sintética (%d SKUs).", product_count)
+        return
     _DATA_CACHE["latest_shared_prediction"] = data
     try:
         _PREDICTION_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -340,16 +348,22 @@ def save_shared_prediction(data: Dict[str, Any]) -> None:
 def get_shared_prediction() -> Optional[Dict[str, Any]]:
     """Recupera a última previsão compartilhada entre todos os usuários."""
     if "latest_shared_prediction" in _DATA_CACHE:
-        return _DATA_CACHE["latest_shared_prediction"]
-    
+        cached = _DATA_CACHE["latest_shared_prediction"]
+        if len(cached.get("previewProducts", [])) >= _MIN_LIVE_CATALOG_SKUS:
+            return cached
+        _DATA_CACHE.pop("latest_shared_prediction", None)
+
     if _PREDICTION_FILE.exists():
         try:
             with open(_PREDICTION_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                _DATA_CACHE["latest_shared_prediction"] = data
-                return data
+            if len(data.get("previewProducts", [])) < _MIN_LIVE_CATALOG_SKUS:
+                logger.warning("Descartando previsão compartilhada legada com base sintética (%d SKUs).", len(data.get("previewProducts", [])))
+                return None
+            _DATA_CACHE["latest_shared_prediction"] = data
+            return data
         except Exception as e:
             logger.warning(f"Falha ao ler previsão compartilhada do disco: {e}")
-            
+
     return None
 

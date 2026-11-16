@@ -5,7 +5,7 @@
  */
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, catchError, shareReplay, throwError } from 'rxjs';
 import { AnalyticsHealthResponse, PageRequest } from '../models/analytics.model';
 import {
   ChurnCustomersResponse,
@@ -13,15 +13,64 @@ import {
   InactiveChurnResponse,
 } from '../models/churn.model';
 import {
+  ElasticitySimulationRequest,
+  ElasticitySimulationResponse,
+  ProductElasticityResponse,
+} from '../models/elasticity.models';
+import {
+  CatalogListResponse,
   CustomerCrossSellResponse,
   ProductCrossSellResponse,
   ProductSearchResponse,
 } from '../models/cross-sell.model';
 
+export interface CatalogProductsOptions {
+  includeSeasonality?: boolean;
+}
+
 @Injectable({ providedIn: 'root' })
 export class AnalyticsService {
   private readonly http = inject(HttpClient);
   private readonly baseUrl = '/api/v1/analytics';
+  private basicCatalogCache$: Observable<CatalogListResponse> | null = null;
+  private seasonalCatalogCache$: Observable<CatalogListResponse> | null = null;
+
+  /**
+   * Catálogo completo em memória com `shareReplay(1)`; mantém caches separados para o catálogo
+   * básico vs. enriquecido com sazonalidade, invalidando automaticamente em caso de erro.
+   */
+  getCatalogProducts(options?: CatalogProductsOptions): Observable<CatalogListResponse> {
+    const includeSeasonality = options?.includeSeasonality === true;
+    const cached$ = includeSeasonality ? this.seasonalCatalogCache$ : this.basicCatalogCache$;
+    if (cached$) {
+      return cached$;
+    }
+
+    const request$ = (
+      includeSeasonality
+        ? this.http.get<CatalogListResponse>(`${this.baseUrl}/products`, {
+            params: new HttpParams().set('includeSeasonality', 'true'),
+          })
+        : this.http.get<CatalogListResponse>(`${this.baseUrl}/products`)
+    ).pipe(
+      catchError((err: unknown) => {
+        if (includeSeasonality) {
+          this.seasonalCatalogCache$ = null;
+        } else {
+          this.basicCatalogCache$ = null;
+        }
+        return throwError(() => err);
+      }),
+      shareReplay(1),
+    );
+
+    if (includeSeasonality) {
+      this.seasonalCatalogCache$ = request$;
+    } else {
+      this.basicCatalogCache$ = request$;
+    }
+    return request$;
+  }
 
   /** Estado do cache sem disparar carga (P-069, Q-7). */
   getHealth(): Observable<AnalyticsHealthResponse> {
@@ -68,6 +117,35 @@ export class AnalyticsService {
     return this.http.get<InactiveChurnResponse>(`${this.baseUrl}/churn/inactive`, {
       params: toPageParams(page),
     });
+  }
+
+  /** Elasticidade do produto (P-096, P-103). */
+  getProductElasticity(sku: number, page: PageRequest): Observable<ProductElasticityResponse> {
+    return this.http.get<ProductElasticityResponse>(`${this.baseUrl}/elasticity/product/${sku}`, {
+      params: toPageParams(page),
+    });
+  }
+
+  /** Simulação de impacto de reajuste de preço, custo e preço atual opcionais (P-101). */
+  simulatePriceChange(request: ElasticitySimulationRequest): Observable<ElasticitySimulationResponse> {
+    const {
+      sku,
+      priceChangePct: pct,
+      customerCode,
+      costPrice: reqCostPrice,
+      currentPrice: reqCurrentPrice,
+    } = request;
+
+    const payload: ElasticitySimulationRequest = {
+      sku,
+      priceChangePct: pct,
+      ...(customerCode !== null && customerCode !== undefined ? { customerCode } : {}),
+      ...(reqCostPrice !== null && reqCostPrice !== undefined ? { costPrice: reqCostPrice } : {}),
+      ...(reqCurrentPrice !== null && reqCurrentPrice !== undefined
+        ? { currentPrice: reqCurrentPrice }
+        : {}),
+    };
+    return this.http.post<ElasticitySimulationResponse>(`${this.baseUrl}/elasticity/simulate`, payload);
   }
 }
 

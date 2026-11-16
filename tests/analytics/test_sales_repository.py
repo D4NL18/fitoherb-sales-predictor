@@ -316,3 +316,37 @@ def test_missing_configuration_becomes_data_source_error(connect_spy, monkeypatc
     assert exc_info.value.code == "ANL-001"
     assert "DB_HOST" not in str(exc_info.value)
     assert state["calls"] == []
+
+
+# ------------------------------------------------------------------ volume recente 60d (P-101)
+
+def test_fetch_product_recent_volume_60d_sql_params_and_decimal(connect_spy):
+    from decimal import Decimal
+
+    cursor = FakeCursor([(Decimal("142.5"),)], allow_fetchall=True)
+    connect_spy(cursor)
+
+    volume = repo.fetch_product_recent_volume_60d(1001, CUTOFF, window_days=60)
+    sql, params = cursor.executed[0]
+    normalized = _normalized(sql)
+
+    assert is_readonly_query(normalized)
+    assert "[Data] >= ?" in normalized
+    assert "[Data] < ?" in normalized
+    assert "VENDA" in normalized
+    assert "DEVOLU%" in normalized
+    assert params == (1001, date(2026, 9, 7), CUTOFF)
+    assert volume == pytest.approx(142.5)
+
+
+def test_fetch_product_recent_volume_60d_handles_none_empty_and_negative(connect_spy):
+    from decimal import Decimal
+
+    connect_spy(FakeCursor([(None,)], allow_fetchall=True))
+    assert repo.fetch_product_recent_volume_60d(1001, CUTOFF) == 0.0
+
+    connect_spy(FakeCursor([], allow_fetchall=True))
+    assert repo.fetch_product_recent_volume_60d(1001, CUTOFF) == 0.0
+
+    connect_spy(FakeCursor([(Decimal("-15.0"),)], allow_fetchall=True))
+    assert repo.fetch_product_recent_volume_60d(1001, CUTOFF) == 0.0

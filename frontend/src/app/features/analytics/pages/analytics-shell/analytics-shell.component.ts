@@ -25,6 +25,16 @@ export const ANALYTICS_SECTIONS: readonly AnalyticsSection[] = [
     path: '/analytics/churn',
     description: 'Clientes em risco de churn ordenados por score de retenção',
   },
+  {
+    label: 'Sazonalidade',
+    path: '/analytics/sazonalidade',
+    description: 'Curva de sazonalidade anual e rankings de demanda por produto',
+  },
+  {
+    label: 'Elasticidade',
+    path: '/analytics/elasticity',
+    description: 'Sensibilidade de preço por produto com simulador de reajustes',
+  },
 ];
 
 @Component({

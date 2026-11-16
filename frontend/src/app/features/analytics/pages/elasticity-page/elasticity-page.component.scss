@@ -1,0 +1,116 @@
+@use '../../styles/analytics-ui' as ui;
+
+.elasticity-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  width: 100%;
+  min-width: 0;
+}
+
+.search-panel {
+  @include ui.panel;
+  padding: var(--space-5) var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+
+  @media (max-width: ui.$bp-mobile) {
+    padding: var(--space-4);
+  }
+}
+
+.result-panel {
+  @include ui.panel;
+  min-width: 0;
+}
+
+.page-intro {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.intro-copy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex: 1 1 24rem;
+}
+
+.intro-eyebrow {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--brand-primary);
+}
+
+.intro-title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.intro-title {
+  margin: 0;
+  font-family: var(--font-family-headline);
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.25;
+}
+
+.intro-subtitle {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+  max-width: 68ch;
+  line-height: 1.5;
+}
+
+.sr-only {
+  @include ui.sr-only;
+}
+
+.result-back-bar {
+  display: flex;
+  align-items: center;
+  padding: var(--space-3) var(--space-6);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-canvas);
+
+  @media (max-width: ui.$bp-mobile) {
+    padding: var(--space-3) var(--space-4);
+  }
+}
+
+.loaded-back-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.btn-back-catalog {
+  @extend %button-secondary;
+  min-height: 36px;
+  padding: var(--space-1) var(--space-3);
+  font-size: 0.84rem;
+  flex-shrink: 0;
+}
+
+.url-sku-error {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-xs);
+  border-left: 4px solid var(--feedback-critical-border);
+  background: var(--feedback-critical-subtle);
+  color: var(--feedback-critical-bg);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
