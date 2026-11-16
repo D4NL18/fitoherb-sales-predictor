@@ -281,7 +281,8 @@ def simulate_price_change(request: ElasticitySimulationRequest) -> ElasticitySim
             request.sku, cutoff, STOCK_TARGET_DAYS
         )
 
-    current_price = max(0.0, float(product.price))
+    is_price_override = request.current_price is not None
+    current_price = float(request.current_price) if is_price_override else max(0.0, float(product.price))
     if request.cost_price is not None:
         cost_price = float(request.cost_price)
         is_cost_override = True
@@ -302,6 +303,7 @@ def simulate_price_change(request: ElasticitySimulationRequest) -> ElasticitySim
         window_days=STOCK_TARGET_DAYS,
         is_cost_estimated=is_cost_estimated,
         is_cost_override=is_cost_override,
+        is_price_override=is_price_override,
     )
     meta = ResponseMeta(
         timestamp=datetime.now(timezone.utc).isoformat(),
@@ -342,5 +344,6 @@ def simulate_price_change(request: ElasticitySimulationRequest) -> ElasticitySim
         current_stock_days=impact.current_stock_days,
         projected_stock_days=impact.projected_stock_days,
         stock_days_delta=impact.stock_days_delta,
+        is_price_override=impact.is_price_override,
     )
     return ElasticitySimulationResponse(data=data, meta=meta)

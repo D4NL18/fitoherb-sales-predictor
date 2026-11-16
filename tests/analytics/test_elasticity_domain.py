@@ -391,3 +391,36 @@ def test_simulate_price_impact_stock_zero_and_zero_volume_returns_none_stock_day
     assert sim_no_stock.current_stock_days == pytest.approx(0.0)
     assert sim_no_stock.projected_stock_days == pytest.approx(0.0)
     assert sim_no_stock.stock_days_delta == pytest.approx(0.0)
+
+
+def test_simulate_price_impact_price_override_flag():
+    """T-11: Parâmetro is_price_override popula flag sem quebrar chamadas legadas (padrão False)."""
+    # Arrange & Act
+    sim_default = simulate_price_impact(
+        elasticity=-1.0,
+        current_price=50.0,
+        cost_price=30.0,
+        current_volume=100.0,
+        price_change_pct=10.0,
+    )
+    sim_override = simulate_price_impact(
+        elasticity=-1.0,
+        current_price=250.0,
+        cost_price=122.42,
+        current_volume=100.0,
+        price_change_pct=10.0,
+        is_price_override=True,
+    )
+
+    # Assert
+    assert sim_default.is_price_override is False
+    assert sim_override.is_price_override is True
+    assert sim_override.current_price == pytest.approx(250.0)
+    assert sim_override.projected_price == pytest.approx(275.0)
+    assert sim_override.current_revenue == pytest.approx(25000.0)
+    assert sim_override.projected_revenue == pytest.approx(24750.0)
+    assert sim_override.current_unit_margin == pytest.approx(127.58)
+    assert sim_override.projected_unit_margin == pytest.approx(152.58)
+    assert sim_override.current_unit_margin_pct == pytest.approx(51.03, abs=0.05)
+    assert sim_override.projected_unit_margin_pct == pytest.approx(55.48, abs=0.05)
+    assert sim_override.unit_margin_pct_change_pp == pytest.approx(4.45, abs=0.05)

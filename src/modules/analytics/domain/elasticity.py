@@ -100,6 +100,7 @@ class SimulationImpactResult:
     current_stock_days: Optional[float] = None
     projected_stock_days: Optional[float] = None
     stock_days_delta: Optional[float] = None
+    is_price_override: bool = False
 
 
 def calculate_decay_weights(
@@ -338,6 +339,7 @@ def simulate_price_impact(
     window_days: int = STOCK_TARGET_DAYS,
     is_cost_estimated: bool = False,
     is_cost_override: bool = False,
+    is_price_override: bool = False,
 ) -> SimulationImpactResult:
     """
     Calcula o impacto projetado de uma variação percentual de preço em volume, receita, margem e estoque (P-101).
@@ -458,4 +460,5 @@ def simulate_price_impact(
         current_stock_days=current_stock_days,
         projected_stock_days=projected_stock_days,
         stock_days_delta=stock_days_delta,
+        is_price_override=bool(is_price_override),
     )

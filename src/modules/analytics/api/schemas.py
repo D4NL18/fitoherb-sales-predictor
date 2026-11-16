@@ -390,6 +390,7 @@ class ElasticitySimulationRequest(CamelModel):
     sku: int = Field(gt=0, description="Código do produto avaliado.")
     customer_code: Optional[int] = Field(default=None, gt=0, description="Código do cliente opcional.")
     price_change_pct: float = Field(ge=-50.0, le=100.0, description="Variação percentual de preço pretendida.")
+    current_price: Optional[float] = Field(default=None, gt=0.0, description="Preço atual manual opcional informado na calculadora.")
     cost_price: Optional[float] = Field(default=None, ge=0.0, description="Custo unitário manual opcional em R$.")
 
 
@@ -432,6 +433,7 @@ class SimulationImpactData(CamelModel):
     current_stock_days: Optional[float] = Field(default=None, description="Duração estimada do estoque atual em dias.")
     projected_stock_days: Optional[float] = Field(default=None, description="Duração estimada do estoque projetado em dias.")
     stock_days_delta: Optional[float] = Field(default=None, description="Variação na duração do estoque em dias.")
+    is_price_override: bool = Field(default=False, description="Indica se o preço atual foi editado manualmente na calculadora.")
 
 
 class ElasticitySimulationResponse(CamelModel):

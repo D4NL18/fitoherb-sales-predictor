@@ -274,6 +274,7 @@ def test_real_service_uses_catalog_snapshot_entries_and_decimal_rows():
         assert sim_data["costPrice"] == pytest.approx(14.00)
         assert sim_data["isCostEstimated"] is False
         assert sim_data["isCostOverride"] is False
+        assert sim_data["isPriceOverride"] is False
         assert sim_data["stock"] == pytest.approx(150.0)
         assert sim_data["stockTargetDays"] == 60
         assert sim_data["currentUnitMargin"] == pytest.approx(15.90, abs=0.01)
@@ -388,3 +389,60 @@ def test_real_service_zero_recent_volume_and_estimated_cost_fallback():
         assert sim["costPrice"] == pytest.approx(30.0)
         assert sim["currentUnitMargin"] == pytest.approx(20.0)
         assert sim["projectedUnitMargin"] == pytest.approx(25.0)
+
+
+def test_simulate_price_impact_with_manual_current_price_override():
+    """T-API-11: POST /elasticity/simulate com currentPrice manual recalcula métricas e retorna isPriceOverride=True."""
+    from decimal import Decimal
+    import pandas as pd
+
+    # Arrange
+    snapshot = _real_catalog_snapshot()
+    price_points = pd.DataFrame([
+        {"ano": 2026, "mes": m, "operacao": "VENDA", "qtd": Decimal(100 - m * 5), "valor": Decimal((100 - m * 5) * (25 + m))}
+        for m in range(1, 7)
+    ])
+
+    # Act
+    with (
+        patch("src.modules.analytics.service.analytics_cache.get_catalog", return_value=snapshot),
+        patch("src.modules.analytics.repository.sales_repository.fetch_product_price_points", return_value=price_points),
+        patch("src.modules.analytics.repository.sales_repository.fetch_product_recent_volume_60d", return_value=120.0),
+    ):
+        response = client.post(
+            f"{BASE_URL}/simulate",
+            json={"sku": 100002, "priceChangePct": 10.0, "currentPrice": 250.0},
+        )
+
+    # Assert
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["isPriceOverride"] is True
+    assert data["currentPrice"] == pytest.approx(250.0)
+    assert data["projectedPrice"] == pytest.approx(275.0)
+    assert data["currentRevenue"] == pytest.approx(30000.0)
+    assert data["projectedRevenue"] == pytest.approx(275.0 * data["projectedVolume"], abs=0.5)
+    assert data["currentUnitMargin"] == pytest.approx(236.0)
+    assert data["projectedUnitMargin"] == pytest.approx(261.0)
+    assert data["currentUnitMarginPct"] == pytest.approx((236.0 / 250.0) * 100.0, abs=0.05)
+    assert data["projectedUnitMarginPct"] == pytest.approx((261.0 / 275.0) * 100.0, abs=0.05)
+    assert data["unitMarginPctChangePp"] == pytest.approx(
+        data["projectedUnitMarginPct"] - data["currentUnitMarginPct"],
+        abs=0.02,
+    )
+
+
+@pytest.mark.parametrize("invalid_price", [0, -10.0])
+def test_simulate_price_impact_non_positive_current_price_returns_ela_004(invalid_price: float):
+    """T-API-12: POST /elasticity/simulate com currentPrice <= 0 retorna 400 ELA-004."""
+    # Arrange
+    payload = {"sku": 1001, "priceChangePct": 5.0, "currentPrice": invalid_price}
+
+    # Act
+    response = client.post(f"{BASE_URL}/simulate", json=payload)
+
+    # Assert
+    assert response.status_code == 400
+    json_data = response.json()
+    assert json_data["error"]["code"] == "ELA-004"
+    assert "currentPrice" in json_data["error"]["fields"]
