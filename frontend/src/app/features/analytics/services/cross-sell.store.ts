@@ -68,6 +68,16 @@ class ModeQuery<TResponse extends ListResponse> {
     this.inFlight?.unsubscribe();
   }
 
+  reset(): void {
+    this.inFlight?.unsubscribe();
+    this.inFlight = null;
+    this.term = null;
+    this.responseState.set(null);
+    this.errorState.set(null);
+    this.pageRequestState.set(FIRST_PAGE);
+    this.statusState.set('idle');
+  }
+
   private run(pageRequest: PageRequest): void {
     if (this.term === null) return;
     this.inFlight?.unsubscribe();
@@ -112,6 +122,10 @@ export class CrossSellStore implements OnDestroy {
 
   searchProduct(sku: number): void {
     this.productQuery.search(sku);
+  }
+
+  clearProduct(): void {
+    this.productQuery.reset();
   }
 
   searchCustomer(customerCode: number): void {

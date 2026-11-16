@@ -27,14 +27,18 @@
 
 .page-intro {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
 }
 
 .intro-copy {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+  flex: 1 1 24rem;
 }
 
 .intro-eyebrow {
@@ -72,4 +76,41 @@
 
 .sr-only {
   @include ui.sr-only;
+}
+
+.result-back-bar {
+  display: flex;
+  align-items: center;
+  padding: var(--space-3) var(--space-6);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-canvas);
+
+  @media (max-width: ui.$bp-mobile) {
+    padding: var(--space-3) var(--space-4);
+  }
+}
+
+.loaded-back-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.btn-back-catalog {
+  @extend %button-secondary;
+  min-height: 36px;
+  padding: var(--space-1) var(--space-3);
+  font-size: 0.84rem;
+  flex-shrink: 0;
+}
+
+.url-sku-error {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-xs);
+  border-left: 4px solid var(--feedback-critical-border);
+  background: var(--feedback-critical-subtle);
+  color: var(--feedback-critical-bg);
+  font-size: 0.88rem;
+  font-weight: 600;
 }

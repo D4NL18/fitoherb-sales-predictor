@@ -18,7 +18,11 @@
   }
 
   <div role="tabpanel" id="xs-panel-product" aria-labelledby="xs-tab-product" [hidden]="mode() !== 'product'">
-    <app-product-cross-sell-panel [initialSku]="initialSku()" (productSearched)="onProductSearched($event)" />
+    <app-product-cross-sell-panel
+      [initialSku]="initialSku()"
+      (productSearched)="onProductSearched($event)"
+      (productCleared)="onProductCleared()"
+    />
   </div>
 
   <div role="tabpanel" id="xs-panel-customer" aria-labelledby="xs-tab-customer" [hidden]="mode() !== 'customer'">

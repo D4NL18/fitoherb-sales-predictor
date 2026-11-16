@@ -16,6 +16,8 @@ from src.modules.analytics.api.schemas import (
     AnalyticsHealthData,
     AnalyticsHealthResponse,
     AnalyticsMeta,
+    CatalogListResponse,
+    CatalogProductItem,
     ConsultedProduct,
     CrossSellPagedMeta,
     CustomerCrossSellData,
@@ -40,6 +42,7 @@ from src.modules.analytics.domain.cross_sell_explanation import (
 )
 from src.modules.analytics.domain.number_format import round_for_display
 from src.modules.analytics.domain.pagination import PageRequest, PageResult
+from src.modules.analytics.domain.seasonality import SeasonalityCatalogSummary
 from src.modules.analytics.service.analytics_cache import AnalyticsSnapshot, CacheStatus
 
 RATIO_DECIMALS = 4   # suporte, confiança (contrato §2.4)
@@ -187,3 +190,50 @@ def to_search_response(page: PageResult, context: PageContext) -> ProductSearchR
     items: Sequence[CatalogEntry] = page.items
     return ProductSearchResponse(data=[to_consulted_product(entry) for entry in items],
                                  meta=PagedMeta(**_paged_fields(page, context)))
+
+
+def _to_catalog_item(
+    entry: CatalogEntry,
+    summary: Optional[SeasonalityCatalogSummary] = None,
+) -> CatalogProductItem:
+    """Converte entrada do catálogo em item da listagem paginada (contrato §3.7, P-117)."""
+    if summary is None:
+        return CatalogProductItem(
+            codigo=entry.code,
+            descricao=entry.description,
+            fornecedor=entry.supplier,
+            estoque=round_for_display(entry.stock, STOCK_DECIMALS),
+            preco_venda=round_for_display(entry.price, MONEY_DECIMALS),
+        )
+    return CatalogProductItem(
+        codigo=entry.code,
+        descricao=entry.description,
+        fornecedor=entry.supplier,
+        estoque=round_for_display(entry.stock, STOCK_DECIMALS),
+        preco_venda=round_for_display(entry.price, MONEY_DECIMALS),
+        forca=summary.forca,
+        amplitude=summary.amplitude,
+        mes_pico=summary.mes_pico,
+        mes_vale=summary.mes_vale,
+        faturamento_total=summary.faturamento_total,
+        motivo_insuficiencia=summary.motivo_insuficiencia,
+    )
+
+
+def to_catalog_response(
+    page: PageResult[CatalogEntry],
+    context: PageContext,
+    seasonality_summaries: Optional[Mapping[int, SeasonalityCatalogSummary]] = None,
+) -> CatalogListResponse:
+    """Página da listagem do catálogo com `PagedMeta` (sem `parametros`, contrato §3.7)."""
+    items: Sequence[CatalogEntry] = page.items
+    return CatalogListResponse(
+        data=[
+            _to_catalog_item(
+                entry,
+                seasonality_summaries.get(entry.code) if seasonality_summaries is not None else None,
+            )
+            for entry in items
+        ],
+        meta=PagedMeta(**_paged_fields(page, context)),
+    )

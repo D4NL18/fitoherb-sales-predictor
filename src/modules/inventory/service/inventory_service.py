@@ -274,16 +274,12 @@ def get_cached_velocity(window_days: int) -> pd.DataFrame:
 
 
 def get_inventory_suppliers() -> List[Dict[str, Any]]:
-    """Retorna os fornecedores com contagem de SKUs ativos, iniciada por `TODOS`.
+    """Retorna os fornecedores com contagem de SKUs do catálogo ativo padronizado, iniciada por `TODOS`.
 
-    Regra: P-057 — SKUs sem estoque e sem venda na janela padrão não entram na contagem, para
-    que o total do seletor coincida com a lista exibida na tela.
+    Regra: A base de catálogo já vem padronizada pelo SQL Server (cadastro ativo + venda nos últimos 90 dias),
+    garantindo paridade exata entre o total do seletor de fornecedores e a lista exibida em todas as telas.
     """
-    catalog_df = normalize_product_catalog(get_inventory_catalog())
-    velocity_df = get_inventory_velocity(UI_HISTORY_WINDOW_DAYS_DEFAULT)
-    sold_skus = set(velocity_df.index[velocity_df["vmd"] > 0]) if not velocity_df.empty else set()
-    is_active = (catalog_df["estoque"] > 0) | catalog_df["codigo"].isin(sold_skus)
-    active_df = catalog_df[is_active]
+    active_df = normalize_product_catalog(get_inventory_catalog())
 
     counts = active_df["fornecedor"].astype(str).str.strip().value_counts()
     suppliers: List[Dict[str, Any]] = [

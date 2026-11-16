@@ -17,6 +17,11 @@ export const ANALYTICS_ROUTES: Routes = [
           import('./pages/cross-sell-page/cross-sell-page.component').then((m) => m.CrossSellPageComponent),
       },
       {
+        path: 'sazonalidade',
+        loadComponent: () =>
+          import('./pages/seasonality-page/seasonality-page.component').then((m) => m.SeasonalityPageComponent),
+      },
+      {
         path: 'elasticity',
         loadComponent: () =>
           import('./pages/elasticity-page/elasticity-page.component').then((m) => m.ElasticityPageComponent),

@@ -11,11 +11,12 @@ from __future__ import annotations
 import math
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
-from typing import Tuple, Union
+from typing import Any, Optional, Tuple, Union
 
 from src.modules.analytics.api import mappers
 from src.modules.analytics.api.schemas import (
     AnalyticsHealthResponse,
+    CatalogListResponse,
     CustomerCrossSellResponse,
     CustomerElasticityDetail,
     CustomerElasticityItem,
@@ -52,7 +53,10 @@ from src.modules.analytics.domain.exceptions import (
     InsufficientBaseError,
 )
 from src.modules.analytics.domain.pagination import PageRequest, paginate
-from src.modules.analytics.domain.product_search import search_products as search_catalog
+from src.modules.analytics.domain.product_search import (
+    filter_and_sort_catalog,
+    search_products as search_catalog,
+)
 from src.modules.analytics.domain.recommendation_curation import curate
 from src.modules.analytics.repository import sales_repository
 from src.modules.analytics.service import analytics_cache
@@ -116,6 +120,181 @@ def search_products(query: str, page_request: PageRequest) -> ProductSearchRespo
     matches = search_catalog(catalog.search_index, query)
     context = mappers.PageContext(page_request, catalog.reference_date.isoformat())
     return mappers.to_search_response(paginate(matches, page_request), context)
+
+
+def list_catalog_products(
+    page_request: PageRequest,
+    query: Optional[str] = None,
+    supplier: Optional[str] = None,
+    stock_filter: str = "all",
+    sort_by: str = "supplier_product",
+    sort_dir: str = "asc",
+    include_seasonality: bool = False,
+) -> CatalogListResponse:
+    """Lista, filtra e ordena o catálogo ativo em cache sem carregar as cestas (contrato §3.7, P-117)."""
+    catalog = analytics_cache.get_catalog()
+    filtered = filter_and_sort_catalog(
+        catalog.search_index,
+        query=query,
+        supplier=supplier,
+        stock_filter=stock_filter,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+    )
+    seasonality_summaries = None
+    if include_seasonality:
+        sales_df = _get_monthly_sales_df()
+        catalog_dict = _get_catalog_dict()
+        seasonality_summaries = calculate_seasonality_summaries(sales_df, catalog_dict)
+    context = mappers.PageContext(page_request, catalog.reference_date.isoformat())
+    return mappers.to_catalog_response(
+        paginate(filtered, page_request),
+        context,
+        seasonality_summaries=seasonality_summaries,
+    )
+
+
+# ------------------------------------------------------------------ sazonalidade por produto (P-106..P-116; ADR-005)
+
+import pandas as pd
+from src.modules.analytics.api.schemas import (
+    ANALYTICS_CONTRACT_VERSION,
+    AnalyticsMeta,
+    MonthlySeasonalityPointSchema,
+    PagedMeta,
+    SeasonalityData,
+    SeasonalityPeakValleySchema,
+    SeasonalityProduct,
+    SeasonalityRankingItemSchema,
+    SeasonalityRankingResponse,
+    SeasonalityResponse,
+)
+from src.modules.analytics.domain.seasonality import (
+    calculate_seasonality_rankings,
+    calculate_seasonality_summaries,
+    get_seasonality_index,
+)
+
+
+def _get_monthly_sales_df() -> pd.DataFrame:
+    """Obtém DataFrame de vendas mensais líquidas via cache."""
+    return analytics_cache.get_monthly_sales()
+
+
+def _get_catalog_dict() -> dict[int, dict[str, Any]]:
+    """Obtém mapa do catálogo ativo em cache."""
+    cat = analytics_cache.get_catalog()
+    return {
+        entry.code: {
+            "Codigo": entry.code,
+            "Descricao": entry.description,
+            "Fornecedor": entry.supplier,
+            "Estoque": entry.stock,
+            "Pc.Ultimo Custo": entry.unit_cost,
+            "Pc.Venda": entry.price,
+        }
+        for entry in cat.entries.values()
+    }
+
+
+def get_product_seasonality(sku: int) -> SeasonalityResponse:
+    """Caso de uso: Detecção de sazonalidade por produto (P-106 a P-113)."""
+    sales_df = _get_monthly_sales_df()
+    catalog = _get_catalog_dict()
+    res = get_seasonality_index(sku=sku, monthly_sales_df=sales_df, catalog_dict=catalog)
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    meta = AnalyticsMeta(timestamp=now_iso, version=ANALYTICS_CONTRACT_VERSION, data_referencia=None)
+
+    data = SeasonalityData(
+        produto=SeasonalityProduct(
+            codigo=res.produto.codigo,
+            descricao=res.produto.descricao,
+            fornecedor=res.produto.fornecedor,
+            estoque=res.produto.estoque,
+            preco_venda=res.produto.preco_venda,
+        ),
+        elegivel=res.elegivel,
+        forca=res.forca,
+        motivo_insuficiencia=res.motivo_insuficiencia,
+        amplitude=res.amplitude,
+        correlacao_yoy=res.correlacao_yoy,
+        pico=SeasonalityPeakValleySchema(
+            mes_inicio=res.pico.mes_inicio,
+            mes_fim=res.pico.mes_fim,
+            nome_periodo=res.pico.nome_periodo,
+            indice=res.pico.indice,
+            confianca=res.pico.confianca,
+        ),
+        vale=SeasonalityPeakValleySchema(
+            mes_inicio=res.vale.mes_inicio,
+            mes_fim=res.vale.mes_fim,
+            nome_periodo=res.vale.nome_periodo,
+            indice=res.vale.indice,
+            confianca=res.vale.confianca,
+        ),
+        serie_mensal=[
+            MonthlySeasonalityPointSchema(
+                mes=p.mes,
+                nome_mes=p.nome_mes,
+                indice=p.indice,
+                confianca=p.confianca,
+                observacoes_disponiveis=p.observacoes_disponiveis,
+                razao_2025=p.razao_2025,
+                razao_2026=p.razao_2026,
+                volume_liquido_historico=p.volume_liquido_historico,
+                receita_liquida_historica=p.receita_liquida_historica,
+            )
+            for p in res.serie_mensal
+        ],
+    )
+
+    return SeasonalityResponse(data=data, meta=meta)
+
+
+def get_seasonality_ranking(order: str, page_request: PageRequest) -> SeasonalityRankingResponse:
+    """Caso de uso: Rankings de sazonalidade paginados (P-114)."""
+    sales_df = _get_monthly_sales_df()
+    catalog = _get_catalog_dict()
+    items, total = calculate_seasonality_rankings(
+        monthly_sales_df=sales_df,
+        catalog_dict=catalog,
+        order=order,
+        limit=page_request.limit,
+        offset=page_request.offset,
+    )
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    total_pages = (total + page_request.limit - 1) // page_request.limit if total > 0 else 0
+    current_page = (page_request.offset // page_request.limit) + 1 if page_request.limit > 0 else 1
+
+    paged_meta = PagedMeta(
+        timestamp=now_iso,
+        version=ANALYTICS_CONTRACT_VERSION,
+        data_referencia=None,
+        page=current_page,
+        limit=page_request.limit,
+        offset=page_request.offset,
+        total_items=total,
+        total_pages=total_pages,
+    )
+
+    ranking_items = [
+        SeasonalityRankingItemSchema(
+            sku=it.sku,
+            descricao=it.descricao,
+            fornecedor=it.fornecedor,
+            forca=it.forca,
+            amplitude=it.amplitude,
+            mes_pico=it.mes_pico,
+            mes_vale=it.mes_vale,
+            faturamento_total=it.faturamento_total,
+            motivo_insuficiencia=it.motivo_insuficiencia,
+        )
+        for it in items
+    ]
+
+    return SeasonalityRankingResponse(data=ranking_items, meta=paged_meta)
 
 
 # ------------------------------------------------------------------ Elasticidade (F5 / P-095..P-105)

@@ -1,20 +1,35 @@
-<section class="query-panel" aria-label="Consulta por produto">
-  <app-code-search-form
-    label="Produto (código ou descrição)"
-    [invalidFormatMessage]="invalidFormatMessage"
-    placeholder="ex.: 10432 ou chá verde"
-    hint="Use o código do catálogo (o mesmo da tabela de preços) ou digite parte da descrição e escolha na lista."
-    submitLabel="Ver sugestões"
-    [enableProductSearch]="true"
-    [loading]="kind() === 'loading'"
-    [fieldError]="fieldError()"
-    [initialValue]="initialSku()"
-    (search)="onSearch($event)"
-  />
-</section>
+<section
+  class="result-panel"
+  [class.is-catalog]="kind() === 'intro'"
+  aria-label="Sugestões por produto"
+  [attr.aria-busy]="kind() === 'loading' ? 'true' : null"
+>
+  @if (kind() !== 'intro' && kind() !== 'loading') {
+    <div class="result-back-bar">
+      <button type="button" class="btn-back-catalog" (click)="clearSelection()">
+        <span aria-hidden="true">←</span>
+        <span> Voltar para lista de produtos</span>
+      </button>
+    </div>
+  }
 
-<section class="result-panel" aria-label="Sugestões por produto" [attr.aria-busy]="kind() === 'loading' ? 'true' : null">
   @switch (kind()) {
+    @case ('intro') {
+      @if (fieldError(); as err) {
+        <div class="field-alert-banner" role="alert">
+          <span class="field-alert-message">{{ err }}</span>
+          <button type="button" class="btn-back-catalog" (click)="clearSelection()">
+            Limpar aviso
+          </button>
+        </div>
+      }
+      <app-product-catalog-explorer
+        title="Escolha um produto no catálogo"
+        actionLabel="Ver cross-sell"
+        [selectedSku]="selectedSku()"
+        (productSelect)="onSearch($event.codigo)"
+      />
+    }
     @case ('loading') {
       @if (query.response(); as response) {
         <app-query-context-header

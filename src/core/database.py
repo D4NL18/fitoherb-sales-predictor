@@ -165,13 +165,33 @@ def fetch_sales_from_database(
         conn.close()
 
 
+ACTIVE_CATALOG_LOOKBACK_DAYS = 90  # Padrão global: desconsiderar itens sem vendas nos últimos 90 dias
+
+# Filtro canônico de catálogo ativo compartilhado entre módulos (Pricing, Inventory, Analytics, Sales Trend)
+ACTIVE_CATALOG_FILTER_SQL = f"""
+FROM Externo01.Produto p
+INNER JOIN dbo.Produtos dp ON dp.[Id_Pro] = p.[Codigo]
+WHERE p.[Pc.Venda] > 0
+  AND dp.[inativo_pro] = 0
+  AND EXISTS (
+      SELECT 1
+      FROM Externo01.Vendas v
+      WHERE v.[Cod Produto] = p.[Codigo]
+        AND v.[Operação] = 'VENDA'
+        AND v.[Qtd Venda] > 0
+        AND v.[Data] >= DATEADD(day, -{ACTIVE_CATALOG_LOOKBACK_DAYS}, (SELECT MAX([Data]) FROM Externo01.Vendas))
+  )
+""".strip()
+
+
 def fetch_products_from_database(
     limit: Optional[int] = None,
     custom_query: Optional[str] = None
 ) -> pd.DataFrame:
     """
-    Extrai a lista oficial de produtos da view Externo01.Produto do SQL Server (P-022).
-    Apenas produtos com preço de venda válido ([Pc.Venda] > 0) são retornados.
+    Extrai a lista oficial de produtos ativos da view Externo01.Produto (P-022):
+    preço válido ([Pc.Venda] > 0), ativo no cadastro (dp.[inativo_pro] = 0) e ao menos
+    1 venda registrada nos últimos 90 dias.
     """
     if custom_query:
         if not is_readonly_query(custom_query):
@@ -183,16 +203,15 @@ def fetch_products_from_database(
         top_clause = f"TOP {limit} " if limit else ""
         sql = f"""
         SELECT {top_clause}
-            [Codigo],
-            [Descricao],
-            [EAN],
-            [Fornecedor],
-            [Tipo],
-            [Estoque],
-            [Pc.Ultimo Custo],
-            [Pc.Venda]
-        FROM Externo01.Produto
-        WHERE [Pc.Venda] > 0
+            p.[Codigo],
+            p.[Descricao],
+            p.[EAN],
+            p.[Fornecedor],
+            p.[Tipo],
+            p.[Estoque],
+            p.[Pc.Ultimo Custo],
+            p.[Pc.Venda]
+        {ACTIVE_CATALOG_FILTER_SQL}
         """
 
     conn_str = get_db_connection_string()

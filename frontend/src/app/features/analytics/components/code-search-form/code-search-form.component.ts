@@ -115,6 +115,14 @@ export class CodeSearchFormComponent {
     this.inputRef().nativeElement.focus();
   }
 
+  /** Limpa o campo sem forçar foco (usado ao voltar para o catálogo). */
+  clear(): void {
+    this.value.set('');
+    this.localError.set(null);
+    this.lastSubmittedCode = null;
+    this.cancelSearch();
+  }
+
   /** Limpa e foca o campo ("Buscar outro produto", "Consultar outro cliente", botão ×). */
   clearAndFocus(): void {
     this.value.set('');

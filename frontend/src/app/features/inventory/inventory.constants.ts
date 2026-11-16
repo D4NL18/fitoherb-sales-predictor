@@ -47,7 +47,7 @@ export const MAX_COVERAGE_DAYS_RANGE = {
 } as const;
 
 /** Chave atual do cache local da previsão sob o contrato 2.0.0 (CA-12, DA-09). */
-export const INVENTORY_CACHE_KEY = 'fitoherb_inventory_cache_v3';
+export const INVENTORY_CACHE_KEY = 'fitoherb_inventory_cache_v4';
 
 /** Chaves legadas de cache que devem ser expurgadas na inicialização da tela (CA-12). */
-export const LEGACY_INVENTORY_CACHE_KEYS = ['fitoherb_inventory_cache_v2'] as const;
+export const LEGACY_INVENTORY_CACHE_KEYS = ['fitoherb_inventory_cache_v2', 'fitoherb_inventory_cache_v3'] as const;

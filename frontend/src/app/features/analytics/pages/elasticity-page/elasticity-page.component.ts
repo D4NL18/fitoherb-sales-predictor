@@ -5,14 +5,13 @@ import {
   OnInit,
   inject,
   signal,
-  viewChild,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { EMPTY, Subject, catchError, defer, map, of, switchMap, timer } from 'rxjs';
-import { CodeSearchFormComponent } from '../../components/code-search-form/code-search-form.component';
 import { ErrorBannerComponent } from '../../components/error-banner/error-banner.component';
 import { InfoHelpComponent } from '../../components/info-help/info-help.component';
+import { ProductCatalogExplorerComponent } from '../../components/product-catalog-explorer/product-catalog-explorer.component';
 import { ResultStateComponent } from '../../components/result-state/result-state.component';
 import { DEFAULT_PAGE_LIMIT } from '../../models/analytics.model';
 import {
@@ -63,9 +62,9 @@ const POSITIVE_INT_PATTERN = /^[1-9]\d*$/;
   selector: 'app-elasticity-page',
   standalone: true,
   imports: [
-    CodeSearchFormComponent,
     ErrorBannerComponent,
     InfoHelpComponent,
+    ProductCatalogExplorerComponent,
     ResultStateComponent,
     ElasticitySkeletonComponent,
     ElasticitySimulatorPanelComponent,
@@ -80,12 +79,9 @@ export class ElasticityPageComponent implements OnInit {
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
 
-  private readonly searchForm = viewChild(CodeSearchFormComponent);
-
   private readonly productRequest$ = new Subject<number | null>();
   private readonly simulationRequest$ = new Subject<SimulationTrigger | null>();
 
-  protected readonly skuInput = signal<string>('');
   protected readonly activeSku = signal<number | null>(null);
   protected readonly productData = signal<ProductElasticityDetail | null>(null);
 
@@ -127,7 +123,6 @@ export class ElasticityPageComponent implements OnInit {
 
         if (!POSITIVE_INT_PATTERN.test(rawSku)) {
           this.resetToInitialState();
-          this.skuInput.set(rawSku);
           this.skuFieldError.set(PRODUCT_INVALID_FORMAT_MESSAGE);
           return;
         }
@@ -135,12 +130,10 @@ export class ElasticityPageComponent implements OnInit {
         const parsedSku = Number.parseInt(rawSku, 10);
         if (!Number.isSafeInteger(parsedSku) || parsedSku <= 0) {
           this.resetToInitialState();
-          this.skuInput.set(rawSku);
           this.skuFieldError.set(PRODUCT_INVALID_FORMAT_MESSAGE);
           return;
         }
 
-        this.skuInput.set(String(parsedSku));
         if (parsedSku !== this.activeSku()) {
           this.triggerProductLoad(parsedSku);
         }
@@ -148,7 +141,6 @@ export class ElasticityPageComponent implements OnInit {
   }
 
   protected onSearchSku(sku: number): void {
-    this.skuInput.set(String(sku));
     if (this.route.snapshot.queryParamMap.get('sku') !== String(sku)) {
       // LGPD: sincroniza apenas `sku` na URL; nunca expõe dados de cliente em query params ou storage.
       void this.router.navigate([], {
@@ -165,13 +157,21 @@ export class ElasticityPageComponent implements OnInit {
     this.triggerProductLoad(sku);
   }
 
-  protected onStateAction(action: ResultStateAction): void {
-    if (action === 'focus-field') {
-      this.searchForm()?.focus();
-      return;
+  protected backToCatalog(): void {
+    this.resetToInitialState();
+    if (this.route.snapshot.queryParamMap.get('sku') !== null) {
+      void this.router.navigate([], {
+        relativeTo: this.route,
+        queryParams: { sku: null },
+        queryParamsHandling: 'merge',
+        replaceUrl: true,
+      });
     }
-    if (action === 'new-search') {
-      this.searchForm()?.clearAndFocus();
+  }
+
+  protected onStateAction(action: ResultStateAction): void {
+    if (action === 'focus-field' || action === 'new-search') {
+      this.backToCatalog();
       return;
     }
     if (action === 'retry') {
@@ -424,7 +424,6 @@ export class ElasticityPageComponent implements OnInit {
     this.productRequest$.next(null);
     this.simulationRequest$.next(null);
 
-    this.skuInput.set('');
     this.activeSku.set(null);
     this.productData.set(null);
     this.isLoadingProduct.set(false);

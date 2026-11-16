@@ -1,0 +1,435 @@
+<section class="seasonality-container" aria-labelledby="seasonality-page-title">
+  <header class="page-intro">
+    <h2 id="seasonality-page-title" class="section-title">Sazonalidade por produto</h2>
+    <p class="section-subtitle">
+      Consulte a curva anual de demanda, identifique meses de pico e vale e planeje a reposição com base nos últimos 24 meses de vendas líquidas.
+    </p>
+  </header>
+
+  @if (isLoadingProduct()) {
+    <div class="skeleton-panel" role="status" aria-label="Carregando diagnóstico sazonal do produto">
+      <div class="skeleton-header">
+        <div class="skeleton-line skeleton-title"></div>
+        <div class="skeleton-line skeleton-subtitle"></div>
+      </div>
+      <div class="skeleton-cards">
+        <div class="skeleton-box skeleton-card"></div>
+        <div class="skeleton-box skeleton-card"></div>
+        <div class="skeleton-box skeleton-card"></div>
+        <div class="skeleton-box skeleton-card"></div>
+      </div>
+      <div class="skeleton-box skeleton-chart"></div>
+    </div>
+  } @else if (productError()) {
+    <div
+      class="feedback-banner"
+      [class.is-not-found]="productErrorDetail()?.isNotFound"
+      role="alert"
+    >
+      <div class="feedback-content">
+        <span class="feedback-icon" aria-hidden="true">
+          @if (productErrorDetail()?.isNotFound) {
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              <line x1="8" y1="11" x2="14" y2="11"></line>
+            </svg>
+          } @else {
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+              <line x1="12" y1="9" x2="12" y2="13"></line>
+              <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
+          }
+        </span>
+        <div class="feedback-text">
+          <h3 class="feedback-title">
+            {{ productErrorDetail()?.isNotFound ? 'Produto não encontrado' : 'Não foi possível carregar o produto' }}
+          </h3>
+          <p class="feedback-message">{{ productError() }}</p>
+        </div>
+      </div>
+
+      <div class="feedback-actions">
+        @if (productErrorDetail()?.retryable) {
+          <button type="button" class="btn-retry" (click)="retrySelectedProduct()">
+            Tentar novamente
+          </button>
+        }
+        <button type="button" class="btn-secondary-action btn-back-catalog" (click)="clearSelectedProduct()">
+          ← Voltar para tabela de produtos
+        </button>
+      </div>
+    </div>
+  } @else {
+    @if (productData(); as data) {
+    <section
+      #productPanel
+      class="product-diagnostic-panel"
+      aria-labelledby="product-diagnostic-heading"
+    >
+      <div class="product-header">
+        <div class="product-title-block">
+          <div class="product-heading-group">
+            <span class="sku-pill tabular-nums">SKU {{ data.produto.codigo }}</span>
+            <h3
+              #productHeading
+              id="product-diagnostic-heading"
+              class="product-title"
+              tabindex="-1"
+            >
+              {{ data.produto.descricao }}
+            </h3>
+            @if (productMeta()?.dataReferencia; as dataRef) {
+              <span class="meta-ref-badge">Base até {{ dataRef | ptDate }}</span>
+            }
+          </div>
+
+          <dl class="product-meta-secondary">
+            <div class="meta-item">
+              <dt>Fornecedor</dt>
+              <dd>{{ data.produto.fornecedor }}</dd>
+            </div>
+            <div class="meta-item">
+              <dt>Estoque atual</dt>
+              <dd class="tabular-nums">{{ data.produto.estoque | ptDecimal:0 }} un.</dd>
+            </div>
+            <div class="meta-item">
+              <dt>Preço de venda</dt>
+              <dd class="tabular-nums">{{ data.produto.precoVenda | brl }}</dd>
+            </div>
+          </dl>
+        </div>
+
+        <div class="product-strength-wrap">
+          <span class="tag" [class]="getStrengthTagClass(data.forca)">
+            <span class="tag-dot" aria-hidden="true"></span>
+            <span>{{ getStrengthLabel(data.forca) }}</span>
+          </span>
+          <button
+            type="button"
+            class="btn-secondary-action btn-back-catalog"
+            (click)="clearSelectedProduct()"
+          >
+            ← Voltar para tabela de produtos
+          </button>
+        </div>
+      </div>
+
+      @if (!data.elegivel) {
+        <div class="insufficient-banner" role="status">
+          <span class="insufficient-icon" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="8" x2="12" y2="12"></line>
+              <line x1="12" y1="16" x2="12.01" y2="16"></line>
+            </svg>
+          </span>
+          <div class="insufficient-body">
+            <h4 class="insufficient-title">{{ getReasonText(data.motivoInsuficiencia) }}</h4>
+            <p class="insufficient-description">
+              {{ getReasonDetailedGuidance(data.motivoInsuficiencia) }}
+            </p>
+          </div>
+        </div>
+      } @else {
+        <div class="metrics-grid">
+          <article class="metric-card">
+            <div class="metric-label">Pico sazonal</div>
+            <div class="metric-value">{{ data.pico.nomePeriodo }}</div>
+            <div class="metric-sub">
+              Índice médio <strong class="tabular-nums">{{ data.pico.indice | ptDecimal:2 }}x</strong> da base anual
+            </div>
+            <div class="metric-badge-row">
+              <span class="tag" [class]="getConfidenceTagClass(data.pico.confianca)">
+                <span class="tag-dot" aria-hidden="true"></span>
+                <span>{{ getConfidenceLabel(data.pico.confianca) }}</span>
+              </span>
+            </div>
+          </article>
+
+          <article class="metric-card">
+            <div class="metric-label">Vale sazonal</div>
+            <div class="metric-value">{{ data.vale.nomePeriodo }}</div>
+            <div class="metric-sub">
+              Índice médio <strong class="tabular-nums">{{ data.vale.indice | ptDecimal:2 }}x</strong> da base anual
+            </div>
+            <div class="metric-badge-row">
+              <span class="tag" [class]="getConfidenceTagClass(data.vale.confianca)">
+                <span class="tag-dot" aria-hidden="true"></span>
+                <span>{{ getConfidenceLabel(data.vale.confianca) }}</span>
+              </span>
+            </div>
+          </article>
+
+          <article class="metric-card">
+            <div class="metric-label">Amplitude sazonal</div>
+            <div class="metric-value tabular-nums">{{ data.amplitude | ptDecimal:2 }}x</div>
+            <div class="metric-sub">
+              Diferença entre o mês mais forte e o mais fraco do ciclo.
+            </div>
+          </article>
+
+          <article class="metric-card">
+            <div class="metric-label">Consistência anual (YoY)</div>
+            @if (data.correlacaoYoy !== null) {
+              <div class="metric-value tabular-nums">{{ data.correlacaoYoy | ptPercent:0 }}</div>
+            } @else {
+              <div class="metric-value">—</div>
+            }
+            <div class="metric-sub">
+              Correlação do comportamento mensal entre os últimos dois anos.
+            </div>
+          </article>
+        </div>
+
+        @if (hasLowConfidenceMonth()) {
+          <div class="confidence-notice" role="note">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+              <line x1="12" y1="9" x2="12" y2="13"></line>
+              <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
+            <span>
+              <strong>Atenção à janela histórica:</strong> meses sinalizados com <em>Confiança Baixa (1 ano)</em> contam com apenas um ciclo completo observado e pedem validação antes de ampliar estoques.
+            </span>
+          </div>
+        }
+
+        @if (hasFlatSeries()) {
+          <div class="confidence-notice is-neutral" role="note">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="16" x2="12" y2="12"></line>
+              <line x1="12" y1="8" x2="12.01" y2="8"></line>
+            </svg>
+            <span>
+              Demanda uniforme ao longo dos 12 meses (amplitude 0,00x), sem concentração sazonal expressiva.
+            </span>
+          </div>
+        }
+
+        <div class="chart-card">
+          <div class="chart-header">
+            <h4 class="chart-title">Curva de Sazonalidade Mensal (Últimos 24 Meses)</h4>
+            <div class="chart-legend" aria-label="Legenda do gráfico mensal">
+              <span class="legend-item">
+                <span class="legend-swatch swatch-peak" aria-hidden="true"></span>
+                <span>Pico</span>
+              </span>
+              <span class="legend-item">
+                <span class="legend-swatch swatch-valley" aria-hidden="true"></span>
+                <span>Vale</span>
+              </span>
+              <span class="legend-item">
+                <span class="legend-swatch swatch-normal" aria-hidden="true"></span>
+                <span>Médio</span>
+              </span>
+              <span class="legend-item">
+                <span class="legend-baseline-sample" aria-hidden="true"></span>
+                <span>Média (1,00x)</span>
+              </span>
+            </div>
+          </div>
+
+          <div class="chart-viewport">
+            <div class="chart-y-axis" aria-hidden="true">
+              <span class="y-tick y-tick-top tabular-nums">{{ chartMaxScale() | ptDecimal:2 }}x</span>
+              <span
+                class="y-tick y-tick-baseline tabular-nums"
+                [style.bottom.%]="getBaselineBottomPercent()"
+              >
+                1,00x
+              </span>
+              <span class="y-tick y-tick-bottom tabular-nums">0,00x</span>
+            </div>
+
+            <div class="chart-columns-scroll">
+              <div class="chart-scroll-inner">
+                <div class="plot-field">
+                  <div
+                    class="chart-baseline"
+                    [style.bottom.%]="getBaselineBottomPercent()"
+                    aria-hidden="true"
+                  ></div>
+
+                  <div class="bars-row">
+                    @for (pt of data.serieMensal; track pt.mes) {
+                      <button
+                        type="button"
+                        class="chart-bar-btn"
+                        [class.is-peak]="isPeakMonth(pt.mes)"
+                        [class.is-valley]="isValleyMonth(pt.mes)"
+                        [class.is-low-confidence]="pt.confianca === 'BAIXA'"
+                        [class.is-inspected]="isMonthInspected(pt.mes)"
+                        [attr.aria-label]="formatMonthAriaLabel(pt)"
+                        [attr.aria-pressed]="selectedMonth() === pt.mes"
+                        (mouseenter)="onBarHover(pt.mes)"
+                        (mouseleave)="onBarHover(null)"
+                        (focus)="onBarFocus(pt.mes)"
+                        (blur)="onBarFocus(null)"
+                        (click)="toggleMonthSelection(pt.mes)"
+                      >
+                        <span
+                          class="bar-value-label tabular-nums"
+                          [style.bottom.%]="getBarHeightPercent(pt.indice)"
+                        >
+                          {{ pt.indice | ptDecimal:2 }}x
+                        </span>
+                        <span
+                          class="bar-fill"
+                          [class.is-zero]="pt.indice <= 0"
+                          [style.height.%]="getBarHeightPercent(pt.indice)"
+                          aria-hidden="true"
+                        ></span>
+                      </button>
+                    }
+                  </div>
+                </div>
+
+                <div class="chart-x-axis" aria-hidden="true">
+                  @for (pt of data.serieMensal; track pt.mes) {
+                    <div
+                      class="x-axis-cell"
+                      [class.is-inspected]="isMonthInspected(pt.mes)"
+                    >
+                      <span class="x-month-name">{{ pt.nomeMes.slice(0, 3) }}</span>
+                      <span
+                        class="x-confidence-badge"
+                        [class.is-low]="pt.confianca === 'BAIXA'"
+                        [class.is-medium]="pt.confianca === 'MEDIA'"
+                      >
+                        @if (pt.confianca === 'BAIXA') {
+                          <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                            <path d="M8 1.5L14.5 13.5H1.5L8 1.5ZM8 5.7A.75.75 0 0 0 7.25 6.45V9.45A.75.75 0 0 0 8.75 9.45V6.45A.75.75 0 0 0 8 5.7ZM8 12.5A.9.9 0 1 0 8 10.7A.9.9 0 0 0 8 12.5Z"/>
+                          </svg>
+                        }
+                        <span>{{ getConfidenceShortLabel(pt.confianca) }}</span>
+                      </span>
+                    </div>
+                  }
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="month-inspector" aria-live="polite">
+            @if (activeMonthPoint(); as pt) {
+              <div class="inspector-header">
+                <div class="inspector-title-group">
+                  <strong class="inspector-month">{{ pt.nomeMes }}</strong>
+                  <span class="inspector-state">{{ getBarStateLabel(pt) }}</span>
+                  <span class="tag" [class]="getConfidenceTagClass(pt.confianca)">
+                    <span class="tag-dot" aria-hidden="true"></span>
+                    <span>{{ getConfidenceLabel(pt.confianca) }}</span>
+                  </span>
+                </div>
+                @if (selectedMonth() === pt.mes) {
+                  <button
+                    type="button"
+                    class="btn-unpin-month"
+                    (click)="clearMonthInspection()"
+                  >
+                    Desafixar mês
+                  </button>
+                }
+              </div>
+
+              <dl class="inspector-metrics">
+                <div class="inspector-stat">
+                  <dt>Índice sazonal</dt>
+                  <dd class="tabular-nums">{{ pt.indice | ptDecimal:2 }}x</dd>
+                </div>
+                <div class="inspector-stat">
+                  <dt>Volume líquido histórico</dt>
+                  <dd class="tabular-nums">{{ pt.volumeLiquidoHistorico | ptDecimal:0 }} un.</dd>
+                </div>
+                <div class="inspector-stat">
+                  <dt>Faturamento líquido</dt>
+                  <dd class="tabular-nums">{{ pt.receitaLiquidaHistorica | brl }}</dd>
+                </div>
+                <div class="inspector-stat">
+                  <dt>Ciclo 2025</dt>
+                  <dd class="tabular-nums">
+                    @if (pt.razao2025 !== null) {
+                      {{ pt.razao2025 | ptDecimal:2 }}x
+                    } @else {
+                      —
+                    }
+                  </dd>
+                </div>
+                <div class="inspector-stat">
+                  <dt>Ciclo 2026</dt>
+                  <dd class="tabular-nums">
+                    @if (pt.razao2026 !== null) {
+                      {{ pt.razao2026 | ptDecimal:2 }}x
+                    } @else {
+                      —
+                    }
+                  </dd>
+                </div>
+              </dl>
+            } @else {
+              <p class="inspector-placeholder">
+                Passe o cursor, navegue com Tab ou selecione uma barra do gráfico para inspecionar volume líquido, faturamento e índices por ano.
+              </p>
+            }
+          </div>
+
+          <table class="sr-only">
+            <caption>Sazonalidade mensal detalhada do produto {{ data.produto.descricao }}</caption>
+            <thead>
+              <tr>
+                <th scope="col">Mês</th>
+                <th scope="col">Índice Sazonal</th>
+                <th scope="col">Volume Líquido</th>
+                <th scope="col">Faturamento Líquido</th>
+                <th scope="col">Índice 2025</th>
+                <th scope="col">Índice 2026</th>
+                <th scope="col">Confiança</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (pt of data.serieMensal; track pt.mes) {
+                <tr>
+                  <td>{{ pt.nomeMes }}</td>
+                  <td>{{ pt.indice | ptDecimal:2 }}x</td>
+                  <td>{{ pt.volumeLiquidoHistorico | ptDecimal:0 }} un.</td>
+                  <td>{{ pt.receitaLiquidaHistorica | brl }}</td>
+                  <td>{{ pt.razao2025 !== null ? (pt.razao2025 | ptDecimal:2) + 'x' : 'Não disponível' }}</td>
+                  <td>{{ pt.razao2026 !== null ? (pt.razao2026 | ptDecimal:2) + 'x' : 'Não disponível' }}</td>
+                  <td>{{ getConfidenceLabel(pt.confianca) }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+    </section>
+    } @else {
+    @if (urlValidationError(); as valErr) {
+      <div class="feedback-banner is-not-found" role="alert">
+        <div class="feedback-content">
+          <div class="feedback-text">
+            <h3 class="feedback-title">Código SKU inválido na URL</h3>
+            <p class="feedback-message">{{ valErr }}</p>
+          </div>
+        </div>
+        <div class="feedback-actions">
+          <button type="button" class="btn-secondary-action" (click)="clearSelectedProduct()">
+            Limpar aviso
+          </button>
+        </div>
+      </div>
+    }
+
+    <app-product-catalog-explorer
+      [showSeasonality]="true"
+      title="Catálogo e Sazonalidade de Produtos"
+      actionLabel="Ver sazonalidade"
+      [selectedSku]="selectedSku()"
+      (productSelect)="onCatalogProductSelect($event)"
+    />
+    }
+  }
+</section>

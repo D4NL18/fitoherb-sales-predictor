@@ -1,6 +1,6 @@
 /**
  * T-15 — Painel do modo produto (F-09, F-11; Design Plan §5.4–§5.9, §6).
- * Store e serviço mockados: o painel só desenha o estado e despacha ações.
+ * Store e serviço mockados: o painel só desenha o estado e despacha ações a partir do catálogo.
  */
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { of } from 'rxjs';
@@ -10,9 +10,9 @@ import { AnalyticsService } from '../../services/analytics.service';
 import { createFakeCrossSellStore, FakeCrossSellStore } from '../../testing/fake-cross-sell-store';
 import {
   CONTRACT_MESSAGES,
+  catalogResponse,
   emptyProductResponse,
   productResponse,
-  searchResponse,
 } from '../../testing/cross-sell-test-data';
 import { AnalyticsErrorCode } from '../../models/analytics.model';
 
@@ -23,8 +23,11 @@ describe('ProductCrossSellPanelComponent', () => {
 
   beforeEach(async () => {
     store = createFakeCrossSellStore();
-    const service = jasmine.createSpyObj<AnalyticsService>('AnalyticsService', ['searchProducts', 'getHealth']);
-    service.searchProducts.and.returnValue(of(searchResponse()));
+    const service = jasmine.createSpyObj<AnalyticsService>('AnalyticsService', [
+      'getHealth',
+      'getCatalogProducts',
+    ]);
+    service.getCatalogProducts.and.returnValue(of(catalogResponse()));
     await TestBed.configureTestingModule({
       imports: [ProductCrossSellPanelComponent],
       providers: [
@@ -44,33 +47,55 @@ describe('ProductCrossSellPanelComponent', () => {
 
   function showError(code: AnalyticsErrorCode | null): void {
     store.product.status.set('error');
-    store.product.error.set(code ? { code, message: CONTRACT_MESSAGES[code], fields: code === 'XSL-004' ? ['sku'] : [] } : null);
+    store.product.error.set(
+      code
+        ? { code, message: CONTRACT_MESSAGES[code], fields: code === 'XSL-004' ? ['sku'] : [] }
+        : null,
+    );
   }
 
-  function submit(value: string): void {
-    const input = element.querySelector('input') as HTMLInputElement;
-    input.value = value;
-    input.dispatchEvent(new Event('input'));
-    (element.querySelector('form') as HTMLFormElement).dispatchEvent(new Event('submit'));
-    fixture.detectChanges();
-  }
-
-  it('estado inicial guia o usuário (intro), sem erro nem vazio', () => {
+  it('estado inicial exibe apenas o catálogo unificado (sem app-code-search-form) e sem alertas', () => {
     const text = render();
-    expect(text).toContain('Escolha um produto');
+    expect(element.querySelector('app-code-search-form')).toBeNull();
+    expect(element.querySelector('app-product-catalog-explorer')).not.toBeNull();
+    expect(text).toContain('Escolha um produto no catálogo');
     expect(element.querySelector('[role="alert"]')).toBeNull();
   });
 
-  it('envia o SKU validado ao store', () => {
-    submit('1001');
-    expect(store.searchProduct).toHaveBeenCalledOnceWith(1001);
+  it('destaca linha no catálogo quando initialSku é informado', () => {
+    fixture.componentRef.setInput('initialSku', '1001');
+    fixture.detectChanges();
+
+    const selectedRow = element.querySelector(
+      'app-product-catalog-explorer tr.catalog-row.is-selected',
+    );
+    expect(selectedRow).not.toBeNull();
+    expect(selectedRow?.textContent).toContain('CHA VERDE 100G');
   });
 
-  it('valida o campo na tela: só dígitos, sem chamar o store', () => {
-    submit('12a');
-    expect(store.searchProduct).not.toHaveBeenCalled();
-    expect(render()).toContain('Escolha um produto da lista ou digite o código (só números).');
-    expect((element.querySelector('input') as HTMLInputElement).getAttribute('aria-invalid')).toBe('true');
+  it('filtra catálogo por "whey 100% gelato", seleciona produto e emite productSearched', () => {
+    const searched: number[] = [];
+    fixture.componentInstance.productSearched.subscribe((sku) => searched.push(sku));
+
+    const searchInput = element.querySelector(
+      'app-product-catalog-explorer input[type="search"]',
+    ) as HTMLInputElement;
+    expect(searchInput).not.toBeNull();
+
+    searchInput.value = 'whey 100% gelato';
+    searchInput.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+
+    const rows = element.querySelectorAll('app-product-catalog-explorer tr.catalog-row');
+    expect(rows.length).toBe(1);
+    expect(rows[0].textContent).toContain('WHEY 100% PURE GELATO 900G');
+
+    const selectBtn = rows[0].querySelector('.btn-row-action') as HTMLButtonElement;
+    expect(selectBtn.textContent?.trim()).toBe('Ver cross-sell');
+    selectBtn.click();
+
+    expect(store.searchProduct).toHaveBeenCalledOnceWith(2002);
+    expect(searched).toEqual([2002]);
   });
 
   it('carregando: skeleton com aria-busy e nenhum vazio', () => {
@@ -107,24 +132,25 @@ describe('ProductCrossSellPanelComponent', () => {
     expect(items[0]).not.toContain('Sem estoque');
   });
 
-  it('vazio do produto usa a descrição do produto consultado', () => {
+  it('vazio do produto usa a descrição do produto consultado e permite voltar ao catálogo', () => {
     store.product.status.set('empty');
     store.product.response.set(emptyProductResponse());
 
     expect(render()).toContain('Nenhuma combinação forte para MEL DE ABELHA 500G');
+    const backBtn = findButton('Voltar para lista de produtos');
+    expect(backBtn).not.toBeNull();
   });
 
-  it('XSL-001 aparece inline no campo', () => {
+  it('XSL-001 e XSL-004 exibem banner de alerta mantendo o catálogo visível', () => {
     showError('XSL-001');
-    const text = render();
-
+    let text = render();
     expect(text).toContain(CONTRACT_MESSAGES['XSL-001']);
-    expect((element.querySelector('input') as HTMLInputElement).getAttribute('aria-invalid')).toBe('true');
-  });
+    expect(element.querySelector('[role="alert"]')).not.toBeNull();
+    expect(element.querySelector('app-product-catalog-explorer')).not.toBeNull();
 
-  it('XSL-004 de sku vira a mensagem de validação', () => {
     showError('XSL-004');
-    expect(render()).toContain('Digite só números, sem pontos ou letras.');
+    text = render();
+    expect(text).toContain('Digite só números, sem pontos ou letras.');
   });
 
   it('XSL-003 mostra o estado de dados insuficientes', () => {
@@ -132,7 +158,7 @@ describe('ProductCrossSellPanelComponent', () => {
     expect(render()).toContain('Ainda não dá para recomendar com segurança');
   });
 
-  it('falha técnica mostra banner role=alert com Tentar de novo e sem detalhes crus', () => {
+  it('falha técnica mostra banner role=alert com Tentar de novo e botão voltar para lista', () => {
     showError(null);
     render();
 
@@ -140,6 +166,7 @@ describe('ProductCrossSellPanelComponent', () => {
     expect(alert?.textContent).toContain('Não foi possível buscar as sugestões agora');
     expect(alert?.textContent).toContain('Tentar de novo');
     expect(element.textContent).not.toContain('detail');
+    expect(findButton('Voltar para lista de produtos')).not.toBeNull();
   });
 
   it('paginação: oculta com uma página, avança com Próxima', () => {
@@ -154,8 +181,31 @@ describe('ProductCrossSellPanelComponent', () => {
     expect(store.goToPage).toHaveBeenCalledOnceWith(2);
   });
 
+  it('exibe botão "← Voltar para lista de produtos", chama clearSelection() e emite productCleared', () => {
+    const cleared: boolean[] = [];
+    fixture.componentInstance.productCleared.subscribe(() => cleared.push(true));
+
+    store.product.status.set('success');
+    store.product.response.set(productResponse());
+    render();
+
+    const backBtn = findButton('Voltar para lista de produtos');
+    expect(backBtn).not.toBeNull();
+    expect(backBtn!.textContent).toContain('←');
+    backBtn!.click();
+    render();
+
+    expect(store.clearProduct).toHaveBeenCalledTimes(1);
+    expect(cleared).toEqual([true]);
+    expect(element.querySelector('app-product-catalog-explorer')).not.toBeNull();
+  });
+
   function findButton(label: string): HTMLButtonElement | null {
     const buttons = Array.from(element.querySelectorAll('button')) as HTMLButtonElement[];
-    return buttons.find((button) => (button.getAttribute('aria-label') ?? button.textContent ?? '').includes(label)) ?? null;
+    return (
+      buttons.find((button) =>
+        (button.getAttribute('aria-label') ?? button.textContent ?? '').includes(label),
+      ) ?? null
+    );
   }
 });

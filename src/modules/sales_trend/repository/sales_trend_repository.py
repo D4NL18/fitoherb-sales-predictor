@@ -11,6 +11,7 @@ from typing import Dict, List, Optional, Set, Tuple
 import pyodbc
 
 from src.core.database import (
+    ACTIVE_CATALOG_FILTER_SQL,
     DatabaseSecurityError,
     get_db_connection_string,
     is_readonly_query,
@@ -27,10 +28,8 @@ logger = logging.getLogger(__name__)
 
 FETCH_CHUNK_SIZE: int = 50_000
 
-ACTIVE_CATALOG_SQL: str = """SELECT p.[Codigo], p.[Descricao], p.[Fornecedor]
-FROM Externo01.Produto p
-JOIN dbo.Produtos dp ON dp.[Id_Pro] = p.[Codigo]
-WHERE p.[Pc.Venda] > 0 AND dp.[inativo_pro] = 0"""
+ACTIVE_CATALOG_SQL: str = f"""SELECT p.[Codigo], p.[Descricao], p.[Fornecedor]
+{ACTIVE_CATALOG_FILTER_SQL}""".strip()
 
 MONTHLY_NET_SALES_SQL: str = """SELECT
     [Cod Produto] AS sku,

@@ -4,6 +4,7 @@
  * O cliente aparece só pelo código e nunca é ecoado nas respostas (P-070, LGPD-03).
  */
 import { CrossSellPagedMeta, PagedMeta } from './analytics.model';
+import { SeasonalityReason, SeasonalityStrength } from './seasonality.model';
 
 /** Motivo de lista vazia no modo cliente (P-062.7). */
 export type EmptyReason = 'SEM_COMPRAS_RECENTES';
@@ -58,6 +59,26 @@ export interface ProductCrossSellResponse {
 /** Busca de produto por código ou descrição (contrato §3.6, DC-5). */
 export interface ProductSearchResponse {
   data: ConsultedProduct[];
+  meta: PagedMeta;
+}
+
+/** Item do catálogo completo de produtos (`GET /api/v1/analytics/products`). */
+export interface CatalogProductItem {
+  codigo: number;
+  descricao: string;
+  fornecedor: string;
+  estoque: number;
+  precoVenda: number;
+  forca?: SeasonalityStrength | null;
+  amplitude?: number | null;
+  mesPico?: string | null;
+  mesVale?: string | null;
+  faturamentoTotal?: number | null;
+  motivoInsuficiencia?: SeasonalityReason | null;
+}
+
+export interface CatalogListResponse {
+  data: CatalogProductItem[];
   meta: PagedMeta;
 }
 
