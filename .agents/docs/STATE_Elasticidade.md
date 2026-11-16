@@ -82,3 +82,17 @@
   - Angular Build (`npm run build`): **exit code 0** (chunk inicial reduzido para `530.67 kB`; aviso pré-existente de orçamento de `512.00 kB` sem novos erros nem warnings de estilo)
   - Backend Pytest (`python -m pytest tests/analytics/test_elasticity_api.py tests/analytics/test_elasticity_domain.py`): **14/14 passed**
 
+---
+
+## 5. Rodada v2 — Camada Didática e Guias Contextuais `<app-info-help>` (2026-11-16)
+
+- **Triagem Prévia (Categoria A — T3 Frontend / UI / UX):**
+  - `designer`: **ACIONADO** — Design Plan v2 salvo em `.agents/docs/design/plans/analytics-elasticidade.md` (tradução de econometrês para linguagem cotidiana + componente `<app-info-help>` + exemplos dinâmicos `+10%` e margem unitária).
+  - `dba`, `privacy_officer`, `ai_specialist`, `security`: **BYPASS** (sem alteração de banco, API, ML ou tratamento de PII; LGPD de URL sem `customerCode` preservada e renderização segura sem `[innerHTML]`).
+  - `tester`, `developer`, `ux_reviewer`, `reviewer`: **ACIONADOS** na sequência TDD → Implementação → Quality Gate 360.
+- [x] **Etapa 2 (Design Plan v2):** Concluída e documentada em `.agents/docs/design/plans/analytics-elasticidade.md`.
+- [x] **Etapa 3 (TDD First + Implementação Angular):** Concluída (`a2efd8f`, `def2125`) — `<app-info-help>`, `InfoHelpCoordinatorService`, `elasticity-help-copy.ts`, traduções `+10%`/margem unitária em `elasticity-view.ts` e linguagem cotidiana nos componentes (`207/207` Karma SUCCESS, `ng build` exit code 0).
+- [ ] **Etapa 4 (UX Review + Code Review + Karma/Build):** Em validação final pós-correções (`def2125`).
+  - Commit `a2efd8f`: feat(analytics-ui): simplifica termos e adiciona guias contextuais na elasticidade (P-095..P-105)
+  - Commit `def2125`: fix(analytics-ui): corrige contraste hover ativo, touch target e refatora info-help (P-095..P-105)
+
