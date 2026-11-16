@@ -5,7 +5,7 @@
  */
 import { Component, Injector, afterNextRender, computed, effect, inject, input, output, viewChild } from '@angular/core';
 import { CrossSellStore } from '../../services/cross-sell.store';
-import { PRODUCT_INVALID_FORMAT_MESSAGE, resolveFieldError } from '../../utils/analytics-error';
+import { resolveFieldError } from '../../utils/analytics-error';
 import {
   ResultStateAction,
   buildProductState,
@@ -14,9 +14,9 @@ import {
   productResultTitle,
   resolveResultView,
 } from '../../utils/cross-sell-view';
-import { CodeSearchFormComponent } from '../code-search-form/code-search-form.component';
 import { ErrorBannerComponent } from '../error-banner/error-banner.component';
 import { ListPagerComponent } from '../list-pager/list-pager.component';
+import { ProductCatalogExplorerComponent } from '../product-catalog-explorer/product-catalog-explorer.component';
 import { ProductRecommendationsListComponent } from '../product-recommendations-list/product-recommendations-list.component';
 import { QueryContextHeaderComponent } from '../query-context-header/query-context-header.component';
 import { RecommendationListSkeletonComponent } from '../recommendation-list-skeleton/recommendation-list-skeleton.component';
@@ -26,9 +26,9 @@ import { ResultStateComponent } from '../result-state/result-state.component';
   selector: 'app-product-cross-sell-panel',
   standalone: true,
   imports: [
-    CodeSearchFormComponent,
     ErrorBannerComponent,
     ListPagerComponent,
+    ProductCatalogExplorerComponent,
     ProductRecommendationsListComponent,
     QueryContextHeaderComponent,
     RecommendationListSkeletonComponent,
@@ -40,17 +40,23 @@ import { ResultStateComponent } from '../result-state/result-state.component';
 export class ProductCrossSellPanelComponent {
   private readonly store = inject(CrossSellStore);
   private readonly injector = inject(Injector);
-  private readonly form = viewChild.required(CodeSearchFormComponent);
   private readonly header = viewChild(QueryContextHeaderComponent);
   private focusHeadingOnResult = false;
 
-  /** SKU vindo da URL compartilhada (D-6), só para preencher o campo. */
+  /** SKU vindo da URL compartilhada (D-6), para destacar a seleção no catálogo. */
   readonly initialSku = input<string>('');
   /** Avisa a página para refletir o SKU na URL (D-6). */
   readonly productSearched = output<number>();
+  /** Avisa a página que a seleção do produto foi limpa para retornar ao catálogo. */
+  readonly productCleared = output<void>();
 
   protected readonly query = this.store.product;
-  protected readonly invalidFormatMessage = PRODUCT_INVALID_FORMAT_MESSAGE;
+  protected readonly selectedSku = computed<number | null>(() => {
+    const responseSku = this.query.response()?.data.produto.codigo;
+    if (responseSku !== undefined) return responseSku;
+    const raw = this.initialSku().trim();
+    return /^[1-9]\d*$/.test(raw) ? Number(raw) : null;
+  });
   protected readonly kind = computed(() => {
     const response = this.query.response();
     return resolveResultView({
@@ -92,6 +98,11 @@ export class ProductCrossSellPanelComponent {
     this.productSearched.emit(sku);
   }
 
+  protected clearSelection(): void {
+    this.store.clearProduct?.();
+    this.productCleared.emit();
+  }
+
   protected onPageChange(page: number): void {
     this.focusHeadingOnResult = true;
     this.store.goToPage(page);
@@ -103,8 +114,8 @@ export class ProductCrossSellPanelComponent {
 
   protected onStateAction(action: ResultStateAction): void {
     const handlers: Record<ResultStateAction, () => void> = {
-      'focus-field': () => this.form().focus(),
-      'new-search': () => this.form().clearAndFocus(),
+      'focus-field': () => this.clearSelection(),
+      'new-search': () => this.clearSelection(),
       'first-page': () => this.onPageChange(1),
       retry: () => this.retry(),
     };

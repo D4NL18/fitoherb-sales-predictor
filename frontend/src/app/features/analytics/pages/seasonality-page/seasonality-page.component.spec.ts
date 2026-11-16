@@ -5,10 +5,10 @@ import { Router, provideRouter } from '@angular/router';
 import { SeasonalityPageComponent } from './seasonality-page.component';
 import {
   MonthlySeasonalityPoint,
-  SeasonalityRankingResponse,
   SeasonalityResponse,
 } from '../../models/seasonality.model';
-import { ProductSearchResponse } from '../../models/cross-sell.model';
+import { CatalogListResponse } from '../../models/cross-sell.model';
+import { catalogResponse } from '../../testing/cross-sell-test-data';
 
 function createMonthlySeries(
   overrides: Partial<Record<number, Partial<MonthlySeasonalityPoint>>> = {},
@@ -99,12 +99,14 @@ function createSeasonalityResponse(
   };
 }
 
-function createRankingResponse(
-  items: SeasonalityRankingResponse['data'] = [
+function createSeasonalCatalogResponse(): CatalogListResponse {
+  return catalogResponse([
     {
-      sku: 1042,
-      descricao: 'EXTRATO DE PROPOLIS 30ML',
+      codigo: 1042,
+      descricao: 'EXTRATO DE PRÓPOLIS 30ML',
       fornecedor: 'APIS FLORA',
+      estoque: 120,
+      precoVenda: 28.5,
       forca: 'FORTE',
       amplitude: 0.77,
       mesPico: 'Mai–Jul',
@@ -112,21 +114,46 @@ function createRankingResponse(
       faturamentoTotal: 145000,
       motivoInsuficiencia: null,
     },
-  ],
-): SeasonalityRankingResponse {
-  return {
-    data: items,
-    meta: {
-      timestamp: '2026-11-12T12:00:00Z',
-      version: '1.0.0',
-      dataReferencia: '2026-10-31',
-      page: 1,
-      limit: 15,
-      offset: 0,
-      totalItems: items.length,
-      totalPages: items.length > 0 ? 1 : 0,
+    {
+      codigo: 1001,
+      descricao: 'CHA VERDE 100G',
+      fornecedor: 'CATARINENSE',
+      estoque: 42,
+      precoVenda: 24.5,
+      forca: 'MODERADA',
+      amplitude: 0.34,
+      mesPico: 'Jan–Mar',
+      mesVale: 'Jul–Set',
+      faturamentoTotal: 210000,
+      motivoInsuficiencia: null,
     },
-  };
+    {
+      codigo: 1003,
+      descricao: 'CAMOMILA P/ CHÁ 30G',
+      fornecedor: 'CATARINENSE',
+      estoque: 0,
+      precoVenda: 12.9,
+      forca: 'INSUFICIENTE',
+      amplitude: 0,
+      mesPico: null,
+      mesVale: null,
+      faturamentoTotal: 1800,
+      motivoInsuficiencia: 'VENDA_ESPORADICA',
+    },
+    {
+      codigo: 2002,
+      descricao: 'WHEY 100% PURE GELATO 900G',
+      fornecedor: 'INTEGRALMEDICA',
+      estoque: 18,
+      precoVenda: 159.9,
+      forca: 'FRACA',
+      amplitude: 0.14,
+      mesPico: 'Out–Dez',
+      mesVale: 'Abr–Jun',
+      faturamentoTotal: 320000,
+      motivoInsuficiencia: null,
+    },
+  ]);
 }
 
 describe('SeasonalityPageComponent', () => {
@@ -147,47 +174,100 @@ describe('SeasonalityPageComponent', () => {
     httpMock.verify();
   });
 
-  function initAndFlushRanking(
-    response: SeasonalityRankingResponse = createRankingResponse(),
+  function initAndFlushCatalog(
+    response: CatalogListResponse = createSeasonalCatalogResponse(),
   ): void {
     fixture.detectChanges();
-    const req = httpMock.expectOne(
-      '/api/v1/analytics/seasonality/ranking?order=most&limit=15&offset=0',
-    );
-    req.flush(response);
+    const catalogReq = httpMock.expectOne('/api/v1/analytics/products?includeSeasonality=true');
+    catalogReq.flush(response);
     fixture.detectChanges();
   }
 
-  it('deve carregar o ranking inicial "most" e exibir empty state amigável antes da seleção de SKU', () => {
-    initAndFlushRanking();
+  it('renderiza apenas a tabela unificada do catálogo com colunas de sazonalidade (sem search-section nem rankings-section)', () => {
+    initAndFlushCatalog();
 
-    const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
-    expect(text).toContain('EXTRATO DE PROPOLIS 30ML');
-    expect(text).toContain('Selecione um produto para visualizar a curva sazonal');
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('.search-section')).toBeNull();
+    expect(el.querySelector('.rankings-section')).toBeNull();
+    expect(el.querySelector('app-product-catalog-explorer')).not.toBeNull();
 
-    const mostBtn = fixture.nativeElement.querySelector(
-      '.ranking-mode-switch button:first-child',
+    const text = el.textContent ?? '';
+    expect(text).toContain('Catálogo e Sazonalidade de Produtos');
+    expect(text).toContain('EXTRATO DE PRÓPOLIS 30ML');
+    expect(text).toContain('WHEY 100% PURE GELATO 900G');
+    expect(text).toContain('0,77x');
+    expect(text).toContain('Mai–Jul');
+    expect(text).toContain('Nov–Jan');
+    expect(text).toContain('Venda esporádica (< 6 meses)');
+
+    const groupNames = Array.from(
+      el.querySelectorAll('app-product-catalog-explorer .supplier-group-name'),
+    ).map((node) => (node.textContent ?? '').trim());
+    expect(groupNames).toEqual(['APIS FLORA', 'CATARINENSE', 'INTEGRALMEDICA']);
+  });
+
+  it('filtra por força sazonal e busca inteligente na tabela e retorna ao catálogo via botão voltar', () => {
+    initAndFlushCatalog();
+
+    const el = fixture.nativeElement as HTMLElement;
+    const strengthSelect = el.querySelector(
+      'app-product-catalog-explorer select[id$="-strength"]',
+    ) as HTMLSelectElement;
+    expect(strengthSelect).not.toBeNull();
+
+    strengthSelect.value = 'measurable';
+    strengthSelect.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+    expect(el.querySelectorAll('app-product-catalog-explorer tr.catalog-row').length).toBe(3);
+
+    const searchInput = el.querySelector(
+      'app-product-catalog-explorer input[type="search"]',
+    ) as HTMLInputElement;
+    searchInput.value = 'whey 100% gelato';
+    searchInput.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+
+    const actionBtn = el.querySelector(
+      'app-product-catalog-explorer .btn-row-action',
     ) as HTMLButtonElement;
-    expect(mostBtn.getAttribute('aria-pressed')).toBe('true');
+    expect(actionBtn).toBeTruthy();
+    expect(actionBtn.textContent?.trim()).toBe('Ver sazonalidade');
+    actionBtn.click();
+    fixture.detectChanges();
+
+    httpMock
+      .expectOne('/api/v1/analytics/seasonality/2002')
+      .flush(createSeasonalityResponse(2002, 'WHEY 100% PURE GELATO 900G'));
+    fixture.detectChanges();
+
+    expect(el.textContent).toContain('WHEY 100% PURE GELATO 900G');
+    const backBtn = el.querySelector('.product-header .btn-back-catalog') as HTMLButtonElement;
+    expect(backBtn).toBeTruthy();
+    expect(backBtn.textContent?.trim()).toBe('← Voltar para tabela de produtos');
+
+    backBtn.click();
+    fixture.detectChanges();
+
+    // O catálogo vem do cache em memória do AnalyticsService sem nova chamada HTTP
+    httpMock.expectNone('/api/v1/analytics/products?includeSeasonality=true');
+    expect(el.querySelector('app-product-catalog-explorer')).toBeTruthy();
   });
 
   it('deve renderizar correlacaoYoy como 78% sem NaN%, data de referência e aviso de baixa confiança sem ano hardcoded', () => {
-    initAndFlushRanking();
-
-    const input = fixture.nativeElement.querySelector(
-      '#seasonality-search-input',
-    ) as HTMLInputElement;
-    input.value = '1042';
-    input.dispatchEvent(new Event('input'));
-    const form = fixture.nativeElement.querySelector('form') as HTMLFormElement;
-    form.dispatchEvent(new Event('submit'));
-    fixture.detectChanges();
-
-    const req = httpMock.expectOne('/api/v1/analytics/seasonality/1042');
-    req.flush(createSeasonalityResponse(1042));
-    fixture.detectChanges();
+    initAndFlushCatalog();
 
     const el = fixture.nativeElement as HTMLElement;
+    const firstRowBtn = el.querySelector(
+      'app-product-catalog-explorer tr.catalog-row .btn-row-action',
+    ) as HTMLButtonElement;
+    firstRowBtn.click();
+    fixture.detectChanges();
+
+    httpMock
+      .expectOne('/api/v1/analytics/seasonality/1042')
+      .flush(createSeasonalityResponse(1042));
+    fixture.detectChanges();
+
     const text = el.textContent ?? '';
     expect(text).toContain('78%');
     expect(text).not.toContain('NaN%');
@@ -195,22 +275,15 @@ describe('SeasonalityPageComponent', () => {
     expect(text).toContain('Confiança Baixa (1 ano)');
     expect(text).not.toContain('(2025)');
     expect(text).not.toContain('P-107');
-
-    const activeRow = el.querySelector('tbody tr.is-selected');
-    expect(activeRow).toBeTruthy();
-    expect(activeRow?.textContent).toContain('Em análise');
   });
 
   it('deve permitir inspecionar mês no gráfico exibindo volume líquido, faturamento e desafixar mês', () => {
-    initAndFlushRanking();
+    initAndFlushCatalog();
 
-    const form = fixture.nativeElement.querySelector('form') as HTMLFormElement;
-    const input = fixture.nativeElement.querySelector(
-      '#seasonality-search-input',
-    ) as HTMLInputElement;
-    input.value = '1042';
-    input.dispatchEvent(new Event('input'));
-    form.dispatchEvent(new Event('submit'));
+    const firstRow = fixture.nativeElement.querySelector(
+      'app-product-catalog-explorer tr.catalog-row',
+    ) as HTMLTableRowElement;
+    firstRow.click();
     fixture.detectChanges();
 
     httpMock
@@ -243,7 +316,7 @@ describe('SeasonalityPageComponent', () => {
   });
 
   it('não deve marcar picos ou vales em série plana (amplitude === 0) e deve manter altura 0% para índice zero', () => {
-    initAndFlushRanking();
+    initAndFlushCatalog();
 
     const flatSeries = createMonthlySeries({
       1: { indice: 1.0 },
@@ -252,18 +325,14 @@ describe('SeasonalityPageComponent', () => {
       12: { indice: 0.0 },
     }).map((m) => (m.mes === 12 ? { ...m, indice: 0 } : { ...m, indice: 1.0 }));
 
-    const input = fixture.nativeElement.querySelector(
-      '#seasonality-search-input',
-    ) as HTMLInputElement;
-    input.value = '3001';
-    input.dispatchEvent(new Event('input'));
-    (fixture.nativeElement.querySelector('form') as HTMLFormElement).dispatchEvent(
-      new Event('submit'),
-    );
+    const firstRow = fixture.nativeElement.querySelector(
+      'app-product-catalog-explorer tr.catalog-row',
+    ) as HTMLTableRowElement;
+    firstRow.click();
     fixture.detectChanges();
 
-    httpMock.expectOne('/api/v1/analytics/seasonality/3001').flush(
-      createSeasonalityResponse(3001, 'PRODUTO ESTAVEL', {
+    httpMock.expectOne('/api/v1/analytics/seasonality/1042').flush(
+      createSeasonalityResponse(1042, 'PRODUTO ESTAVEL', {
         amplitude: 0,
         forca: 'FRACA',
         pico: { mesInicio: 1, mesFim: 12, nomePeriodo: 'Jan–Dez', indice: 1.0, confianca: 'ALTA' },
@@ -275,27 +344,26 @@ describe('SeasonalityPageComponent', () => {
 
     expect(fixture.nativeElement.querySelectorAll('.chart-bar-btn.is-peak').length).toBe(0);
     expect(fixture.nativeElement.querySelectorAll('.chart-bar-btn.is-valley').length).toBe(0);
-    expect((fixture.nativeElement as HTMLElement).textContent).toContain('Demanda uniforme ao longo dos 12 meses');
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain(
+      'Demanda uniforme ao longo dos 12 meses',
+    );
     const zeroBars = fixture.nativeElement.querySelectorAll('.bar-fill.is-zero');
     expect(zeroBars.length).toBe(1);
     expect((zeroBars[0] as HTMLElement).style.height).toBe('0%');
   });
 
   it('deve exibir estado INSUFICIENTE com explicação humana e sem código interno (P-107)', () => {
-    initAndFlushRanking();
+    initAndFlushCatalog();
 
-    const input = fixture.nativeElement.querySelector(
-      '#seasonality-search-input',
-    ) as HTMLInputElement;
-    input.value = '5010';
-    input.dispatchEvent(new Event('input'));
-    (fixture.nativeElement.querySelector('form') as HTMLFormElement).dispatchEvent(
-      new Event('submit'),
-    );
+    const rows = fixture.nativeElement.querySelectorAll(
+      'app-product-catalog-explorer tr.catalog-row',
+    ) as NodeListOf<HTMLTableRowElement>;
+    // Índice 1 é CAMOMILA P/ CHÁ 30G (SKU 1003, INSUFICIENTE)
+    rows[1].click();
     fixture.detectChanges();
 
-    httpMock.expectOne('/api/v1/analytics/seasonality/5010').flush(
-      createSeasonalityResponse(5010, 'CHA LANCAMENTO 50G', {
+    httpMock.expectOne('/api/v1/analytics/seasonality/1003').flush(
+      createSeasonalityResponse(1003, 'CAMOMILA P/ CHÁ 30G', {
         elegivel: false,
         forca: 'INSUFICIENTE',
         motivoInsuficiencia: 'VENDA_ESPORADICA',
@@ -310,43 +378,33 @@ describe('SeasonalityPageComponent', () => {
   });
 
   it('deve cancelar requisição de produto anterior (switchMap) em seleções rápidas', () => {
-    initAndFlushRanking();
+    initAndFlushCatalog();
 
-    const input = fixture.nativeElement.querySelector(
-      '#seasonality-search-input',
-    ) as HTMLInputElement;
-    const form = fixture.nativeElement.querySelector('form') as HTMLFormElement;
-
-    input.value = '1042';
-    input.dispatchEvent(new Event('input'));
-    form.dispatchEvent(new Event('submit'));
+    const comp = fixture.componentInstance as unknown as {
+      selectProductBySku: (sku: number) => void;
+    };
+    comp.selectProductBySku(1042);
     fixture.detectChanges();
     const req1 = httpMock.expectOne('/api/v1/analytics/seasonality/1042');
 
-    input.value = '2050';
-    input.dispatchEvent(new Event('input'));
-    form.dispatchEvent(new Event('submit'));
+    comp.selectProductBySku(2002);
     fixture.detectChanges();
-    const req2 = httpMock.expectOne('/api/v1/analytics/seasonality/2050');
+    const req2 = httpMock.expectOne('/api/v1/analytics/seasonality/2002');
 
     expect(req1.cancelled).toBeTrue();
-    req2.flush(createSeasonalityResponse(2050, 'CHA VERDE ORGANICO'));
+    req2.flush(createSeasonalityResponse(2002, 'CHA VERDE ORGANICO'));
     fixture.detectChanges();
 
     expect((fixture.nativeElement as HTMLElement).textContent).toContain('CHA VERDE ORGANICO');
   });
 
-  it('deve tratar erro SEA-001 (404) sem botão retry e tratar 503 com "Tentar novamente" funcional', () => {
-    initAndFlushRanking();
+  it('deve tratar erro SEA-001 (404) sem botão retry e tratar 503 com "Tentar novamente" e botão voltar à tabela', () => {
+    initAndFlushCatalog();
 
-    const input = fixture.nativeElement.querySelector(
-      '#seasonality-search-input',
-    ) as HTMLInputElement;
-    const form = fixture.nativeElement.querySelector('form') as HTMLFormElement;
-
-    input.value = '9999';
-    input.dispatchEvent(new Event('input'));
-    form.dispatchEvent(new Event('submit'));
+    const comp = fixture.componentInstance as unknown as {
+      selectProductBySku: (sku: number) => void;
+    };
+    comp.selectProductBySku(9999);
     fixture.detectChanges();
 
     httpMock
@@ -361,11 +419,16 @@ describe('SeasonalityPageComponent', () => {
     expect(banner).toBeTruthy();
     expect(banner.textContent).toContain('Produto não encontrado');
     expect(banner.querySelector('.btn-retry')).toBeNull();
+    expect(banner.querySelector('.btn-back-catalog')?.textContent).toContain(
+      '← Voltar para tabela de produtos',
+    );
 
-    // Agora dispara erro recuperável 503 e testa retry
-    input.value = '1042';
-    input.dispatchEvent(new Event('input'));
-    form.dispatchEvent(new Event('submit'));
+    // Volta à tabela e dispara novo SKU com erro recuperável 503
+    (banner.querySelector('.btn-back-catalog') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('app-product-catalog-explorer')).not.toBeNull();
+
+    comp.selectProductBySku(1042);
     fixture.detectChanges();
 
     httpMock
@@ -386,213 +449,6 @@ describe('SeasonalityPageComponent', () => {
     httpMock
       .expectOne('/api/v1/analytics/seasonality/1042')
       .flush(createSeasonalityResponse(1042));
-    fixture.detectChanges();
-
-    expect((fixture.nativeElement as HTMLElement).textContent).toContain('EXTRATO DE PROPOLIS 30ML');
-  });
-
-  it('deve validar entrada numérica inválida (decimal/zero/negativo) inline sem disparar HTTP', () => {
-    initAndFlushRanking();
-
-    const input = fixture.nativeElement.querySelector(
-      '#seasonality-search-input',
-    ) as HTMLInputElement;
-    const form = fixture.nativeElement.querySelector('form') as HTMLFormElement;
-
-    for (const invalidValue of ['1.5', '0', '-12']) {
-      input.value = invalidValue;
-      input.dispatchEvent(new Event('input'));
-      form.dispatchEvent(new Event('submit'));
-      fixture.detectChanges();
-
-      expect(input.getAttribute('aria-invalid')).toBe('true');
-      const alert = fixture.nativeElement.querySelector('#seasonality-search-error');
-      expect(alert?.textContent).toContain('SKU numérico inteiro e positivo');
-      httpMock.expectNone('/api/v1/analytics/seasonality/' + invalidValue);
-    }
-  });
-
-  it('deve aplicar debounce, cancelar busca em voo via switchMap e navegar o combobox por teclado', fakeAsync(() => {
-    initAndFlushRanking();
-
-    const input = fixture.nativeElement.querySelector(
-      '#seasonality-search-input',
-    ) as HTMLInputElement;
-    expect(input.getAttribute('role')).toBe('combobox');
-    expect(input.getAttribute('aria-autocomplete')).toBe('list');
-    expect(input.getAttribute('aria-expanded')).toBe('false');
-
-    // Menos que 2 chars não busca
-    input.value = 'p';
-    input.dispatchEvent(new Event('input'));
-    tick(350);
-    httpMock.expectNone((r) => r.url.includes('/products/search'));
-
-    // Busca "pr" e dispara HTTP após 300ms
-    input.value = 'pr';
-    input.dispatchEvent(new Event('input'));
-    tick(300);
-    fixture.detectChanges();
-
-    const reqPr = httpMock.expectOne(
-      '/api/v1/analytics/products/search?q=pr&limit=10&offset=0',
-    );
-
-    // Usuário digita "pro" antes de "pr" responder -> após 300ms cancela "pr"
-    input.value = 'pro';
-    input.dispatchEvent(new Event('input'));
-    tick(300);
-    fixture.detectChanges();
-
-    expect(reqPr.cancelled).toBeTrue();
-
-    const reqPro = httpMock.expectOne(
-      '/api/v1/analytics/products/search?q=pro&limit=10&offset=0',
-    );
-    const searchPayload: ProductSearchResponse = {
-      data: [
-        { codigo: 1042, descricao: 'EXTRATO DE PROPOLIS 30ML', fornecedor: 'APIS FLORA' },
-        { codigo: 1088, descricao: 'SPRAY DE PROPOLIS MEL', fornecedor: 'APIS FLORA' },
-      ],
-      meta: {
-        timestamp: '2026-11-12T12:00:00Z',
-        version: '1.0.0',
-        dataReferencia: '2026-10-31',
-        page: 1,
-        limit: 10,
-        offset: 0,
-        totalItems: 2,
-        totalPages: 1,
-      },
-    };
-    reqPro.flush(searchPayload);
-    fixture.detectChanges();
-
-    expect(input.getAttribute('aria-expanded')).toBe('true');
-    expect(fixture.nativeElement.textContent).toContain('2 produtos encontrados para "pro"');
-
-    // Navegação por teclado: ArrowDown -> 0, End -> 1, ArrowUp -> 0, Enter -> seleciona 1042
-    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
-    fixture.detectChanges();
-    expect(input.getAttribute('aria-activedescendant')).toBe('seasonality-option-0');
-
-    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'End' }));
-    fixture.detectChanges();
-    expect(input.getAttribute('aria-activedescendant')).toBe('seasonality-option-1');
-
-    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp' }));
-    fixture.detectChanges();
-    expect(input.getAttribute('aria-activedescendant')).toBe('seasonality-option-0');
-
-    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
-    fixture.detectChanges();
-
-    const reqProduct = httpMock.expectOne('/api/v1/analytics/seasonality/1042');
-    reqProduct.flush(createSeasonalityResponse(1042));
-    fixture.detectChanges();
-
-    expect(input.value).toBe('1042 - EXTRATO DE PROPOLIS 30ML');
-    expect(input.getAttribute('aria-expanded')).toBe('false');
-
-    // Re-submeter "1042 - EXTRATO DE PROPOLIS 30ML" pelo botão Buscar extrai 1042
-    const form = fixture.nativeElement.querySelector('form') as HTMLFormElement;
-    form.dispatchEvent(new Event('submit'));
-    fixture.detectChanges();
-    httpMock
-      .expectOne('/api/v1/analytics/seasonality/1042')
-      .flush(createSeasonalityResponse(1042));
-    fixture.detectChanges();
-  }));
-
-  it('deve fechar sugestões com Escape e clique fora, e anunciar lista vazia no combobox', fakeAsync(() => {
-    initAndFlushRanking();
-
-    const input = fixture.nativeElement.querySelector(
-      '#seasonality-search-input',
-    ) as HTMLInputElement;
-
-    input.value = 'inexistente';
-    input.dispatchEvent(new Event('input'));
-    tick(300);
-    fixture.detectChanges();
-
-    const req = httpMock.expectOne(
-      '/api/v1/analytics/products/search?q=inexistente&limit=10&offset=0',
-    );
-    req.flush({
-      data: [],
-      meta: {
-        timestamp: '2026-11-12T12:00:00Z',
-        version: '1.0.0',
-        dataReferencia: '2026-10-31',
-        page: 1,
-        limit: 10,
-        offset: 0,
-        totalItems: 0,
-        totalPages: 0,
-      },
-    });
-    fixture.detectChanges();
-
-    expect(input.getAttribute('aria-expanded')).toBe('true');
-    expect(fixture.nativeElement.textContent).toContain('Nenhum produto encontrado para "inexistente"');
-
-    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
-    fixture.detectChanges();
-    expect(input.getAttribute('aria-expanded')).toBe('false');
-
-    // Clique no botão limpar zera a busca
-    const clearBtn = fixture.nativeElement.querySelector('.btn-clear') as HTMLButtonElement;
-    expect(clearBtn).toBeTruthy();
-    clearBtn.click();
-    fixture.detectChanges();
-    expect(input.value).toBe('');
-  }));
-
-  it('deve alternar ordenação do ranking com aria-pressed e ajustar colspan da tabela vazia', () => {
-    initAndFlushRanking(createRankingResponse([]));
-
-    let emptyTd = fixture.nativeElement.querySelector('.table-empty-cell') as HTMLTableCellElement;
-    expect(emptyTd.getAttribute('colspan')).toBe('9');
-
-    const leastBtn = fixture.nativeElement.querySelector(
-      '.ranking-mode-switch button:last-child',
-    ) as HTMLButtonElement;
-    leastBtn.click();
-    fixture.detectChanges();
-
-    expect(leastBtn.getAttribute('aria-pressed')).toBe('true');
-
-    const req = httpMock.expectOne(
-      '/api/v1/analytics/seasonality/ranking?order=least&limit=15&offset=0',
-    );
-    req.flush(createRankingResponse([]));
-    fixture.detectChanges();
-
-    emptyTd = fixture.nativeElement.querySelector('.table-empty-cell') as HTMLTableCellElement;
-    expect(emptyTd.getAttribute('colspan')).toBe('7');
-  });
-
-  it('deve exibir banner de erro no ranking com retry funcional', () => {
-    fixture.detectChanges();
-    httpMock
-      .expectOne('/api/v1/analytics/seasonality/ranking?order=most&limit=15&offset=0')
-      .flush(
-        { error: { code: 'ANL-001', message: 'Cold', fields: [] } },
-        { status: 503, statusText: 'Service Unavailable' },
-      );
-    fixture.detectChanges();
-
-    const retryBtn = fixture.nativeElement.querySelector(
-      '.rankings-section .btn-retry',
-    ) as HTMLButtonElement;
-    expect(retryBtn).toBeTruthy();
-    retryBtn.click();
-    fixture.detectChanges();
-
-    httpMock
-      .expectOne('/api/v1/analytics/seasonality/ranking?order=most&limit=15&offset=0')
-      .flush(createRankingResponse());
     fixture.detectChanges();
 
     expect((fixture.nativeElement as HTMLElement).textContent).toContain('EXTRATO DE PROPOLIS 30ML');
@@ -618,17 +474,12 @@ describe('SeasonalityPageComponent com Router (?sku=)', () => {
     httpMock.verify();
   });
 
-  it('deve carregar produto automaticamente quando ?sku= estiver presente na URL e sincronizar nova seleção', fakeAsync(() => {
+  it('deve carregar produto automaticamente quando ?sku= estiver presente e limpar URL ao voltar para a tabela', fakeAsync(() => {
     void router.navigateByUrl('/?sku=1042');
     tick();
 
     fixture = TestBed.createComponent(SeasonalityPageComponent);
     fixture.detectChanges();
-
-    const rankingReq = httpMock.expectOne(
-      '/api/v1/analytics/seasonality/ranking?order=most&limit=15&offset=0',
-    );
-    rankingReq.flush(createRankingResponse());
 
     const productReq = httpMock.expectOne('/api/v1/analytics/seasonality/1042');
     productReq.flush(createSeasonalityResponse(1042));
@@ -637,23 +488,56 @@ describe('SeasonalityPageComponent com Router (?sku=)', () => {
 
     expect((fixture.nativeElement as HTMLElement).textContent).toContain('SKU 1042');
 
-    // Nova busca via formulário atualiza a query string ?sku=2050
-    const input = fixture.nativeElement.querySelector(
-      '#seasonality-search-input',
-    ) as HTMLInputElement;
-    const form = fixture.nativeElement.querySelector('form') as HTMLFormElement;
-    input.value = '2050';
-    input.dispatchEvent(new Event('input'));
-    form.dispatchEvent(new Event('submit'));
+    // Clicar em "← Voltar para tabela de produtos" limpa ?sku= da URL e exibe catálogo
+    const backBtn = fixture.nativeElement.querySelector(
+      '.product-header .btn-back-catalog',
+    ) as HTMLButtonElement;
+    backBtn.click();
     tick();
     fixture.detectChanges();
 
     httpMock
-      .expectOne('/api/v1/analytics/seasonality/2050')
-      .flush(createSeasonalityResponse(2050, 'CHA VERDE 2050'));
+      .expectOne('/api/v1/analytics/products?includeSeasonality=true')
+      .flush(createSeasonalCatalogResponse());
+    fixture.detectChanges();
+
+    expect(router.url).not.toContain('sku=');
+    expect(fixture.nativeElement.querySelector('app-product-catalog-explorer')).not.toBeNull();
+
+    // Selecionar outro produto na tabela atualiza a query string ?sku=2002
+    const rows = fixture.nativeElement.querySelectorAll(
+      'app-product-catalog-explorer tr.catalog-row',
+    ) as NodeListOf<HTMLTableRowElement>;
+    rows[3].click();
     tick();
     fixture.detectChanges();
 
-    expect(router.url).toContain('sku=2050');
+    httpMock
+      .expectOne('/api/v1/analytics/seasonality/2002')
+      .flush(createSeasonalityResponse(2002, 'WHEY 100% PURE GELATO 900G'));
+    tick();
+    fixture.detectChanges();
+
+    expect(router.url).toContain('sku=2002');
+  }));
+
+  it('deve exibir aviso sem chamar API de sazonalidade quando ?sku= na URL for inválido', fakeAsync(() => {
+    void router.navigateByUrl('/?sku=abc');
+    tick();
+
+    fixture = TestBed.createComponent(SeasonalityPageComponent);
+    fixture.detectChanges();
+
+    httpMock
+      .expectOne('/api/v1/analytics/products?includeSeasonality=true')
+      .flush(createSeasonalCatalogResponse());
+    tick();
+    fixture.detectChanges();
+
+    httpMock.expectNone((req) => req.url.includes('/seasonality/'));
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain(
+      'código SKU informado na URL é inválido',
+    );
+    expect(fixture.nativeElement.querySelector('app-product-catalog-explorer')).not.toBeNull();
   }));
 });

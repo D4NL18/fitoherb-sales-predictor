@@ -12,7 +12,7 @@ import {
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ActivatedRoute, Router } from '@angular/router';
-import { EMPTY, Subject, catchError, of, switchMap, tap, timer } from 'rxjs';
+import { EMPTY, Subject, catchError, switchMap, tap } from 'rxjs';
 import { SeasonalityService } from '../../services/seasonality.service';
 import {
   MonthlySeasonalityPoint,
@@ -21,26 +21,18 @@ import {
   SeasonalityConfidence,
   SeasonalityData,
   SeasonalityErrorCode,
-  SeasonalityOrder,
-  SeasonalityRankingItem,
   SeasonalityReason,
   SeasonalityStrength,
 } from '../../models/seasonality.model';
-import { AnalyticsMeta, PagedMeta } from '../../models/analytics.model';
-import { ConsultedProduct } from '../../models/cross-sell.model';
-import { ListPagerComponent } from '../../components/list-pager/list-pager.component';
+import { AnalyticsMeta } from '../../models/analytics.model';
+import { CatalogProductItem } from '../../models/cross-sell.model';
+import { ProductCatalogExplorerComponent } from '../../components/product-catalog-explorer/product-catalog-explorer.component';
 import {
   BrlPipe,
   PtDatePipe,
   PtDecimalPipe,
   PtPercentPipe,
 } from '../../pipes/pt-br-format.pipes';
-
-interface SearchRequest {
-  query: string;
-  immediate: boolean;
-  autoSelectSingle: boolean;
-}
 
 interface ProductSelectionOptions {
   scrollAndFocus?: boolean;
@@ -54,13 +46,7 @@ interface ParsedHttpError {
   retryable: boolean;
 }
 
-const SEARCH_MIN_CHARS = 2;
-const SEARCH_MAX_CHARS = 60;
-const SEARCH_DEBOUNCE_MS = 300;
-const RANKING_PAGE_SIZE = 15;
 const POSITIVE_INT_REGEX = /^[1-9]\d*$/;
-const SUGGESTION_LABEL_REGEX = /^([1-9]\d*)\s*-\s*.+$/;
-const NUMERIC_INPUT_REGEX = /^-?\d+(?:[.,]\d+)?$/;
 
 const SEASONALITY_ERROR_COPY: Record<
   SeasonalityErrorCode,
@@ -77,7 +63,7 @@ const SEASONALITY_ERROR_COPY: Record<
     retryable: false,
   },
   'SEA-003': {
-    message: 'Parâmetros de paginação ou ordenação inválidos para o ranking de sazonalidade.',
+    message: 'Base de vendas insuficiente para calcular sazonalidade dos produtos.',
     isNotFound: false,
     retryable: false,
   },
@@ -96,13 +82,10 @@ const SEASONALITY_ERROR_COPY: Record<
 @Component({
   selector: 'app-seasonality-page',
   standalone: true,
-  imports: [ListPagerComponent, PtDecimalPipe, PtPercentPipe, BrlPipe, PtDatePipe],
+  imports: [ProductCatalogExplorerComponent, PtDecimalPipe, PtPercentPipe, BrlPipe, PtDatePipe],
   templateUrl: './seasonality-page.component.html',
   styleUrl: './seasonality-page.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: {
-    '(document:click)': 'onDocumentClick($event)',
-  },
 })
 export class SeasonalityPageComponent implements OnInit {
   private readonly seasonalityService = inject(SeasonalityService);
@@ -110,36 +93,16 @@ export class SeasonalityPageComponent implements OnInit {
   private readonly router = inject(Router, { optional: true });
   private readonly route = inject(ActivatedRoute, { optional: true });
 
-  private readonly searchContainer = viewChild<ElementRef<HTMLElement>>('searchContainer');
-  private readonly searchInput = viewChild<ElementRef<HTMLInputElement>>('searchInput');
   private readonly productHeading = viewChild<ElementRef<HTMLHeadingElement>>('productHeading');
   private readonly productPanel = viewChild<ElementRef<HTMLElement>>('productPanel');
 
-  private readonly searchTrigger$ = new Subject<SearchRequest>();
   private readonly productRequest$ = new Subject<{
     sku: number;
     scrollAndFocus: boolean;
     syncUrl: boolean;
   }>();
-  private readonly rankingRequest$ = new Subject<{
-    order: SeasonalityOrder;
-    offset: number;
-  }>();
 
   private pendingFocusTimer: ReturnType<typeof setTimeout> | null = null;
-
-  protected readonly searchMinChars = SEARCH_MIN_CHARS;
-  protected readonly searchMaxChars = SEARCH_MAX_CHARS;
-  protected readonly rankingPageSize = RANKING_PAGE_SIZE;
-
-  protected readonly searchQuery = signal('');
-  protected readonly searchResults = signal<ConsultedProduct[]>([]);
-  protected readonly isSearching = signal(false);
-  protected readonly showSuggestions = signal(false);
-  protected readonly hasSearchedDropdown = signal(false);
-  protected readonly activeSuggestionIndex = signal(-1);
-  protected readonly searchValidationError = signal<string | null>(null);
-  protected readonly searchFeedbackMessage = signal('');
 
   protected readonly selectedSku = signal<number | null>(null);
   protected readonly productData = signal<SeasonalityData | null>(null);
@@ -147,43 +110,11 @@ export class SeasonalityPageComponent implements OnInit {
   protected readonly isLoadingProduct = signal(false);
   protected readonly productError = signal<string | null>(null);
   protected readonly productErrorDetail = signal<ParsedHttpError | null>(null);
-
-  protected readonly activeRankingOrder = signal<SeasonalityOrder>('most');
-  protected readonly rankingItems = signal<SeasonalityRankingItem[]>([]);
-  protected readonly rankingMeta = signal<PagedMeta | null>(null);
-  protected readonly rankingOffset = signal(0);
-  protected readonly isLoadingRanking = signal(false);
-  protected readonly rankingError = signal<string | null>(null);
+  protected readonly urlValidationError = signal<string | null>(null);
 
   protected readonly hoveredMonth = signal<number | null>(null);
   protected readonly focusedMonth = signal<number | null>(null);
   protected readonly selectedMonth = signal<number | null>(null);
-
-  protected readonly hasDropdownPanel = computed(
-    () =>
-      this.showSuggestions() &&
-      (this.searchResults().length > 0 || this.isSearching() || this.hasSearchedDropdown()),
-  );
-
-  protected readonly activeDescendantId = computed(() => {
-    const idx = this.activeSuggestionIndex();
-    if (!this.hasDropdownPanel() || idx < 0 || idx >= this.searchResults().length) {
-      return null;
-    }
-    return `seasonality-option-${idx}`;
-  });
-
-  protected readonly searchDescribedBy = computed(() => {
-    const ids = ['seasonality-search-hint'];
-    if (this.searchValidationError()) {
-      ids.unshift('seasonality-search-error');
-    }
-    return ids.join(' ');
-  });
-
-  protected readonly rankingColCount = computed(() =>
-    this.activeRankingOrder() === 'most' ? 9 : 7,
-  );
 
   protected readonly chartMaxScale = computed(() => {
     const data = this.productData();
@@ -222,62 +153,6 @@ export class SeasonalityPageComponent implements OnInit {
       }
     });
 
-    this.searchTrigger$
-      .pipe(
-        switchMap((req) => {
-          const trimmed = req.query.trim();
-          if (trimmed.length < SEARCH_MIN_CHARS || trimmed.length > SEARCH_MAX_CHARS) {
-            this.isSearching.set(false);
-            this.searchResults.set([]);
-            this.showSuggestions.set(false);
-            this.hasSearchedDropdown.set(false);
-            this.activeSuggestionIndex.set(-1);
-            this.searchFeedbackMessage.set('');
-            return EMPTY;
-          }
-
-          const wait$ = req.immediate ? of(0) : timer(SEARCH_DEBOUNCE_MS);
-          return wait$.pipe(
-            tap(() => {
-              this.isSearching.set(true);
-              this.hasSearchedDropdown.set(false);
-              this.showSuggestions.set(true);
-            }),
-            switchMap(() =>
-              this.seasonalityService.searchProducts(trimmed, { limit: 10, offset: 0 }).pipe(
-                tap((res) => {
-                  const items = res.data;
-                  this.searchResults.set(items);
-                  this.isSearching.set(false);
-                  this.hasSearchedDropdown.set(true);
-                  this.activeSuggestionIndex.set(-1);
-
-                  if (req.autoSelectSingle && items.length === 1) {
-                    this.selectSuggestion(items[0]);
-                    return;
-                  }
-
-                  this.showSuggestions.set(true);
-                  this.announceSearchResults(items.length, trimmed);
-                }),
-                catchError((err: unknown) => {
-                  const parsed = this.parseHttpError(err);
-                  this.isSearching.set(false);
-                  this.searchResults.set([]);
-                  this.hasSearchedDropdown.set(false);
-                  this.showSuggestions.set(false);
-                  this.activeSuggestionIndex.set(-1);
-                  this.searchFeedbackMessage.set(parsed.message);
-                  return EMPTY;
-                }),
-              ),
-            ),
-          );
-        }),
-        takeUntilDestroyed(this.destroyRef),
-      )
-      .subscribe();
-
     this.productRequest$
       .pipe(
         switchMap((req) =>
@@ -306,278 +181,46 @@ export class SeasonalityPageComponent implements OnInit {
         takeUntilDestroyed(this.destroyRef),
       )
       .subscribe();
-
-    this.rankingRequest$
-      .pipe(
-        switchMap((req) =>
-          this.seasonalityService
-            .getRanking(req.order, { limit: this.rankingPageSize, offset: req.offset })
-            .pipe(
-              tap((res) => {
-                this.rankingItems.set(res.data);
-                this.rankingMeta.set(res.meta);
-                this.rankingError.set(null);
-                this.isLoadingRanking.set(false);
-              }),
-              catchError((err: unknown) => {
-                const parsed = this.parseHttpError(err);
-                this.rankingError.set(parsed.message);
-                this.isLoadingRanking.set(false);
-                return EMPTY;
-              }),
-            ),
-        ),
-        takeUntilDestroyed(this.destroyRef),
-      )
-      .subscribe();
   }
 
   ngOnInit(): void {
-    this.loadRankings();
-
     this.route?.queryParamMap
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((params) => {
         const rawSku = params.get('sku')?.trim();
-        if (!rawSku) return;
+        if (!rawSku) {
+          this.urlValidationError.set(null);
+          if (this.selectedSku() !== null || this.productData() !== null || this.productError() !== null) {
+            this.clearSelectedProductState();
+          }
+          return;
+        }
 
         if (!POSITIVE_INT_REGEX.test(rawSku)) {
-          this.searchValidationError.set(
+          this.clearSelectedProductState();
+          this.urlValidationError.set(
             'O código SKU informado na URL é inválido. Utilize apenas números inteiros positivos.',
           );
           return;
         }
 
         const sku = Number(rawSku);
+        this.urlValidationError.set(null);
         if (sku !== this.selectedSku()) {
-          this.searchQuery.set(rawSku);
           this.selectProductBySku(sku, { scrollAndFocus: false, syncUrl: false });
         }
       });
   }
 
-  protected onDocumentClick(event: Event): void {
-    const container = this.searchContainer()?.nativeElement;
-    const target = event.target;
-    if (container && target instanceof Node && !container.contains(target)) {
-      this.closeSuggestions();
-    }
+  protected onCatalogProductSelect(item: CatalogProductItem): void {
+    this.urlValidationError.set(null);
+    this.selectProductBySku(item.codigo, { scrollAndFocus: true, syncUrl: true });
   }
 
-  protected onSearchFocusOut(event: FocusEvent): void {
-    const container = this.searchContainer()?.nativeElement;
-    const nextFocus = event.relatedTarget;
-    if (container && (!(nextFocus instanceof Node) || !container.contains(nextFocus))) {
-      this.closeSuggestions();
-    }
-  }
-
-  protected onSearchInput(value: string): void {
-    this.searchQuery.set(value);
-    this.searchValidationError.set(null);
-    this.activeSuggestionIndex.set(-1);
-
-    const trimmed = value.trim();
-    if (trimmed.length > SEARCH_MAX_CHARS) {
-      this.searchValidationError.set(
-        `A busca pode ter no máximo ${SEARCH_MAX_CHARS} caracteres.`,
-      );
-      this.cancelAutocomplete();
-      return;
-    }
-
-    if (trimmed.length < SEARCH_MIN_CHARS) {
-      this.cancelAutocomplete();
-      return;
-    }
-
-    this.searchTrigger$.next({
-      query: trimmed,
-      immediate: false,
-      autoSelectSingle: false,
-    });
-  }
-
-  protected onSearchKeydown(event: KeyboardEvent): void {
-    const results = this.searchResults();
-    const isDropdownOpen = this.hasDropdownPanel();
-
-    switch (event.key) {
-      case 'ArrowDown': {
-        if (results.length === 0) return;
-        event.preventDefault();
-        if (!isDropdownOpen) {
-          this.showSuggestions.set(true);
-          this.activeSuggestionIndex.set(0);
-        } else {
-          const next = (this.activeSuggestionIndex() + 1) % results.length;
-          this.activeSuggestionIndex.set(next);
-        }
-        this.scrollActiveOptionIntoView();
-        break;
-      }
-      case 'ArrowUp': {
-        if (results.length === 0) return;
-        event.preventDefault();
-        if (!isDropdownOpen) {
-          this.showSuggestions.set(true);
-          this.activeSuggestionIndex.set(results.length - 1);
-        } else {
-          const curr = this.activeSuggestionIndex();
-          const prev = curr <= 0 ? results.length - 1 : curr - 1;
-          this.activeSuggestionIndex.set(prev);
-        }
-        this.scrollActiveOptionIntoView();
-        break;
-      }
-      case 'Home': {
-        if (isDropdownOpen && results.length > 0) {
-          event.preventDefault();
-          this.activeSuggestionIndex.set(0);
-          this.scrollActiveOptionIntoView();
-        }
-        break;
-      }
-      case 'End': {
-        if (isDropdownOpen && results.length > 0) {
-          event.preventDefault();
-          this.activeSuggestionIndex.set(results.length - 1);
-          this.scrollActiveOptionIntoView();
-        }
-        break;
-      }
-      case 'Enter': {
-        event.preventDefault();
-        const activeIdx = this.activeSuggestionIndex();
-        if (this.showSuggestions() && activeIdx >= 0 && activeIdx < results.length) {
-          this.selectSuggestion(results[activeIdx]);
-          return;
-        }
-        this.submitSearch();
-        break;
-      }
-      case 'Escape': {
-        if (this.showSuggestions()) {
-          event.preventDefault();
-          this.closeSuggestions();
-        } else if (this.searchQuery().length > 0) {
-          event.preventDefault();
-          this.clearSearch();
-        }
-        break;
-      }
-    }
-  }
-
-  protected submitSearch(): void {
-    const trimmed = this.searchQuery().trim();
-    this.searchValidationError.set(null);
-
-    if (!trimmed) {
-      this.searchValidationError.set('Informe um código SKU ou nome do produto para analisar.');
-      this.focusSearchInput();
-      return;
-    }
-
-    if (trimmed.length > SEARCH_MAX_CHARS) {
-      this.searchValidationError.set(
-        `A busca pode ter no máximo ${SEARCH_MAX_CHARS} caracteres.`,
-      );
-      this.focusSearchInput();
-      return;
-    }
-
-    if (POSITIVE_INT_REGEX.test(trimmed)) {
-      this.cancelAutocomplete();
-      this.selectProductBySku(Number(trimmed), { scrollAndFocus: false, syncUrl: true });
-      return;
-    }
-
-    const labelMatch = SUGGESTION_LABEL_REGEX.exec(trimmed);
-    if (labelMatch) {
-      this.cancelAutocomplete();
-      this.selectProductBySku(Number(labelMatch[1]), { scrollAndFocus: false, syncUrl: true });
-      return;
-    }
-
-    if (NUMERIC_INPUT_REGEX.test(trimmed)) {
-      this.searchValidationError.set(
-        'Informe um código SKU numérico inteiro e positivo (ex.: 1042).',
-      );
-      this.cancelAutocomplete();
-      this.focusSearchInput();
-      return;
-    }
-
-    if (trimmed.length < SEARCH_MIN_CHARS) {
-      this.searchValidationError.set(
-        `Digite ao menos ${SEARCH_MIN_CHARS} caracteres para buscar por descrição ou informe um SKU numérico.`,
-      );
-      this.focusSearchInput();
-      return;
-    }
-
-    const results = this.searchResults();
-    const activeIdx = this.activeSuggestionIndex();
-    if (activeIdx >= 0 && activeIdx < results.length) {
-      this.selectSuggestion(results[activeIdx]);
-      return;
-    }
-    if (results.length === 1 && this.hasSearchedDropdown()) {
-      this.selectSuggestion(results[0]);
-      return;
-    }
-    if (results.length > 1 && this.hasSearchedDropdown()) {
-      this.showSuggestions.set(true);
-      this.activeSuggestionIndex.set(0);
-      this.announceSearchResults(results.length, trimmed);
-      return;
-    }
-
-    this.searchTrigger$.next({
-      query: trimmed,
-      immediate: true,
-      autoSelectSingle: true,
-    });
-  }
-
-  protected selectSuggestion(item: ConsultedProduct): void {
-    this.searchQuery.set(`${item.codigo} - ${item.descricao}`);
-    this.searchValidationError.set(null);
-    this.cancelAutocomplete();
-    this.selectProductBySku(item.codigo, { scrollAndFocus: false, syncUrl: true });
-  }
-
-  protected clearSearch(): void {
-    this.searchQuery.set('');
-    this.searchValidationError.set(null);
-    this.cancelAutocomplete();
-    this.focusSearchInput();
-  }
-
-  protected resetSearchAndProduct(): void {
-    this.searchQuery.set('');
-    this.searchValidationError.set(null);
-    this.selectedSku.set(null);
-    this.productData.set(null);
-    this.productMeta.set(null);
-    this.productError.set(null);
-    this.productErrorDetail.set(null);
-    this.clearMonthInspection();
-    this.cancelAutocomplete();
+  protected clearSelectedProduct(): void {
+    this.clearSelectedProductState();
+    this.urlValidationError.set(null);
     this.syncSkuQueryParam(null);
-    this.focusSearchInput();
-  }
-
-  protected focusSearchInput(): void {
-    this.searchInput()?.nativeElement.focus();
-  }
-
-  protected selectFirstRankedProduct(): void {
-    const first = this.rankingItems()[0];
-    if (!first) return;
-    this.searchQuery.set(`${first.sku} - ${first.descricao}`);
-    this.selectProductBySku(first.sku, { scrollAndFocus: true, syncUrl: true });
   }
 
   protected selectProductBySku(
@@ -585,7 +228,7 @@ export class SeasonalityPageComponent implements OnInit {
     options: ProductSelectionOptions = {},
   ): void {
     if (!Number.isInteger(sku) || sku <= 0) {
-      this.searchValidationError.set(
+      this.urlValidationError.set(
         'Informe um código SKU numérico inteiro e positivo (ex.: 1042).',
       );
       return;
@@ -598,7 +241,7 @@ export class SeasonalityPageComponent implements OnInit {
     this.isLoadingProduct.set(true);
     this.productError.set(null);
     this.productErrorDetail.set(null);
-    this.searchValidationError.set(null);
+    this.urlValidationError.set(null);
     this.clearMonthInspection();
 
     if (syncUrl) {
@@ -613,28 +256,6 @@ export class SeasonalityPageComponent implements OnInit {
     if (sku !== null) {
       this.selectProductBySku(sku, { scrollAndFocus: false, syncUrl: false });
     }
-  }
-
-  protected setRankingOrder(order: SeasonalityOrder): void {
-    if (this.activeRankingOrder() === order) return;
-    this.activeRankingOrder.set(order);
-    this.rankingOffset.set(0);
-    this.loadRankings();
-  }
-
-  protected onRankingPageChange(page: number): void {
-    const offset = Math.max(0, (page - 1) * this.rankingPageSize);
-    this.rankingOffset.set(offset);
-    this.loadRankings();
-  }
-
-  protected loadRankings(): void {
-    this.isLoadingRanking.set(true);
-    this.rankingError.set(null);
-    this.rankingRequest$.next({
-      order: this.activeRankingOrder(),
-      offset: this.rankingOffset(),
-    });
   }
 
   protected onBarHover(month: number | null): void {
@@ -784,34 +405,14 @@ export class SeasonalityPageComponent implements OnInit {
     return `${pt.nomeMes}: índice ${idxFormatted}x, ${state}, ${conf}. Selecione para detalhar volume e faturamento.`;
   }
 
-  private closeSuggestions(): void {
-    this.showSuggestions.set(false);
-    this.activeSuggestionIndex.set(-1);
-  }
-
-  private cancelAutocomplete(): void {
-    this.searchTrigger$.next({ query: '', immediate: true, autoSelectSingle: false });
-    this.closeSuggestions();
-    this.isSearching.set(false);
-    this.hasSearchedDropdown.set(false);
-  }
-
-  private announceSearchResults(count: number, query: string): void {
-    if (count === 0) {
-      this.searchFeedbackMessage.set(`Nenhum produto encontrado para "${query}".`);
-      return;
-    }
-    const plural = count === 1 ? 'produto encontrado' : 'produtos encontrados';
-    this.searchFeedbackMessage.set(
-      `${count} ${plural} para "${query}". Use as setas para navegar e Enter para selecionar.`,
-    );
-  }
-
-  private scrollActiveOptionIntoView(): void {
-    const id = this.activeDescendantId();
-    if (!id || typeof document === 'undefined') return;
-    const optionEl = document.getElementById(id);
-    optionEl?.scrollIntoView?.({ block: 'nearest' });
+  private clearSelectedProductState(): void {
+    this.selectedSku.set(null);
+    this.productData.set(null);
+    this.productMeta.set(null);
+    this.isLoadingProduct.set(false);
+    this.productError.set(null);
+    this.productErrorDetail.set(null);
+    this.clearMonthInspection();
   }
 
   private focusProductPanelDeferred(): void {

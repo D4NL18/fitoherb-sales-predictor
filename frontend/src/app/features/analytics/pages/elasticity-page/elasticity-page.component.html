@@ -16,32 +16,29 @@
           Teste aumentos ou descontos para ver na hora o impacto na margem unitária, no lucro bruto e na cobertura de estoque para 60 dias.
         </p>
       </div>
+
+      @if (loadState() === 'loaded' || loadState() === 'error' || loadState() === 'insufficient-data') {
+        <button type="button" class="btn-back-catalog" (click)="backToCatalog()">
+          <span aria-hidden="true">←</span>
+          <span> Voltar para lista de produtos</span>
+        </button>
+      }
     </header>
 
-    <app-code-search-form
-      label="Escolha o produto"
-      hint="Digite o código ou nome do produto e selecione na lista."
-      placeholder="Ex.: 1001 ou Chá Verde"
-      submitLabel="Analisar produto"
-      [loading]="isLoadingProduct()"
-      [fieldError]="skuFieldError()"
-      [initialValue]="skuInput()"
-      [enableProductSearch]="true"
-      [invalidFormatMessage]="invalidSkuFormatMessage"
-      (search)="onSearchSku($event)"
-    />
+    @if (skuFieldError(); as fieldErr) {
+      <p class="url-sku-error" role="alert">{{ fieldErr }}</p>
+    }
   </section>
 
   <p class="sr-only" role="status" aria-live="polite">{{ liveAnnouncement() }}</p>
 
   @switch (loadState()) {
     @case ('initial') {
-      <section class="result-panel" aria-label="Estado inicial da calculadora de elasticidade">
-        <app-result-state
-          [view]="initialState"
-          (action)="onStateAction($event)"
-        />
-      </section>
+      <app-product-catalog-explorer
+        title="Escolha um produto para simular preço"
+        actionLabel="Simular preço"
+        (productSelect)="onSearchSku($event.codigo)"
+      />
     }
 
     @case ('loading') {

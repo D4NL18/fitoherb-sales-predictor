@@ -10,6 +10,7 @@ import {
   SimulationImpactData,
 } from '../../models/elasticity.models';
 import { AnalyticsService } from '../../services/analytics.service';
+import { catalogResponse } from '../../testing/cross-sell-test-data';
 import { ElasticityPageComponent } from './elasticity-page.component';
 
 function normalizeText(value: string | null | undefined): string {
@@ -195,17 +196,16 @@ describe('ElasticityPageComponent (Calculadora Unificada v3)', () => {
     return Array.from(fixture.nativeElement.querySelectorAll(selector)) as T[];
   }
 
-  function submitSkuInput(value: string): void {
-    const input = query<HTMLInputElement>('app-code-search-form input');
-    const form = query<HTMLFormElement>('app-code-search-form form');
-    expect(input).not.toBeNull();
-    expect(form).not.toBeNull();
-
-    input!.value = value;
-    input!.dispatchEvent(new Event('input'));
+  function selectCatalogSku(sku: number): void {
+    const searchInput = query<HTMLInputElement>('app-product-catalog-explorer input[type="search"]');
+    expect(searchInput).not.toBeNull();
+    searchInput!.value = String(sku);
+    searchInput!.dispatchEvent(new Event('input'));
     fixture.detectChanges();
 
-    form!.dispatchEvent(new Event('submit'));
+    const actionBtn = query<HTMLButtonElement>('app-product-catalog-explorer .btn-row-action');
+    expect(actionBtn).not.toBeNull();
+    actionBtn!.click();
     fixture.detectChanges();
   }
 
@@ -219,6 +219,7 @@ describe('ElasticityPageComponent (Calculadora Unificada v3)', () => {
 
     analyticsSpy = jasmine.createSpyObj<AnalyticsService>('AnalyticsService', [
       'searchProducts',
+      'getCatalogProducts',
       'getProductElasticity',
       'simulatePriceChange',
     ]);
@@ -237,6 +238,7 @@ describe('ElasticityPageComponent (Calculadora Unificada v3)', () => {
       },
     };
     analyticsSpy.searchProducts.and.returnValue(of(emptySearch));
+    analyticsSpy.getCatalogProducts.and.returnValue(of(catalogResponse()));
     analyticsSpy.getProductElasticity.and.callFake((sku: number) => of(makeProductResponse(sku)));
     analyticsSpy.simulatePriceChange.and.callFake((req) =>
       of(
@@ -268,30 +270,104 @@ describe('ElasticityPageComponent (Calculadora Unificada v3)', () => {
   });
 
   describe('Estado inicial e hidratação via URL (LGPD)', () => {
-    it('renderiza estado inicial sem chamar API automaticamente quando não há ?sku=', () => {
+    it('renderiza catálogo de produtos agrupado por fornecedor sem formulário duplicado nem chamadas de elasticidade/simulação', () => {
       // Arrange & Act
       createComponent();
 
       // Assert
+      expect(analyticsSpy.getCatalogProducts).toHaveBeenCalledTimes(1);
       expect(analyticsSpy.getProductElasticity).not.toHaveBeenCalled();
       expect(analyticsSpy.simulatePriceChange).not.toHaveBeenCalled();
-      expect(normalizeText(fixture.nativeElement.textContent)).toContain(
-        'Veja como o preço afeta vendas, lucro e estoque antes de reajustar',
-      );
+      expect(query('app-code-search-form')).toBeNull();
+      expect(query('app-product-catalog-explorer')).not.toBeNull();
+      const text = normalizeText(fixture.nativeElement.textContent);
+      expect(text).toContain('Escolha um produto para simular preço');
+      expect(text).toContain('WHEY 100% PURE GELATO 900G');
     });
 
-    it('foca o campo de SKU ao clicar na ação do estado inicial', () => {
+    it('seleciona produto pela tabela do catálogo ao clicar em "Simular preço" e carrega calculadora', () => {
       // Arrange
       createComponent();
-      const actionBtn = query<HTMLButtonElement>('app-result-state button');
+      const searchInput = query<HTMLInputElement>('app-product-catalog-explorer input[type="search"]')!;
+      searchInput.value = 'whey 100% gelato';
+      searchInput.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+
+      const actionBtn = query<HTMLButtonElement>('app-product-catalog-explorer .btn-row-action');
       expect(actionBtn).not.toBeNull();
+      expect(normalizeText(actionBtn!.textContent)).toBe('Simular preço');
 
       // Act
       actionBtn!.click();
+      fixture.detectChanges();
 
       // Assert
-      const input = query<HTMLInputElement>('app-code-search-form input');
-      expect(document.activeElement).toBe(input);
+      expect(analyticsSpy.getProductElasticity).toHaveBeenCalledWith(2002, {
+        limit: DEFAULT_PAGE_LIMIT,
+        offset: 0,
+      });
+      expect(analyticsSpy.simulatePriceChange).toHaveBeenCalledWith(
+        jasmine.objectContaining({ sku: 2002 }),
+      );
+      expect(routerSpy.navigate).toHaveBeenCalledWith([], {
+        relativeTo: jasmine.anything(),
+        queryParams: { sku: '2002' },
+      });
+    });
+
+    it('volta para o catálogo ao clicar em "← Voltar para lista de produtos" nos estados loaded, insufficient-data e error', () => {
+      // Arrange — estado loaded
+      createComponent({ sku: '1001' });
+      let backBtn = query<HTMLButtonElement>('.btn-back-catalog');
+      expect(backBtn).not.toBeNull();
+      expect(normalizeText(backBtn!.textContent)).toContain('← Voltar para lista de produtos');
+
+      // Act
+      backBtn!.click();
+      fixture.detectChanges();
+
+      // Assert
+      expect(query('app-product-catalog-explorer')).not.toBeNull();
+      expect(routerSpy.navigate).toHaveBeenCalledWith([], {
+        relativeTo: jasmine.anything(),
+        queryParams: { sku: null },
+        queryParamsHandling: 'merge',
+        replaceUrl: true,
+      });
+
+      // Arrange — estado insufficient-data
+      analyticsSpy.getProductElasticity.and.returnValue(
+        throwError(() =>
+          makeHttpError(422, {
+            error: { code: 'ELA-003', message: 'insufficient', fields: [] },
+          }),
+        ),
+      );
+      selectCatalogSku(1001);
+      backBtn = query<HTMLButtonElement>('.btn-back-catalog');
+      expect(backBtn).not.toBeNull();
+
+      // Act
+      backBtn!.click();
+      fixture.detectChanges();
+
+      // Assert
+      expect(query('app-product-catalog-explorer')).not.toBeNull();
+
+      // Arrange — estado error
+      analyticsSpy.getProductElasticity.and.returnValue(
+        throwError(() => makeHttpError(500, { detail: 'Erro' })),
+      );
+      selectCatalogSku(1001);
+      backBtn = query<HTMLButtonElement>('.btn-back-catalog');
+      expect(backBtn).not.toBeNull();
+
+      // Act
+      backBtn!.click();
+      fixture.detectChanges();
+
+      // Assert
+      expect(query('app-product-catalog-explorer')).not.toBeNull();
     });
 
     it('hidrata e consulta automaticamente quando ?sku=1001 está presente na URL', () => {
@@ -309,8 +385,8 @@ describe('ElasticityPageComponent (Calculadora Unificada v3)', () => {
           priceChangePct: 5,
         }),
       );
-      const input = query<HTMLInputElement>('app-code-search-form input');
-      expect(input?.value).toBe('1001');
+      expect(query('app-elasticity-simulator-panel')).not.toBeNull();
+      expect(normalizeText(fixture.nativeElement.textContent)).toContain('SKU #1001');
     });
 
     it('rejeita ?sku= inválido na URL sem chamar a API e exibe validação inline', () => {
@@ -319,15 +395,16 @@ describe('ElasticityPageComponent (Calculadora Unificada v3)', () => {
 
       // Assert
       expect(analyticsSpy.getProductElasticity).not.toHaveBeenCalled();
-      expect(query('app-code-search-form .field-error')?.textContent).toContain('Escolha um produto da lista');
+      expect(query('.url-sku-error[role="alert"]')?.textContent).toContain('Escolha um produto da lista');
+      expect(query('app-product-catalog-explorer')).not.toBeNull();
     });
 
-    it('sincroniza somente ?sku= na URL após busca e não grava nada em Storage', () => {
+    it('sincroniza somente ?sku= na URL após seleção na tabela e não grava nada em Storage', () => {
       // Arrange
       createComponent();
 
       // Act
-      submitSkuInput('1001');
+      selectCatalogSku(1001);
 
       // Assert
       expect(routerSpy.navigate).toHaveBeenCalledWith([], {
@@ -357,63 +434,33 @@ describe('ElasticityPageComponent (Calculadora Unificada v3)', () => {
       queryParamMap$.next(convertToParamMap({}));
       fixture.detectChanges();
       expect(normalizeText(fixture.nativeElement.textContent)).toContain(
-        'Veja como o preço afeta vendas, lucro e estoque antes de reajustar',
+        'Escolha um produto para simular preço',
       );
     });
   });
 
-  describe('Validação de SKU e autocomplete por descrição', () => {
-    it('valida formato antes de consultar a API e bloqueia texto não numérico', () => {
-      // Arrange
-      createComponent();
-
-      // Act
-      submitSkuInput('cha-invalido');
-
-      // Assert
-      expect(analyticsSpy.getProductElasticity).not.toHaveBeenCalled();
-      expect(normalizeText(fixture.nativeElement.textContent)).toContain(
-        'Escolha um produto da lista ou digite o código',
-      );
+  describe('Seleção via busca inteligente na tabela do catálogo', () => {
+    it('rejeita ?sku= não positivo ou decimal na URL sem chamar a API', () => {
+      for (const invalidSku of ['0', '-5', '1.5', 'cha-invalido']) {
+        createComponent({ sku: invalidSku });
+        expect(analyticsSpy.getProductElasticity).not.toHaveBeenCalled();
+        expect(query('.url-sku-error[role="alert"]')).not.toBeNull();
+      }
     });
 
-    it('busca produtos por descrição e carrega calculadora ao selecionar sugestão', fakeAsync(() => {
+    it('busca produtos por descrição no catálogo e carrega calculadora ao clicar em "Simular preço"', () => {
       // Arrange
-      analyticsSpy.searchProducts.and.returnValue(
-        of({
-          data: [{ codigo: 1001, descricao: 'Chá Verde 500mg', fornecedor: 'Fitoherb' }],
-          meta: {
-            timestamp: '2026-11-16T12:00:00Z',
-            version: '1.0.0',
-            dataReferencia: null,
-            page: 1,
-            limit: 10,
-            offset: 0,
-            totalItems: 1,
-            totalPages: 1,
-          },
-        }),
-      );
-
       createComponent();
-      const input = query<HTMLInputElement>('app-code-search-form input')!;
-      const form = query<HTMLFormElement>('app-code-search-form form')!;
+      const searchInput = query<HTMLInputElement>('app-product-catalog-explorer input[type="search"]')!;
 
       // Act
-      input.focus();
-      input.value = 'Chá';
-      input.dispatchEvent(new Event('input'));
-      tick(350);
+      searchInput.value = 'cha verde';
+      searchInput.dispatchEvent(new Event('input'));
       fixture.detectChanges();
 
-      expect(analyticsSpy.searchProducts).toHaveBeenCalledWith('Chá', { limit: 20, offset: 0 });
-      const option = query<HTMLElement>('[role="option"]');
-      expect(option).not.toBeNull();
-      option!.click();
-      fixture.detectChanges();
-
-      expect(input.value).toBe('1001');
-      form.dispatchEvent(new Event('submit'));
+      const actionBtn = query<HTMLButtonElement>('app-product-catalog-explorer .btn-row-action');
+      expect(actionBtn).not.toBeNull();
+      actionBtn!.click();
       fixture.detectChanges();
 
       // Assert
@@ -421,7 +468,8 @@ describe('ElasticityPageComponent (Calculadora Unificada v3)', () => {
         limit: DEFAULT_PAGE_LIMIT,
         offset: 0,
       });
-    }));
+      expect(query('app-elasticity-simulator-panel')).not.toBeNull();
+    });
   });
 
   describe('Calculadora Unificada v3 (sem diagnóstico separado nem tabela de clientes)', () => {
@@ -431,7 +479,7 @@ describe('ElasticityPageComponent (Calculadora Unificada v3)', () => {
       analyticsSpy.getProductElasticity.and.returnValue(pending$.asObservable());
 
       createComponent();
-      submitSkuInput('1001');
+      selectCatalogSku(1001);
 
       expect(query('app-elasticity-skeleton [aria-busy="true"]')).not.toBeNull();
 
@@ -1120,8 +1168,10 @@ describe('ElasticityPageComponent (Calculadora Unificada v3)', () => {
       );
 
       // Act
-      submitSkuInput('3003');
-      submitSkuInput('4004');
+      queryParamMap$.next(convertToParamMap({ sku: '3003' }));
+      fixture.detectChanges();
+      queryParamMap$.next(convertToParamMap({ sku: '4004' }));
+      fixture.detectChanges();
 
       fast4004$.next(makeProductResponse(4004));
       fast4004$.complete();

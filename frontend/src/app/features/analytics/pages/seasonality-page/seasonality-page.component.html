@@ -6,134 +6,6 @@
     </p>
   </header>
 
-  <section
-    #searchContainer
-    class="search-section"
-    aria-label="Busca de produto para análise de sazonalidade"
-    (focusout)="onSearchFocusOut($event)"
-  >
-    <form class="search-form" (submit)="$event.preventDefault(); submitSearch()" novalidate>
-      <label for="seasonality-search-input" class="search-label">
-        Consultar produto por código SKU ou descrição
-      </label>
-
-      <div class="search-row">
-        <div class="search-combobox-wrap">
-          <span class="search-icon" aria-hidden="true">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="11" cy="11" r="8"></circle>
-              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-            </svg>
-          </span>
-
-          <input
-            #searchInput
-            id="seasonality-search-input"
-            type="text"
-            class="search-input"
-            autocomplete="off"
-            spellcheck="false"
-            role="combobox"
-            aria-autocomplete="list"
-            aria-haspopup="listbox"
-            [attr.aria-controls]="hasDropdownPanel() ? 'seasonality-search-listbox' : null"
-            [attr.aria-expanded]="hasDropdownPanel()"
-            [attr.aria-activedescendant]="activeDescendantId()"
-            [attr.aria-invalid]="searchValidationError() ? 'true' : null"
-            [attr.aria-describedby]="searchDescribedBy()"
-            [value]="searchQuery()"
-            placeholder="Ex.: 1042 ou Extrato de Própolis..."
-            (input)="onSearchInput(searchInput.value)"
-            (keydown)="onSearchKeydown($event)"
-          />
-
-          @if (searchQuery().length > 0) {
-            <button
-              type="button"
-              class="btn-clear"
-              aria-label="Limpar busca"
-              (click)="clearSearch()"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <line x1="18" y1="6" x2="6" y2="18"></line>
-                <line x1="6" y1="6" x2="18" y2="18"></line>
-              </svg>
-            </button>
-          }
-
-          @if (hasDropdownPanel()) {
-            <ul
-              id="seasonality-search-listbox"
-              class="suggestions-dropdown"
-              role="listbox"
-              aria-label="Produtos sugeridos"
-            >
-              @if (isSearching()) {
-                <li class="suggestion-status" role="presentation">
-                  <span class="inline-spinner" aria-hidden="true"></span>
-                  <span>Buscando produtos no catálogo...</span>
-                </li>
-              } @else {
-                @for (item of searchResults(); track item.codigo) {
-                  <li
-                    [id]="'seasonality-option-' + $index"
-                    class="suggestion-item"
-                    [class.is-active]="activeSuggestionIndex() === $index"
-                    role="option"
-                    [attr.aria-selected]="activeSuggestionIndex() === $index"
-                    (mousedown)="$event.preventDefault()"
-                    (click)="selectSuggestion(item)"
-                  >
-                    <span class="suggestion-sku tabular-nums">{{ item.codigo }}</span>
-                    <span class="suggestion-name">{{ item.descricao }}</span>
-                    <span class="suggestion-supplier">{{ item.fornecedor }}</span>
-                  </li>
-                } @empty {
-                  <li class="suggestion-empty" role="option" aria-disabled="true" aria-selected="false">
-                    Nenhum produto encontrado para "{{ searchQuery().trim() }}".
-                  </li>
-                }
-              }
-            </ul>
-          }
-        </div>
-
-        <button
-          type="submit"
-          class="btn-search"
-          [disabled]="isLoadingProduct()"
-          [attr.aria-busy]="isLoadingProduct()"
-        >
-          @if (isLoadingProduct()) {
-            <span class="button-spinner" aria-hidden="true"></span>
-            <span>Analisando...</span>
-          } @else {
-            <span>Buscar</span>
-          }
-        </button>
-      </div>
-
-      <p id="seasonality-search-hint" class="search-hint">
-        Informe um código SKU positivo para carregar direto ou digite ao menos {{ searchMinChars }} letras para pesquisar na lista.
-      </p>
-
-      @if (searchValidationError(); as valErr) {
-        <p id="seasonality-search-error" class="search-validation-error" role="alert">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="10"></circle>
-            <line x1="12" y1="8" x2="12" y2="12"></line>
-            <line x1="12" y1="16" x2="12.01" y2="16"></line>
-          </svg>
-          <span>{{ valErr }}</span>
-        </p>
-      }
-
-      <div class="sr-only" role="status" aria-live="polite" aria-atomic="true">
-        {{ searchFeedbackMessage() }}
-      </div>
-    </form>
-  </section>
-
   @if (isLoadingProduct()) {
     <div class="skeleton-panel" role="status" aria-label="Carregando diagnóstico sazonal do produto">
       <div class="skeleton-header">
@@ -184,8 +56,8 @@
             Tentar novamente
           </button>
         }
-        <button type="button" class="btn-secondary-action" (click)="resetSearchAndProduct()">
-          Limpar busca
+        <button type="button" class="btn-secondary-action btn-back-catalog" (click)="clearSelectedProduct()">
+          ← Voltar para tabela de produtos
         </button>
       </div>
     </div>
@@ -234,6 +106,13 @@
             <span class="tag-dot" aria-hidden="true"></span>
             <span>{{ getStrengthLabel(data.forca) }}</span>
           </span>
+          <button
+            type="button"
+            class="btn-secondary-action btn-back-catalog"
+            (click)="clearSelectedProduct()"
+          >
+            ← Voltar para tabela de produtos
+          </button>
         </div>
       </div>
 
@@ -251,17 +130,6 @@
             <p class="insufficient-description">
               {{ getReasonDetailedGuidance(data.motivoInsuficiencia) }}
             </p>
-            @if (rankingItems().length > 0) {
-              <div class="insufficient-actions">
-                <button
-                  type="button"
-                  class="btn-secondary-action"
-                  (click)="selectFirstRankedProduct()"
-                >
-                  Analisar produto líder do ranking
-                </button>
-              </div>
-            }
           </div>
         </div>
       } @else {
@@ -538,173 +406,30 @@
         </div>
       }
     </section>
-  } @else {
-    <div class="empty-diagnostic-card">
-      <span class="empty-illustration" aria-hidden="true">
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M3 3v18h18"></path>
-          <path d="M7 15l4-5 4 3 5-7"></path>
-        </svg>
-      </span>
-      <h3 class="empty-title">Selecione um produto para visualizar a curva sazonal</h3>
-      <p class="empty-description">
-        Busque pelo código SKU ou nome acima, ou clique em <strong>Ver Gráfico</strong> em qualquer item do ranking abaixo para investigar picos e vales mensais.
-      </p>
-      <div class="empty-actions">
-        <button type="button" class="btn-secondary-action" (click)="focusSearchInput()">
-          Buscar por SKU ou nome
-        </button>
-        @if (rankingItems().length > 0) {
-          <button type="button" class="btn-primary-action" (click)="selectFirstRankedProduct()">
-            Analisar líder do ranking
-          </button>
-        }
-      </div>
-    </div>
-    }
-  }
-
-  <section class="rankings-section" aria-labelledby="rankings-heading">
-    <div class="rankings-header">
-      <div>
-        <h3 id="rankings-heading" class="rankings-title">Ranking de Sazonalidade do Catálogo</h3>
-        <p class="rankings-subtitle">
-          Compare produtos com maior oscilação anual ou identifique itens sem histórico suficiente para predição.
-        </p>
-      </div>
-
-      <div class="ranking-mode-switch" role="group" aria-label="Ordenação do ranking">
-        <button
-          type="button"
-          class="switch-btn"
-          [class.is-active]="activeRankingOrder() === 'most'"
-          [attr.aria-pressed]="activeRankingOrder() === 'most'"
-          (click)="setRankingOrder('most')"
-        >
-          Mais sazonais
-        </button>
-        <button
-          type="button"
-          class="switch-btn"
-          [class.is-active]="activeRankingOrder() === 'least'"
-          [attr.aria-pressed]="activeRankingOrder() === 'least'"
-          (click)="setRankingOrder('least')"
-        >
-          Menos mensuráveis / Inativos
-        </button>
-      </div>
-    </div>
-
-    @if (rankingError(); as rErr) {
-      <div class="feedback-banner" role="alert">
+    } @else {
+    @if (urlValidationError(); as valErr) {
+      <div class="feedback-banner is-not-found" role="alert">
         <div class="feedback-content">
-          <span class="feedback-icon" aria-hidden="true">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-              <line x1="12" y1="9" x2="12" y2="13"></line>
-              <line x1="12" y1="17" x2="12.01" y2="17"></line>
-            </svg>
-          </span>
           <div class="feedback-text">
-            <h4 class="feedback-title">Não foi possível carregar o ranking</h4>
-            <p class="feedback-message">{{ rErr }}</p>
+            <h3 class="feedback-title">Código SKU inválido na URL</h3>
+            <p class="feedback-message">{{ valErr }}</p>
           </div>
         </div>
         <div class="feedback-actions">
-          <button type="button" class="btn-retry" (click)="loadRankings()">
-            Tentar novamente
+          <button type="button" class="btn-secondary-action" (click)="clearSelectedProduct()">
+            Limpar aviso
           </button>
         </div>
       </div>
-    } @else if (isLoadingRanking() && rankingItems().length === 0) {
-      <div class="skeleton-table" role="status" aria-label="Carregando ranking de sazonalidade">
-        @for (row of [1, 2, 3, 4, 5]; track row) {
-          <div class="skeleton-line skeleton-row"></div>
-        }
-      </div>
-    } @else {
-      <div class="table-scroll-wrap" [class.is-refreshing]="isLoadingRanking()">
-        <table class="ranking-table">
-          <caption class="sr-only">
-            {{
-              activeRankingOrder() === 'most'
-                ? 'Ranking dos produtos mais sazonais do catálogo'
-                : 'Produtos sem histórico suficiente ou pouco mensuráveis para sazonalidade'
-            }}
-          </caption>
-          <thead>
-            <tr>
-              <th scope="col">SKU</th>
-              <th scope="col">Produto</th>
-              <th scope="col">Fornecedor</th>
-              <th scope="col">Força</th>
-              @if (activeRankingOrder() === 'most') {
-                <th scope="col" class="num-col">Amplitude</th>
-                <th scope="col">Pico</th>
-                <th scope="col">Vale</th>
-              } @else {
-                <th scope="col">Motivo</th>
-              }
-              <th scope="col" class="num-col">Faturamento</th>
-              <th scope="col" class="action-col">Ação</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (item of rankingItems(); track item.sku) {
-              <tr [class.is-selected]="selectedSku() === item.sku">
-                <td class="sku-cell tabular-nums">{{ item.sku }}</td>
-                <td class="desc-cell">{{ item.descricao }}</td>
-                <td class="supplier-cell">{{ item.fornecedor }}</td>
-                <td>
-                  <span class="tag" [class]="getStrengthTagClass(item.forca)">
-                    <span class="tag-dot" aria-hidden="true"></span>
-                    <span>{{ item.forca }}</span>
-                  </span>
-                </td>
-                @if (activeRankingOrder() === 'most') {
-                  <td class="num-cell tabular-nums">
-                    <strong>{{ item.amplitude | ptDecimal:2 }}x</strong>
-                  </td>
-                  <td class="period-cell">{{ item.mesPico }}</td>
-                  <td class="period-cell">{{ item.mesVale }}</td>
-                } @else {
-                  <td class="reason-cell">{{ getReasonText(item.motivoInsuficiencia) }}</td>
-                }
-                <td class="num-cell tabular-nums">{{ item.faturamentoTotal | brl }}</td>
-                <td class="action-col">
-                  <button
-                    type="button"
-                    class="btn-view-chart"
-                    [class.is-current]="selectedSku() === item.sku"
-                    [attr.aria-label]="'Ver gráfico sazonal do produto ' + item.sku + ' ' + item.descricao"
-                    (click)="selectProductBySku(item.sku, { scrollAndFocus: true, syncUrl: true })"
-                  >
-                    {{ selectedSku() === item.sku ? 'Em análise' : 'Ver Gráfico' }}
-                  </button>
-                </td>
-              </tr>
-            } @empty {
-              <tr>
-                <td [attr.colspan]="rankingColCount()" class="table-empty-cell">
-                  Nenhum produto encontrado para este filtro no momento.
-                </td>
-              </tr>
-            }
-          </tbody>
-        </table>
-      </div>
-
-      @if (rankingMeta(); as meta) {
-        <app-list-pager
-          [page]="meta.page"
-          [totalPages]="meta.totalPages"
-          [totalItems]="meta.totalItems"
-          [offset]="meta.offset"
-          [itemCount]="rankingItems().length"
-          [disabled]="isLoadingRanking()"
-          (pageChange)="onRankingPageChange($event)"
-        />
-      }
     }
-  </section>
+
+    <app-product-catalog-explorer
+      [showSeasonality]="true"
+      title="Catálogo e Sazonalidade de Produtos"
+      actionLabel="Ver sazonalidade"
+      [selectedSku]="selectedSku()"
+      (productSelect)="onCatalogProductSelect($event)"
+    />
+    }
+  }
 </section>
