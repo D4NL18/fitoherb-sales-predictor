@@ -13,6 +13,9 @@ export interface ProductHeader {
   currentPrice: number;
   costPrice: number;
   stock: number;
+  isCostEstimated?: boolean;
+  recentVolume60d?: number;
+  stockTargetDays?: number;
 }
 
 export interface ProductElasticityMetrics {
@@ -82,6 +85,7 @@ export interface ElasticitySimulationRequest {
   sku: number;
   customerCode?: number | null;
   priceChangePct: number;
+  costPrice?: number | null;
 }
 
 export interface SimulationImpactData {
@@ -103,6 +107,22 @@ export interface SimulationImpactData {
   marginChangePct: number;
   marginChangeAbs: number;
   recommendation: string;
+  costPrice?: number;
+  isCostEstimated?: boolean;
+  isCostOverride?: boolean;
+  stock?: number;
+  stockTargetDays?: number;
+  currentUnitMargin?: number;
+  projectedUnitMargin?: number;
+  currentUnitMarginPct?: number;
+  projectedUnitMarginPct?: number;
+  unitMarginPctChangePp?: number;
+  volumeChangeUnits?: number;
+  currentDailyUnits?: number;
+  projectedDailyUnits?: number;
+  currentStockDays?: number | null;
+  projectedStockDays?: number | null;
+  stockDaysDelta?: number | null;
 }
 
 export interface ElasticitySimulationResponse {

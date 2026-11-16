@@ -1,19 +1,23 @@
 import {
+  StockCoverageStatus,
   buildProductLiveAnnouncement,
   buildSimulationLiveAnnouncement,
   computeUnitMargin,
   deltaTone,
-  filterAndSortCustomers,
   formatPriceReactionHint,
   formatPriceReactionRangeHint,
   formatSignedCurrency,
   formatSignedPercentValue,
+  formatSignedPp,
+  formatSignedStockDays,
+  formatStockDays,
   formatUnits,
   getClassificationMeta,
   getConfidenceMeta,
+  getStockCoverageStatus,
   sliderMarkLeftPct,
 } from './elasticity-view';
-import { CustomerElasticityItem, ProductElasticityDetail, SimulationImpactData } from '../models/elasticity.models';
+import { ProductElasticityDetail, SimulationImpactData } from '../models/elasticity.models';
 
 describe('elasticity-view', () => {
   it('formata moedas e percentuais com sinal em pt-BR sem gerar -0', () => {
@@ -37,34 +41,6 @@ describe('elasticity-view', () => {
     expect(sliderMarkLeftPct(0)).toBeCloseTo(33.3333, 2);
     expect(sliderMarkLeftPct(50)).toBeCloseTo(66.6667, 2);
     expect(sliderMarkLeftPct(100)).toBe(100);
-  });
-
-  it('filtra e ordena clientes sem mutar a lista original', () => {
-    const items: CustomerElasticityItem[] = [
-      {
-        customerCode: 4502,
-        ordersCount: 5,
-        totalUnits: 120,
-        empiricalElasticity: -1.1,
-        shrinkageElasticity: -1.15,
-        classification: 'ELASTICO',
-        shrinkageWeight: 0.33,
-      },
-      {
-        customerCode: 4501,
-        ordersCount: 18,
-        totalUnits: 480,
-        empiricalElasticity: -0.8,
-        shrinkageElasticity: -0.9,
-        classification: 'INELASTICO',
-        shrinkageWeight: 0.64,
-      },
-    ];
-
-    expect(filterAndSortCustomers(items, '501', null, 'desc').map((c) => c.customerCode)).toEqual([4501]);
-    expect(filterAndSortCustomers(items, '', 'ordersCount', 'asc').map((c) => c.customerCode)).toEqual([4502, 4501]);
-    expect(filterAndSortCustomers(items, '', 'ordersCount', 'desc').map((c) => c.customerCode)).toEqual([4501, 4502]);
-    expect(items.map((c) => c.customerCode)).toEqual([4502, 4501]);
   });
 
   it('gera anúncios acessíveis para produto e simulação', () => {
@@ -112,7 +88,7 @@ describe('elasticity-view', () => {
       recommendation: 'Viável.',
     };
 
-    expect(buildProductLiveAnnouncement(detail, 12)).toContain('-1,45');
+    expect(buildProductLiveAnnouncement(detail)).toContain('-1,45');
     expect(buildSimulationLiveAnnouncement(sim)).toContain('cliente 4501');
     expect(buildSimulationLiveAnnouncement(sim)).toContain('+10,0%');
   });
@@ -186,5 +162,61 @@ describe('elasticity-view', () => {
     expect(high.label).toBe('Confiança alta');
     expect(medium.label).toBe('Confiança média');
     expect(low.label).toBe('Confiança baixa (usar com cautela)');
+  });
+
+  it('classifica cobertura de estoque para meta de 60 dias e extremos sem estoque ou sem giro', () => {
+    // Arrange
+    const expectedStatuses: StockCoverageStatus[] = [
+      'empty',
+      'no-sales',
+      'critical-fast',
+      'healthy',
+      'excess',
+    ];
+
+    // Act
+    const empty = getStockCoverageStatus(0, 0, 2.5);
+    const negativeStock = getStockCoverageStatus(null, -10, 1.5);
+    const noSales = getStockCoverageStatus(null, 120, 0);
+    const fast = getStockCoverageStatus(15, 30, 2);
+    const healthy = getStockCoverageStatus(45, 90, 2);
+    const atTarget = getStockCoverageStatus(60, 120, 2);
+    const excess = getStockCoverageStatus(75, 150, 2);
+    const customTargetExcess = getStockCoverageStatus(40, 80, 2, 30);
+
+    // Assert
+    expect([empty.status, noSales.status, fast.status, healthy.status, excess.status]).toEqual(
+      expectedStatuses,
+    );
+    expect(negativeStock.status).toBe('empty');
+    expect(empty.tagClass).toBe('tag-critical');
+    expect(noSales.tagClass).toBe('tag-neutral');
+    expect(fast.tagClass).toBe('tag-warning');
+    expect(fast.label).toBe('Giro rápido ≤ 15d');
+    expect(healthy.tagClass).toBe('tag-positive');
+    expect(atTarget.status).toBe('healthy');
+    expect(excess.tagClass).toBe('tag-info');
+    expect(customTargetExcess.status).toBe('excess');
+    expect(healthy.label.length).toBeGreaterThan(0);
+  });
+
+  it('formata variação em pontos percentuais (p.p.) com sinal em pt-BR sem gerar -0', () => {
+    // Arrange & Act & Assert
+    expect(formatSignedPp(4.8)).toBe('+4,8 p.p.');
+    expect(formatSignedPp(-2.14)).toBe('-2,1 p.p.');
+    expect(formatSignedPp(0)).toBe('0,0 p.p.');
+    expect(formatSignedPp(-0.001)).toBe('0,0 p.p.');
+  });
+
+  it('formata dias de cobertura de estoque e variação comparativa vs hoje', () => {
+    // Arrange & Act & Assert
+    expect(formatStockDays(47.2)).toBe('~47 dias');
+    expect(formatStockDays(1)).toBe('~1 dia');
+    expect(formatStockDays(null)).toBe('Sem giro');
+
+    expect(formatSignedStockDays(36)).toBe('+36 dias vs hoje');
+    expect(formatSignedStockDays(-14)).toBe('-14 dias vs hoje');
+    expect(formatSignedStockDays(0)).toMatch(/^0 dias? vs hoje$/);
+    expect(['', '—']).toContain(formatSignedStockDays(null));
   });
 });

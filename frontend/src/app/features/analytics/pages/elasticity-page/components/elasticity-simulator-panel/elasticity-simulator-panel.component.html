@@ -1,204 +1,275 @@
 <section #simulatorRoot class="simulator-card" aria-labelledby="simulator-title">
-  <header class="simulator-header">
-    <div class="simulator-heading">
-      <div class="simulator-title-row">
-        <h3 id="simulator-title" class="simulator-title">Simulador de Reajuste de Preço</h3>
-        <app-info-help
-          topicLabel="Simulador de Reajuste de Preço"
-          [content]="helpCopy.priceSimulator"
-          size="md"
-          preferredAlign="start"
-        />
+  <header class="compact-product-header">
+    <div class="product-compact-identity">
+      <div class="product-top-line">
+        <span class="product-sku-badge">SKU #{{ product().code }}</span>
+        <span class="product-supplier">Fornecedor: {{ product().supplier }}</span>
       </div>
-      <p class="simulator-subtitle">
-        Mova a barra ou escolha um percentual para ver na hora o efeito nas unidades vendidas, no faturamento e no lucro.
+      <h3 id="simulator-title" class="product-description">{{ product().description }}</h3>
+      <p class="product-compact-meta">
+        <span>Estoque atual: <strong>{{ formattedStock() }} un.</strong></span>
+        <span class="meta-dot" aria-hidden="true">·</span>
+        <span>Vendas últimos 60 dias: <strong>{{ formattedRecentVolume60d() }} un.</strong></span>
       </p>
     </div>
 
-    <div class="quick-adjust-group" role="group" aria-label="Atalhos rápidos de reajuste">
-      <span class="quick-label">Testar rápido:</span>
-      @for (preset of presets; track preset) {
-        <button
-          type="button"
-          class="btn-quick"
-          [class.is-active]="priceChangePct() === preset && !localValidationError()"
-          [attr.aria-pressed]="priceChangePct() === preset && !localValidationError() ? 'true' : 'false'"
-          [disabled]="isSimulating()"
-          (click)="selectPreset(preset)"
-        >
-          {{ formatPresetLabel(preset) }}
-        </button>
-      }
+    <div class="product-compact-badges">
+      <div class="badge-with-help">
+        <span class="tag badge-elasticity" [class]="classificationMeta().tagClass">
+          @if (classificationMeta().icon === 'elastic') {
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <polyline points="22 17 13.5 8.5 8.5 13.5 2 7"></polyline>
+              <polyline points="16 17 22 17 22 11"></polyline>
+            </svg>
+          } @else {
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+              <polyline points="9 12 11 14 15 10"></polyline>
+            </svg>
+          }
+          <span>{{ classificationMeta().label }}</span>
+        </span>
+        <app-info-help
+          topicLabel="Classificação de sensibilidade"
+          [content]="helpCopy.classificationBadge"
+          size="sm"
+          preferredAlign="end"
+        />
+      </div>
+
+      <span class="tag badge-confidence" [class]="confidenceMeta().tagClass">
+        @switch (confidenceMeta().icon) {
+          @case ('high') {
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="9"></circle>
+              <polyline points="8.5 12.5 11 15 16 9.5"></polyline>
+            </svg>
+          }
+          @case ('medium') {
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="9"></circle>
+              <line x1="12" y1="8" x2="12" y2="12"></line>
+              <line x1="12" y1="16" x2="12.01" y2="16"></line>
+            </svg>
+          }
+          @default {
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path>
+              <line x1="12" y1="9" x2="12" y2="13"></line>
+              <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
+          }
+        }
+        <span>{{ confidenceMeta().label }}</span>
+      </span>
+
+      <span class="stats-help-pill">
+        <span class="stats-help-label">Ver detalhes estatísticos</span>
+        <app-info-help
+          topicLabel="Ver detalhes estatísticos"
+          [content]="technicalSummaryHelp()"
+          size="sm"
+          preferredAlign="end"
+        />
+      </span>
     </div>
   </header>
 
-  @if (selectedCustomerCode(); as customerCode) {
-    <div class="customer-scope-card" aria-live="polite">
-      <div class="customer-scope-top">
-        <div class="customer-scope-identity">
-          <span class="customer-scope-badge">Cliente #{{ customerCode }}</span>
-          <h4 #customerFocusTarget tabindex="-1" class="customer-scope-title">
-            Simulação personalizada para este cliente
-          </h4>
-        </div>
-        <button
-          type="button"
-          class="btn-clear-customer"
-          [attr.aria-label]="'Remover cliente #' + customerCode + ' e voltar para visão geral do produto'"
-          [disabled]="isSimulating()"
-          (click)="clearCustomer.emit()"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
-            stroke-linecap="round" aria-hidden="true">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg>
-          <span>Voltar para visão geral do produto</span>
-        </button>
-      </div>
-
-      @if (isCustomerLoading()) {
-        <p class="customer-scope-loading" role="status">Calculando reação individual do cliente…</p>
-      } @else {
-        @if (customerError(); as cErr) {
-          <p class="customer-scope-error" role="alert">{{ cErr }}</p>
-        } @else {
-          @if (customerDetail(); as detail) {
-            <div class="customer-detail-row">
-              <div class="customer-detail-tags">
-                @if (customerClassMeta(); as clsMeta) {
-                  <span class="tag" [class]="clsMeta.tagClass">{{ clsMeta.label }}</span>
-                }
-                @if (customerConfidenceMeta(); as confMeta) {
-                  <span class="tag" [class]="confMeta.tagClass">{{ confMeta.label }}</span>
-                }
-              </div>
-
-              <dl class="customer-shrinkage-stats">
-                <div class="shrinkage-stat">
-                  <dt class="dt-with-help">
-                    <span>Média geral do produto</span>
-                    <app-info-help
-                      topicLabel="Média geral do produto"
-                      [content]="helpCopy.productBaselineElasticity"
-                      size="sm"
-                      preferredAlign="start"
-                    />
-                  </dt>
-                  <dd>{{ detail.productElasticity | ptDecimal:2 }}</dd>
-                </div>
-                <div class="shrinkage-stat">
-                  <dt class="dt-with-help">
-                    <span>Reação própria do cliente</span>
-                    <app-info-help
-                      topicLabel="Reação própria do cliente"
-                      [content]="helpCopy.customerEmpiricalElasticity"
-                      size="sm"
-                      preferredAlign="center"
-                    />
-                  </dt>
-                  <dd>{{ detail.customerEmpiricalElasticity | ptDecimal:2 }}</dd>
-                </div>
-                <div class="shrinkage-stat shrinkage-stat-highlight">
-                  <dt class="dt-with-help">
-                    <span>Sensibilidade usada na simulação</span>
-                    <app-info-help
-                      topicLabel="Sensibilidade usada na simulação"
-                      [content]="helpCopy.shrinkageElasticity"
-                      size="sm"
-                      preferredAlign="center"
-                    />
-                  </dt>
-                  <dd>
-                    <span class="shrinkage-sub">Média ajustada (Shrinkage)</span>
-                    {{ detail.customerElasticity | ptDecimal:2 }}
-                  </dd>
-                </div>
-                <div class="shrinkage-stat">
-                  <dt class="dt-with-help">
-                    <span>Peso do histórico dele ({{ detail.ordersCount | ptDecimal }} pedidos)</span>
-                    <app-info-help
-                      topicLabel="Peso do histórico do cliente"
-                      [content]="helpCopy.shrinkageWeight"
-                      size="sm"
-                      preferredAlign="end"
-                    />
-                  </dt>
-                  <dd>{{ detail.shrinkageWeight | ptPercent:0 }} · {{ formatQty(detail.totalUnits) }} un.</dd>
-                </div>
-              </dl>
-            </div>
-            <p class="customer-insight">{{ detail.insightMessage }}</p>
-          }
-        }
-      }
+  @if (elasticity().fallbackApplied) {
+    <div class="contextual-notice notice-warning" role="note">
+      <svg class="notice-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path>
+        <line x1="12" y1="9" x2="12" y2="13"></line>
+        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+      </svg>
+      <p class="notice-text">
+        <strong>Estimativa padrão de segurança (-1,20):</strong> como este produto quase não mudou de preço no passado
+        (ou teve poucos meses de venda), não foi possível medir a reação real dos clientes. Aplicamos uma referência
+        conservadora de mercado (-1,20) para evitar simulações irreais.
+      </p>
+    </div>
+  } @else if (!elasticity().isReliable) {
+    <div class="contextual-notice notice-warning" role="note">
+      <svg class="notice-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path>
+        <line x1="12" y1="9" x2="12" y2="13"></line>
+        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+      </svg>
+      <p class="notice-text">
+        <strong>Previsão com baixa precisão:</strong> as vendas passadas variaram por outros motivos além do preço.
+        Use os resultados abaixo como ponto de partida junto com a visão comercial.
+      </p>
     </div>
   }
 
-  <div class="slider-control-row" [class.has-invalid]="localValidationError() !== null">
-    <div class="slider-header-inline">
-      <label for="price-slider" class="slider-label">Quanto você quer alterar no preço?</label>
-      <span class="slider-current-badge">{{ formatSignedPct(priceChangePct()) }}</span>
+  @if (recentVolume60d() <= 0) {
+    <div class="contextual-notice notice-info" role="note">
+      <svg class="notice-icon notice-icon-info" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="9"></circle>
+        <line x1="12" y1="16" x2="12" y2="12"></line>
+        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+      </svg>
+      <p class="notice-text">
+        <strong>Sem vendas nos últimos 60 dias:</strong> não há giro líquido recente para estimar dias de estoque
+        (exibido como <strong>—</strong>), mas os cálculos de preço e margem unitária continuam ativos.
+      </p>
+    </div>
+  }
+
+  <div class="controls-panel" [class.has-invalid]="localValidationError() !== null || costValidationError() !== null">
+    <div class="quick-adjust-bar">
+      <div class="quick-adjust-group" role="group" aria-label="Atalhos rápidos de reajuste de preço">
+        <span class="quick-label">Testar rápido:</span>
+        @for (preset of presets; track preset) {
+          <button
+            type="button"
+            class="btn-quick"
+            [class.is-active]="priceChangePct() === preset && !localValidationError()"
+            [attr.aria-pressed]="priceChangePct() === preset && !localValidationError() ? 'true' : 'false'"
+            [disabled]="isSimulating()"
+            (click)="selectPreset(preset)"
+          >
+            {{ formatPresetLabel(preset) }}
+          </button>
+        }
+      </div>
+      <span class="baseline-cycle-note">
+        Base: vendas líquidas 60d · Meta estoque: {{ stockTargetDays() }} dias
+      </span>
     </div>
 
-    <div class="slider-controls-flex">
-      <div class="slider-wrapper">
-        <input
-          id="price-slider"
-          type="range"
-          [min]="minPct"
-          [max]="maxPct"
-          step="1"
-          class="price-slider"
-          [value]="priceChangePct()"
-          (input)="onSliderInput($event)"
-          [attr.aria-valuemin]="minPct"
-          [attr.aria-valuemax]="maxPct"
-          [attr.aria-valuenow]="priceChangePct()"
-          [attr.aria-valuetext]="sliderValueText()"
-        />
-        <div class="slider-marks" aria-hidden="true">
-          @for (mark of scaleMarks; track mark.value) {
-            <span
-              class="slider-mark"
-              [class.mark-zero]="mark.value === 0"
-              [class.mark-align-start]="mark.align === 'start'"
-              [class.mark-align-center]="mark.align === 'center'"
-              [class.mark-align-end]="mark.align === 'end'"
-              [style.left.%]="mark.leftPct"
+    <div class="premises-grid">
+      <div class="price-control-block">
+        <div class="control-header-inline">
+          <label for="price-slider" class="control-label">Quanto você quer alterar no preço?</label>
+          <span class="slider-current-badge">{{ formatSignedPct(priceChangePct()) }}</span>
+        </div>
+
+        <div class="slider-controls-flex">
+          <div class="slider-wrapper">
+            <input
+              id="price-slider"
+              type="range"
+              [min]="minPct"
+              [max]="maxPct"
+              step="1"
+              class="price-slider"
+              [value]="priceChangePct()"
+              (input)="onSliderInput($event)"
+              [attr.aria-valuemin]="minPct"
+              [attr.aria-valuemax]="maxPct"
+              [attr.aria-valuenow]="priceChangePct()"
+              [attr.aria-valuetext]="sliderValueText()"
+            />
+            <div class="slider-marks" aria-hidden="true">
+              @for (mark of scaleMarks; track mark.value) {
+                <span
+                  class="slider-mark"
+                  [class.mark-zero]="mark.value === 0"
+                  [class.mark-align-start]="mark.align === 'start'"
+                  [class.mark-align-center]="mark.align === 'center'"
+                  [class.mark-align-end]="mark.align === 'end'"
+                  [style.left.%]="mark.leftPct"
+                >
+                  {{ mark.label }}
+                </span>
+              }
+            </div>
+            <div class="slider-legend" aria-hidden="true">
+              <span>Desconto</span>
+              <span>Preço atual</span>
+              <span>Aumento</span>
+            </div>
+          </div>
+
+          <div class="slider-input-group">
+            <label for="price-percent-input" class="sr-only">Percentual exato de alteração de preço</label>
+            <input
+              id="price-percent-input"
+              type="number"
+              class="slider-number-input"
+              [value]="inputText()"
+              (input)="onNumberInput($event)"
+              (change)="onNumberCommit()"
+              (keyup.enter)="onNumberCommit()"
+              [min]="minPct"
+              [max]="maxPct"
+              step="0.5"
+              [attr.aria-invalid]="localValidationError() !== null ? 'true' : null"
+              [attr.aria-describedby]="pctOrApiError() !== null ? 'sim-validation-error' : null"
+            />
+            <span class="percent-symbol" aria-hidden="true">%</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="cost-control-block">
+        <div class="control-header-inline">
+          <div class="label-with-help">
+            <label for="cost-price-input" class="control-label">Custo unitário (R$)</label>
+            <app-info-help
+              topicLabel="Custo unitário"
+              [content]="helpCopy.unitCostInput"
+              size="sm"
+              preferredAlign="end"
+            />
+          </div>
+          <span class="cost-origin-badge" [class]="'origin-' + costOriginTone()">
+            {{ costOriginLabel() }}
+          </span>
+        </div>
+
+        <div class="cost-input-row">
+          <div class="cost-field-group" [class.has-invalid]="costValidationError() !== null">
+            <span class="currency-prefix" aria-hidden="true">R$</span>
+            <input
+              id="cost-price-input"
+              type="number"
+              min="0"
+              step="0.01"
+              class="cost-number-input"
+              [value]="costInputText()"
+              (input)="onCostInput($event)"
+              [attr.aria-invalid]="costValidationError() !== null ? 'true' : null"
+              [attr.aria-describedby]="costValidationError() !== null ? 'cost-validation-error' : null"
+            />
+          </div>
+
+          @if (costValidationError(); as costErr) {
+            <div id="cost-validation-error" class="simulation-error" role="alert">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="8" x2="12" y2="12"></line>
+                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+              </svg>
+              <span>{{ costErr }}</span>
+            </div>
+          }
+
+          @if (isCostOverrideActive()) {
+            <button
+              type="button"
+              class="btn-reset-cost"
+              [disabled]="isSimulating()"
+              (click)="onResetCostClick()"
             >
-              {{ mark.label }}
-            </span>
+              Restaurar custo do catálogo ({{ product().costPrice | brl }})
+            </button>
           }
         </div>
-        <div class="slider-legend" aria-hidden="true">
-          <span>Desconto</span>
-          <span>Preço atual</span>
-          <span>Aumento</span>
-        </div>
-      </div>
-
-      <div class="slider-input-group">
-        <label for="price-percent-input" class="sr-only">Percentual exato de alteração de preço</label>
-        <input
-          id="price-percent-input"
-          type="number"
-          class="slider-number-input"
-          [value]="inputText()"
-          (input)="onNumberInput($event)"
-          (change)="onNumberCommit()"
-          (keyup.enter)="onNumberCommit()"
-          [min]="minPct"
-          [max]="maxPct"
-          step="0.5"
-          [attr.aria-invalid]="localValidationError() !== null ? 'true' : null"
-          [attr.aria-describedby]="displayedError() !== null ? 'sim-validation-error' : null"
-        />
-        <span class="percent-symbol" aria-hidden="true">%</span>
       </div>
     </div>
 
-    @if (displayedError(); as errorMsg) {
+    @if (pctOrApiError(); as errorMsg) {
       <div id="sim-validation-error" class="simulation-error" role="alert">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -207,7 +278,7 @@
           <line x1="12" y1="16" x2="12.01" y2="16"></line>
         </svg>
         <span>{{ errorMsg }}</span>
-        @if (simulationError() && !localValidationError()) {
+        @if (hasInlineApiError()) {
           <button type="button" class="btn-retry-inline" (click)="retrySimulation.emit()">Tentar novamente</button>
         }
       </div>
@@ -224,6 +295,9 @@
         <span class="summary-chip summary-chip-accent">
           Preço projetado: <strong>{{ sim.projectedPrice | brl }}</strong>
           ({{ formatSignedPct(sim.priceChangePct) }})
+        </span>
+        <span class="summary-chip">
+          Custo aplicado: <strong>{{ effectiveCost() | brl }}</strong> ({{ costSourceShortLabel() }})
         </span>
         <span class="summary-chip summary-chip-with-help">
           <span>Sensibilidade aplicada: <strong>{{ sim.appliedElasticity | ptDecimal:2 }}</strong></span>
@@ -245,24 +319,26 @@
     </div>
 
     <div class="simulation-results-grid" [class.is-updating]="isSimulating()" [attr.aria-busy]="isSimulating() ? 'true' : null">
-      <article class="sim-card">
+      <!-- Card 1: Margem Unitária -->
+      <article class="sim-card sim-card-unit-margin">
         <div class="sim-card-header">
           <div class="sim-card-heading">
-            <span class="sim-card-title">Quantidade prevista</span>
-            <span class="sim-card-sub">Volume projetado</span>
+            <span class="sim-card-title">Margem unitária</span>
+            <span class="sim-card-sub">Ganho por unidade vendida</span>
           </div>
           <app-info-help
-            topicLabel="Quantidade prevista"
-            [content]="helpCopy.projectedVolume"
+            topicLabel="Margem unitária"
+            [content]="helpCopy.unitMarginCard"
             size="sm"
             preferredAlign="start"
           />
         </div>
         <div class="sim-main-val">
-          {{ formatQty(sim.projectedVolume) }} <span class="unit-label">un.</span>
+          {{ projectedUnitMargin() | brl }}
+          <span class="unit-label">/ un. ({{ formattedProjectedUnitMarginPct() }})</span>
         </div>
-        <div class="sim-delta" [class]="'tone-' + volumeTone()">
-          @switch (volumeTone()) {
+        <div class="sim-delta" [class]="'tone-' + unitMarginTone()">
+          @switch (unitMarginTone()) {
             @case ('positive') {
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -284,61 +360,26 @@
               </svg>
             }
           }
-          <span>{{ formatSignedPct(sim.volumeChangePct) }} · Atual: {{ formatQty(sim.currentVolume) }} un.</span>
+          <span>{{ formatSignedBrl(unitMarginDiff()) }}/un. ({{ formatSignedPpValue(unitMarginPctChangePp()) }})</span>
         </div>
+        <span class="sim-baseline">
+          Atual: {{ currentUnitMargin() | brl }}/un. ({{ formattedCurrentUnitMarginPct() }})
+        </span>
+        @if (projectedUnitMargin() <= 0) {
+          <p class="unit-margin-warning" role="note">Atenção: preço igual ou abaixo do custo</p>
+        }
       </article>
 
-      <article class="sim-card">
-        <div class="sim-card-header">
-          <div class="sim-card-heading">
-            <span class="sim-card-title">Faturamento previsto</span>
-            <span class="sim-card-sub">Receita bruta</span>
-          </div>
-          <app-info-help
-            topicLabel="Faturamento previsto"
-            [content]="helpCopy.projectedRevenue"
-            size="sm"
-            preferredAlign="center"
-          />
-        </div>
-        <div class="sim-main-val">{{ sim.projectedRevenue | brl }}</div>
-        <div class="sim-delta" [class]="'tone-' + revenueTone()">
-          @switch (revenueTone()) {
-            @case ('positive') {
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
-                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline>
-                <polyline points="16 7 22 7 22 13"></polyline>
-              </svg>
-            }
-            @case ('negative') {
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
-                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <polyline points="22 17 13.5 8.5 8.5 13.5 2 7"></polyline>
-                <polyline points="16 17 22 17 22 11"></polyline>
-              </svg>
-            }
-            @default {
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
-                stroke-linecap="round" aria-hidden="true">
-                <line x1="5" y1="12" x2="19" y2="12"></line>
-              </svg>
-            }
-          }
-          <span>{{ formatSignedBrl(sim.revenueChangeAbs) }} ({{ formatSignedPct(sim.revenueChangePct) }})</span>
-        </div>
-        <span class="sim-baseline">Atual: {{ sim.currentRevenue | brl }}</span>
-      </article>
-
+      <!-- Card 2: Lucro Bruto Estimado (60 dias) -->
       <article class="sim-card sim-card-highlight">
         <div class="sim-card-header">
           <div class="sim-card-heading">
-            <span class="sim-card-title">Lucro bruto estimado</span>
-            <span class="sim-card-sub">Margem de Contribuição</span>
+            <span class="sim-card-title">Lucro bruto estimado (60 dias)</span>
+            <span class="sim-card-sub">Margem de Contribuição no ciclo</span>
           </div>
           <app-info-help
-            topicLabel="Lucro bruto estimado"
-            [content]="helpCopy.projectedMargin"
+            topicLabel="Lucro bruto estimado (60 dias)"
+            [content]="helpCopy.projectedMarginCard"
             size="sm"
             preferredAlign="end"
           />
@@ -369,7 +410,177 @@
           }
           <span>{{ formatSignedBrl(sim.marginChangeAbs) }} ({{ formatSignedPct(sim.marginChangePct) }})</span>
         </div>
-        <span class="sim-baseline">Atual: {{ sim.currentMargin | brl }}</span>
+        <span class="sim-baseline">Hoje (0%): {{ sim.currentMargin | brl }}</span>
+      </article>
+
+      <!-- Card 3: Unidades Vendidas & Faturamento (60 dias) -->
+      <article class="sim-card sim-card-volume-revenue">
+        <div class="sim-card-header">
+          <div class="sim-card-heading">
+            <span class="sim-card-title">Unidades Vendidas &amp; Faturamento (60 dias)</span>
+            <span class="sim-card-sub">Volume e receita bruta no ciclo</span>
+          </div>
+          <app-info-help
+            topicLabel="Unidades Vendidas e Faturamento"
+            [content]="helpCopy.projectedVolumeRevenueCard"
+            size="sm"
+            preferredAlign="start"
+          />
+        </div>
+        <div class="sim-main-val">
+          {{ formatQty(sim.projectedVolume) }} <span class="unit-label">un.</span>
+        </div>
+        <div class="sim-delta" [class]="'tone-' + volumeTone()">
+          @switch (volumeTone()) {
+            @case ('positive') {
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline>
+                <polyline points="16 7 22 7 22 13"></polyline>
+              </svg>
+            }
+            @case ('negative') {
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="22 17 13.5 8.5 8.5 13.5 2 7"></polyline>
+                <polyline points="16 17 22 17 22 11"></polyline>
+              </svg>
+            }
+            @default {
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+                stroke-linecap="round" aria-hidden="true">
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+            }
+          }
+          <span>{{ formatSignedQty(volumeChangeUnits()) }} ({{ formatSignedPct(sim.volumeChangePct) }}) · Hoje: {{ formatQty(sim.currentVolume) }} un.</span>
+        </div>
+        <span class="sim-baseline">
+          Ritmo diário: de {{ formatDaily(currentDailyUnits()) }} → {{ formatDaily(projectedDailyUnits()) }} un./dia
+        </span>
+        <div class="sim-submetric">
+          <div class="sim-submetric-row">
+            <span>Faturamento previsto: <strong>{{ sim.projectedRevenue | brl }}</strong></span>
+            <span class="sim-submetric-delta" [class]="'tone-' + revenueTone()">
+              {{ formatSignedBrl(sim.revenueChangeAbs) }} ({{ formatSignedPct(sim.revenueChangePct) }})
+            </span>
+          </div>
+          <span class="sim-baseline">Hoje (0%): {{ sim.currentRevenue | brl }}</span>
+        </div>
+      </article>
+
+      <!-- Card 4: Cobertura de Estoque (Meta: 60 dias) -->
+      <article class="sim-card sim-card-stock">
+        <div class="sim-card-header">
+          <div class="sim-card-heading">
+            <span class="sim-card-title">Cobertura de estoque (Meta: {{ stockTargetDays() }} dias)</span>
+            <span class="sim-card-sub">Comparativo hoje (0%) vs após mudança</span>
+          </div>
+          <app-info-help
+            topicLabel="Cobertura de estoque (Meta 60 dias)"
+            [content]="helpCopy.stockCoverage60d"
+            size="sm"
+            preferredAlign="end"
+          />
+        </div>
+
+        <div class="stock-headline-row">
+          <div class="sim-main-val">
+            @if (stockValue() <= 0) {
+              0 <span class="unit-label">dias (Sem estoque)</span>
+            } @else if (projectedStockDays() === null) {
+              — <span class="unit-label">Sem vendas 60d</span>
+            } @else {
+              {{ projectedStockDaysText() }}
+            }
+          </div>
+          <span class="tag stock-status-tag" [class]="stockCoverageMeta().tagClass">
+            @switch (stockCoverageMeta().status) {
+              @case ('healthy') {
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="9"></circle>
+                  <polyline points="8.5 12.5 11 15 16 9.5"></polyline>
+                </svg>
+              }
+              @case ('excess') {
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="9"></circle>
+                  <line x1="12" y1="16" x2="12" y2="12"></line>
+                  <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                </svg>
+              }
+              @case ('critical-fast') {
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path>
+                  <line x1="12" y1="9" x2="12" y2="13"></line>
+                  <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                </svg>
+              }
+              @case ('empty') {
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="9"></circle>
+                  <line x1="15" y1="9" x2="9" y2="15"></line>
+                  <line x1="9" y1="9" x2="15" y2="15"></line>
+                </svg>
+              }
+              @default {
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="9"></circle>
+                  <line x1="8" y1="12" x2="16" y2="12"></line>
+                </svg>
+              }
+            }
+            <span>{{ stockCoverageMeta().label }}</span>
+          </span>
+        </div>
+
+        <div class="stock-comparison-row">
+          <span>Hoje (0%): <strong>{{ currentStockDaysText() }}</strong></span>
+          <span aria-hidden="true">→</span>
+          <span>Após mudança ({{ formatSignedPct(sim.priceChangePct) }}): <strong>{{ projectedStockDaysText() }}</strong></span>
+          @if (stockDaysDeltaText() !== '—') {
+            <span class="stock-delta-note">({{ stockDaysDeltaText() }})</span>
+          }
+        </div>
+
+        <div class="stock-bars-box" aria-hidden="true">
+          <div class="stock-bar-track-row">
+            <span class="stock-bar-label">Hoje (0%)</span>
+            <div class="stock-bar-track">
+              <div class="stock-bar-fill fill-current" [style.width.%]="currentStockBarPct()"></div>
+              <div class="stock-target-marker" [style.left.%]="targetStockBarPct()"></div>
+            </div>
+          </div>
+          <div class="stock-bar-track-row">
+            <span class="stock-bar-label">Proposto</span>
+            <div class="stock-bar-track">
+              <div
+                class="stock-bar-fill"
+                [class]="'fill-' + stockCoverageMeta().status"
+                [style.width.%]="projectedStockBarPct()"
+              ></div>
+              <div class="stock-target-marker" [style.left.%]="targetStockBarPct()"></div>
+            </div>
+          </div>
+          <div class="stock-bar-scale">
+            <span>0d</span>
+            <span
+              class="scale-target"
+              [style.left.%]="targetStockBarPct()"
+              [attr.title]="'Meta: ' + stockTargetDays() + ' dias'"
+            >
+              <span class="scale-target-prefix">Meta </span>{{ stockTargetDays() }}d
+            </span>
+            <span>90d+</span>
+          </div>
+        </div>
+
+        <span class="sim-baseline">Estoque atual: {{ formatQty(stockValue()) }} un.</span>
       </article>
     </div>
 

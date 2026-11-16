@@ -13,7 +13,7 @@
           />
         </div>
         <p class="intro-subtitle">
-          Veja como os compradores reagem quando o preço muda e teste cenários de aumento ou desconto antes de decidir.
+          Teste aumentos ou descontos para ver na hora o impacto na margem unitária, no lucro bruto e na cobertura de estoque para 60 dias.
         </p>
       </div>
     </header>
@@ -36,7 +36,7 @@
 
   @switch (loadState()) {
     @case ('initial') {
-      <section class="result-panel" aria-label="Estado inicial da análise de elasticidade">
+      <section class="result-panel" aria-label="Estado inicial da calculadora de elasticidade">
         <app-result-state
           [view]="initialState"
           (action)="onStateAction($event)"
@@ -70,45 +70,21 @@
 
     @case ('loaded') {
       @if (productData(); as detail) {
-        <div class="workspace-stack">
-          <app-elasticity-diagnostic-card
-            [product]="detail.product"
-            [elasticity]="detail.elasticity"
-          />
-
-          <app-elasticity-simulator-panel
-            [priceChangePct]="priceChangePct()"
-            [selectedCustomerCode]="selectedCustomerCode()"
-            [customerDetail]="customerDetail()"
-            [isCustomerLoading]="isCustomerLoading()"
-            [customerError]="customerError()"
-            [simulationResult]="simulationResult()"
-            [isSimulating]="isSimulating()"
-            [simulationError]="simulationError()"
-            (priceSliderInput)="onPriceSliderInput($event)"
-            (pricePresetSelect)="onPriceImmediateChange($event)"
-            (priceNumberCommit)="onPriceImmediateChange($event)"
-            (clearCustomer)="onClearCustomer()"
-            (retrySimulation)="onRetrySimulation()"
-          />
-
-          <app-elasticity-customers-table
-            [customers]="detail.customers"
-            [totalClients]="totalClients()"
-            [currentPage]="currentPage()"
-            [totalPages]="totalPages()"
-            [pageOffset]="pageOffset()"
-            [selectedCustomerCode]="selectedCustomerCode()"
-            [isBusy]="isLoadingPage()"
-            [customerLookupError]="customerLookupError()"
-            [pageLoadError]="pageLoadError()"
-            (selectCustomer)="onSelectCustomer($event)"
-            (lookupCustomer)="onLookupCustomer($event)"
-            (pageChange)="onPageChange($event)"
-            (retryPage)="onRetryPage()"
-            (newSearch)="onStartNewSearch()"
-          />
-        </div>
+        <app-elasticity-simulator-panel
+          [product]="detail.product"
+          [elasticity]="detail.elasticity"
+          [priceChangePct]="priceChangePct()"
+          [customCostPrice]="customCostPrice()"
+          [simulationResult]="simulationResult()"
+          [isSimulating]="isSimulating()"
+          [simulationError]="simulationError()"
+          (priceSliderInput)="onPriceSliderInput($event)"
+          (pricePresetSelect)="onPriceImmediateChange($event)"
+          (priceNumberCommit)="onPriceImmediateChange($event)"
+          (costChange)="onCostChange($event)"
+          (resetCost)="onResetCost()"
+          (retrySimulation)="onRetrySimulation()"
+        />
       }
     }
   }

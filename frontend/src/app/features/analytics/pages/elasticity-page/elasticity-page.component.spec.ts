@@ -5,9 +5,9 @@ import { BehaviorSubject, Subject, of, throwError } from 'rxjs';
 import { DEFAULT_PAGE_LIMIT } from '../../models/analytics.model';
 import { ProductSearchResponse } from '../../models/cross-sell.model';
 import {
-  CustomerElasticityResponse,
   ElasticitySimulationResponse,
   ProductElasticityResponse,
+  SimulationImpactData,
 } from '../../models/elasticity.models';
 import { AnalyticsService } from '../../services/analytics.service';
 import { ElasticityPageComponent } from './elasticity-page.component';
@@ -19,7 +19,7 @@ function normalizeText(value: string | null | undefined): string {
 function makeProductResponse(
   sku = 1001,
   overrides: Partial<ProductElasticityResponse['data']> = {},
-  metaOverrides: Partial<ProductElasticityResponse['meta']> = {},
+  productOverrides: Partial<ProductElasticityResponse['data']['product']> = {},
 ): ProductElasticityResponse {
   return {
     data: {
@@ -27,75 +27,36 @@ function makeProductResponse(
         code: sku,
         description: sku === 1001 ? 'Chá Verde 500mg' : `Produto ${sku}`,
         supplier: 'Fitoherb',
-        currentPrice: 29.9,
+        currentPrice: 30.0,
         costPrice: 15.0,
-        stock: 250,
+        stock: 150,
+        isCostEstimated: false,
+        recentVolume60d: 180,
+        stockTargetDays: 60,
+        ...productOverrides,
       },
       elasticity: {
-        coefficient: -1.42,
+        coefficient: -1.5,
         classification: 'ELASTICO',
         rSquared: 0.84,
         standardError: 0.19,
-        confidenceInterval: [-1.8, -1.04],
+        confidenceInterval: [-1.87, -1.13],
         confidenceLevel: 'ALTA',
         isReliable: true,
         observationsCount: 24,
         fallbackApplied: false,
         insightMessage: 'Demanda sensível a variações de preço.',
       },
-      customers: [
-        {
-          customerCode: 42,
-          ordersCount: 12,
-          totalUnits: 120,
-          empiricalElasticity: -1.65,
-          shrinkageElasticity: -1.5,
-          classification: 'ELASTICO',
-          shrinkageWeight: 0.72,
-        },
-        {
-          customerCode: 99,
-          ordersCount: 5,
-          totalUnits: 45,
-          empiricalElasticity: -0.55,
-          shrinkageElasticity: -0.78,
-          classification: 'INELASTICO',
-          shrinkageWeight: 0.4,
-        },
-      ],
+      customers: [],
       ...overrides,
     },
     meta: {
-      timestamp: '2026-04-15T12:00:00Z',
+      timestamp: '2026-11-16T12:00:00Z',
       version: '1.0.0',
-      totalItems: overrides.customers ? overrides.customers.length : 2,
-      totalPages: 1,
+      totalItems: 0,
+      totalPages: 0,
       limit: DEFAULT_PAGE_LIMIT,
       offset: 0,
-      ...metaOverrides,
-    },
-  };
-}
-
-function makeCustomerDetailResponse(sku = 1001, customerCode = 42): CustomerElasticityResponse {
-  return {
-    data: {
-      sku,
-      customerCode,
-      productElasticity: -1.42,
-      customerEmpiricalElasticity: -1.65,
-      customerElasticity: -1.5,
-      classification: 'ELASTICO',
-      shrinkageWeight: 0.72,
-      ordersCount: 12,
-      totalUnits: 120,
-      confidenceLevel: 'ALTA',
-      isReliable: true,
-      insightMessage: 'Cliente mais sensível que a média do produto.',
-    },
-    meta: {
-      timestamp: '2026-04-15T12:00:00Z',
-      version: '1.0.0',
     },
   };
 }
@@ -103,36 +64,100 @@ function makeCustomerDetailResponse(sku = 1001, customerCode = 42): CustomerElas
 function makeSimulationResponse(
   sku = 1001,
   priceChangePct = 5,
-  customerCode: number | null = null,
+  costPrice: number | null = null,
+  overrides: Partial<SimulationImpactData> = {},
 ): ElasticitySimulationResponse {
-  const projectedPrice = Number((29.9 * (1 + priceChangePct / 100)).toFixed(2));
-  const isDrop = priceChangePct > 0;
+  const currentPrice = 30.0;
+  const appliedCost = costPrice ?? 15.0;
+  const isCostOverride = costPrice !== null;
+  const stock = overrides.stock ?? 150;
+  const currentVolume = overrides.currentVolume ?? 180;
+  const appliedElasticity = overrides.appliedElasticity ?? -1.5;
+
+  const projectedPrice = Number((currentPrice * (1 + priceChangePct / 100)).toFixed(2));
+  const volumeChangePct = Number((appliedElasticity * priceChangePct).toFixed(2));
+  const projectedVolume = Number(
+    (currentVolume * Math.max(0, 1 + volumeChangePct / 100)).toFixed(2),
+  );
+  const volumeChangeUnits = Number((projectedVolume - currentVolume).toFixed(2));
+
+  const currentUnitMargin = Number((currentPrice - appliedCost).toFixed(2));
+  const projectedUnitMargin = Number((projectedPrice - appliedCost).toFixed(2));
+  const currentUnitMarginPct = Number(((currentUnitMargin / currentPrice) * 100).toFixed(2));
+  const projectedUnitMarginPct =
+    projectedPrice > 0 ? Number(((projectedUnitMargin / projectedPrice) * 100).toFixed(2)) : 0;
+  const unitMarginPctChangePp = Number((projectedUnitMarginPct - currentUnitMarginPct).toFixed(2));
+
+  const currentRevenue = Number((currentPrice * currentVolume).toFixed(2));
+  const projectedRevenue = Number((projectedPrice * projectedVolume).toFixed(2));
+  const revenueChangeAbs = Number((projectedRevenue - currentRevenue).toFixed(2));
+  const revenueChangePct =
+    currentRevenue > 0 ? Number(((revenueChangeAbs / currentRevenue) * 100).toFixed(2)) : 0;
+
+  const currentMargin = Number((currentUnitMargin * currentVolume).toFixed(2));
+  const projectedMargin = Number((projectedUnitMargin * projectedVolume).toFixed(2));
+  const marginChangeAbs = Number((projectedMargin - currentMargin).toFixed(2));
+  const marginChangePct =
+    Math.abs(currentMargin) > 0
+      ? Number(((marginChangeAbs / Math.abs(currentMargin)) * 100).toFixed(2))
+      : 0;
+
+  const currentDailyUnits = Number((currentVolume / 60).toFixed(3));
+  const projectedDailyUnits = Number((projectedVolume / 60).toFixed(3));
+  const currentStockDays =
+    currentDailyUnits > 0 ? Number((Math.max(0, stock) / currentDailyUnits).toFixed(1)) : null;
+  const projectedStockDays =
+    projectedDailyUnits > 0 ? Number((Math.max(0, stock) / projectedDailyUnits).toFixed(1)) : null;
+  const stockDaysDelta =
+    currentStockDays !== null && projectedStockDays !== null
+      ? Number((projectedStockDays - currentStockDays).toFixed(1))
+      : null;
+
   return {
     data: {
       sku,
-      customerCode,
-      appliedElasticity: customerCode ? -1.5 : -1.42,
+      customerCode: null,
+      appliedElasticity,
       priceChangePct,
-      currentPrice: 29.9,
+      currentPrice,
       projectedPrice,
-      currentVolume: 350,
-      projectedVolume: isDrop ? 324.6 : 350,
-      volumeChangePct: isDrop ? -7.26 : 0,
-      currentRevenue: 10465.0,
-      projectedRevenue: isDrop ? 10232.79 : 10465.0,
-      revenueChangePct: isDrop ? -2.22 : 0,
-      revenueChangeAbs: isDrop ? -232.21 : 0,
-      currentMargin: 5215.0,
-      projectedMargin: isDrop ? 5337.9 : 5215.0,
-      marginChangePct: isDrop ? 2.36 : 0,
-      marginChangeAbs: isDrop ? 122.9 : 0,
+      currentVolume,
+      projectedVolume,
+      volumeChangePct,
+      volumeChangeUnits,
+      currentRevenue,
+      projectedRevenue,
+      revenueChangePct,
+      revenueChangeAbs,
+      currentMargin,
+      projectedMargin,
+      marginChangePct,
+      marginChangeAbs,
+      costPrice: appliedCost,
+      isCostEstimated: false,
+      isCostOverride,
+      stock,
+      stockTargetDays: 60,
+      currentUnitMargin,
+      projectedUnitMargin,
+      currentUnitMarginPct,
+      projectedUnitMarginPct,
+      unitMarginPctChangePp,
+      currentDailyUnits,
+      projectedDailyUnits,
+      currentStockDays,
+      projectedStockDays,
+      stockDaysDelta,
       recommendation:
         priceChangePct === 0
-          ? 'Cenário base mantido sem alteração de preço.'
-          : 'Margem sobe com leve retração de volume.',
+          ? 'Cenário neutro com estabilidade de margem financeira.'
+          : marginChangeAbs > 0
+            ? 'Reajuste viável com expansão de margem financeira líquida.'
+            : 'Atenção: queda de volume estimada supera o ganho de preço, reduzindo a margem total.',
+      ...overrides,
     },
     meta: {
-      timestamp: '2026-04-15T12:00:00Z',
+      timestamp: '2026-11-16T12:00:00Z',
       version: '1.0.0',
     },
   };
@@ -146,7 +171,7 @@ function makeHttpError(status: number, body: unknown): HttpErrorResponse {
   });
 }
 
-describe('ElasticityPageComponent', () => {
+describe('ElasticityPageComponent (Calculadora Unificada v3)', () => {
   let fixture: ComponentFixture<ElasticityPageComponent>;
   let analyticsSpy: jasmine.SpyObj<AnalyticsService>;
   let queryParamMap$: BehaviorSubject<ParamMap>;
@@ -192,14 +217,13 @@ describe('ElasticityPageComponent', () => {
     analyticsSpy = jasmine.createSpyObj<AnalyticsService>('AnalyticsService', [
       'searchProducts',
       'getProductElasticity',
-      'getCustomerElasticity',
       'simulatePriceChange',
     ]);
 
     const emptySearch: ProductSearchResponse = {
       data: [],
       meta: {
-        timestamp: '2026-04-15T12:00:00Z',
+        timestamp: '2026-11-16T12:00:00Z',
         version: '1.0.0',
         dataReferencia: null,
         page: 1,
@@ -211,11 +235,8 @@ describe('ElasticityPageComponent', () => {
     };
     analyticsSpy.searchProducts.and.returnValue(of(emptySearch));
     analyticsSpy.getProductElasticity.and.callFake((sku: number) => of(makeProductResponse(sku)));
-    analyticsSpy.getCustomerElasticity.and.callFake((sku: number, customerCode: number) =>
-      of(makeCustomerDetailResponse(sku, customerCode)),
-    );
     analyticsSpy.simulatePriceChange.and.callFake((req) =>
-      of(makeSimulationResponse(req.sku, req.priceChangePct, req.customerCode ?? null)),
+      of(makeSimulationResponse(req.sku, req.priceChangePct, req.costPrice ?? null)),
     );
 
     const routeStub = {
@@ -237,73 +258,84 @@ describe('ElasticityPageComponent', () => {
 
   describe('Estado inicial e hidratação via URL (LGPD)', () => {
     it('renderiza estado inicial sem chamar API automaticamente quando não há ?sku=', () => {
+      // Arrange & Act
       createComponent();
 
+      // Assert
       expect(analyticsSpy.getProductElasticity).not.toHaveBeenCalled();
       expect(analyticsSpy.simulatePriceChange).not.toHaveBeenCalled();
       expect(normalizeText(fixture.nativeElement.textContent)).toContain(
-        'Veja como o preço afeta as vendas antes de reajustar',
+        'Veja como o preço afeta vendas, lucro e estoque antes de reajustar',
       );
     });
 
     it('foca o campo de SKU ao clicar na ação do estado inicial', () => {
+      // Arrange
       createComponent();
       const actionBtn = query<HTMLButtonElement>('app-result-state button');
       expect(actionBtn).not.toBeNull();
+
+      // Act
       actionBtn!.click();
 
+      // Assert
       const input = query<HTMLInputElement>('app-code-search-form input');
       expect(document.activeElement).toBe(input);
     });
 
     it('hidrata e consulta automaticamente quando ?sku=1001 está presente na URL', () => {
+      // Arrange & Act
       createComponent({ sku: '1001' });
 
+      // Assert
       expect(analyticsSpy.getProductElasticity).toHaveBeenCalledWith(1001, {
         limit: DEFAULT_PAGE_LIMIT,
         offset: 0,
       });
-      expect(analyticsSpy.simulatePriceChange).toHaveBeenCalledWith({
-        sku: 1001,
-        customerCode: null,
-        priceChangePct: 5,
-      });
+      expect(analyticsSpy.simulatePriceChange).toHaveBeenCalledWith(
+        jasmine.objectContaining({
+          sku: 1001,
+          priceChangePct: 5,
+        }),
+      );
       const input = query<HTMLInputElement>('app-code-search-form input');
       expect(input?.value).toBe('1001');
     });
 
     it('rejeita ?sku= inválido na URL sem chamar a API e exibe validação inline', () => {
+      // Arrange & Act
       createComponent({ sku: 'abc' });
 
+      // Assert
       expect(analyticsSpy.getProductElasticity).not.toHaveBeenCalled();
       expect(query('app-code-search-form .field-error')?.textContent).toContain('Escolha um produto da lista');
     });
 
-    it('sincroniza somente ?sku= na URL após busca e jamais vaza customerCode em URL ou Storage', () => {
+    it('sincroniza somente ?sku= na URL após busca e não grava nada em Storage', () => {
+      // Arrange
       createComponent();
+
+      // Act
       submitSkuInput('1001');
 
+      // Assert
       expect(routerSpy.navigate).toHaveBeenCalledWith([], {
         relativeTo: jasmine.anything(),
         queryParams: { sku: '1001' },
       });
-
-      const selectBtn = query<HTMLButtonElement>('app-elasticity-customers-table tbody button');
-      selectBtn!.click();
-      fixture.detectChanges();
-
-      expect(routerSpy.navigate).toHaveBeenCalledTimes(1);
       expect(localStorage.length).toBe(0);
       expect(sessionStorage.length).toBe(0);
     });
 
     it('reage à navegação browser back/forward pelo queryParamMap', () => {
+      // Arrange
       createComponent({ sku: '1001' });
       expect(analyticsSpy.getProductElasticity).toHaveBeenCalledWith(1001, {
         limit: DEFAULT_PAGE_LIMIT,
         offset: 0,
       });
 
+      // Act & Assert
       queryParamMap$.next(convertToParamMap({ sku: '2002' }));
       fixture.detectChanges();
       expect(analyticsSpy.getProductElasticity).toHaveBeenCalledWith(2002, {
@@ -314,28 +346,33 @@ describe('ElasticityPageComponent', () => {
       queryParamMap$.next(convertToParamMap({}));
       fixture.detectChanges();
       expect(normalizeText(fixture.nativeElement.textContent)).toContain(
-        'Veja como o preço afeta as vendas antes de reajustar',
+        'Veja como o preço afeta vendas, lucro e estoque antes de reajustar',
       );
     });
   });
 
   describe('Validação de SKU e autocomplete por descrição', () => {
     it('valida formato antes de consultar a API e bloqueia texto não numérico', () => {
+      // Arrange
       createComponent();
+
+      // Act
       submitSkuInput('cha-invalido');
 
+      // Assert
       expect(analyticsSpy.getProductElasticity).not.toHaveBeenCalled();
       expect(normalizeText(fixture.nativeElement.textContent)).toContain(
         'Escolha um produto da lista ou digite o código',
       );
     });
 
-    it('busca produtos por descrição e carrega elasticidade ao selecionar sugestão', fakeAsync(() => {
+    it('busca produtos por descrição e carrega calculadora ao selecionar sugestão', fakeAsync(() => {
+      // Arrange
       analyticsSpy.searchProducts.and.returnValue(
         of({
           data: [{ codigo: 1001, descricao: 'Chá Verde 500mg', fornecedor: 'Fitoherb' }],
           meta: {
-            timestamp: '2026-04-15T12:00:00Z',
+            timestamp: '2026-11-16T12:00:00Z',
             version: '1.0.0',
             dataReferencia: null,
             page: 1,
@@ -350,6 +387,8 @@ describe('ElasticityPageComponent', () => {
       createComponent();
       const input = query<HTMLInputElement>('app-code-search-form input')!;
       const form = query<HTMLFormElement>('app-code-search-form form')!;
+
+      // Act
       input.focus();
       input.value = 'Chá';
       input.dispatchEvent(new Event('input'));
@@ -366,6 +405,7 @@ describe('ElasticityPageComponent', () => {
       form.dispatchEvent(new Event('submit'));
       fixture.detectChanges();
 
+      // Assert
       expect(analyticsSpy.getProductElasticity).toHaveBeenCalledWith(1001, {
         limit: DEFAULT_PAGE_LIMIT,
         offset: 0,
@@ -373,59 +413,83 @@ describe('ElasticityPageComponent', () => {
     }));
   });
 
-  describe('Skeleton, sucesso pt-BR, fallback de baixa confiança e empty state', () => {
-    it('exibe skeleton loader com aria-busy="true" enquanto a consulta está pendente', () => {
+  describe('Calculadora Unificada v3 (sem diagnóstico separado nem tabela de clientes)', () => {
+    it('exibe skeleton com aria-busy="true" e ao carregar renderiza apenas a Calculadora Unificada', () => {
+      // Arrange
       const pending$ = new Subject<ProductElasticityResponse>();
       analyticsSpy.getProductElasticity.and.returnValue(pending$.asObservable());
 
       createComponent();
       submitSkuInput('1001');
 
-      const skeleton = query('app-elasticity-skeleton [aria-busy="true"]');
-      expect(skeleton).not.toBeNull();
+      expect(query('app-elasticity-skeleton [aria-busy="true"]')).not.toBeNull();
 
+      // Act
       pending$.next(makeProductResponse(1001));
       pending$.complete();
       fixture.detectChanges();
 
+      // Assert: estrutura enxuta sem diagnóstico separado, sem tabela de clientes e sem bloco de comprador
       expect(query('app-elasticity-skeleton')).toBeNull();
-      expect(query('app-elasticity-diagnostic-card')).not.toBeNull();
+      expect(query('app-elasticity-simulator-panel')).not.toBeNull();
+      expect(query('app-elasticity-diagnostic-card')).toBeNull();
+      expect(query('app-elasticity-customers-table')).toBeNull();
+      expect(query('.customer-scope-card')).toBeNull();
     });
 
-    it('formata valores em pt-BR, exibe linguagem cotidiana, tradução +10%, margem unitária e deltas com sinal', () => {
+    it('exibe cabeçalho compacto do produto, comparativo de margem unitária/total e cobertura de estoque 60d Hoje vs Proposto', () => {
+      // Arrange & Act: default +5% sobre preço 30,00, custo 15,00, estoque 150, vendas 60d 180 (beta -1,5)
+      // Preço proj = 31,50 | Margem unit: 15,00 (50,0%) -> 16,50 (52,4%) (+2,4 p.p.)
+      // Volume: 180 -> 166,5 (-7,5%) | Cobertura 60d: Hoje ~50 dias -> Proposto ~54 dias (+4 dias vs hoje)
       createComponent({ sku: '1001' });
 
-      const text = normalizeText(fixture.nativeElement.textContent);
-      expect(text).toContain('Chá Verde 500mg');
-      expect(text).toContain('R$ 29,90');
-      expect(text).toContain('R$ 15,00');
-      expect(text).toContain('-1,42');
-      expect(text).toContain('84,0%');
-      expect(text).toContain('Sensibilidade ao preço');
-      expect(text).toContain('A cada +10% no preço, as vendas tendem a cair cerca de 14,2%');
-      expect(text).toContain('Lucro por un.');
-      expect(text).toContain('R$ 14,90');
-      expect(text).toContain('Muito sensível a preço');
-      expect(text).toContain('Pouco sensível');
-      expect(text).toContain('Confiança alta');
-      expect(text).toContain('Lucro bruto estimado');
-      expect(text).toContain('R$ 31,39');
-      expect(text).toContain('-R$ 232,21');
-      expect(text).toContain('+R$ 122,90');
-      expect(text).toContain('324,6 un.');
-      expect(text).toContain('72%');
+      const simText = normalizeText(query('app-elasticity-simulator-panel')?.textContent);
+
+      // Assert — cabeçalho compacto
+      expect(simText).toContain('SKU #1001');
+      expect(simText).toContain('Chá Verde 500mg');
+      expect(simText).toContain('Fitoherb');
+      expect(simText).toContain('150');
+      expect(simText).toContain('180');
+      expect(simText).toContain('Muito sensível a preço');
+      expect(simText).toContain('Confiança alta');
+      expect(simText).toContain('Catálogo ERP');
+
+      // Assert — margem unitária (R$/un., % e delta p.p.) e lucro bruto 60d
+      expect(simText).toContain('Margem unitária');
+      expect(simText).toContain('R$ 16,50');
+      expect(simText).toContain('52,4%');
+      expect(simText).toContain('+2,4 p.p.');
+      expect(simText).toContain('R$ 15,00');
+      expect(simText).toContain('Lucro bruto estimado');
+      expect(simText).toContain('R$ 2.747,25');
+      expect(simText).toContain('+R$ 47,25');
+
+      // Assert — vendas & faturamento 60d
+      expect(simText).toContain('166,5');
+      expect(simText).toContain('R$ 5.244,75');
+
+      // Assert — comparativo de cobertura de estoque (Hoje 0% vs Proposto contra meta 60d)
+      expect(simText).toContain('Cobertura de estoque');
+      expect(simText).toContain('Hoje (0%)');
+      expect(simText).toContain('~50 dias');
+      expect(simText).toContain('~54 dias');
+      expect(simText).toContain('+4 dias vs hoje');
+      expect(simText).toContain('Dentro da meta');
+      expect(query('.stock-status-tag svg')).not.toBeNull();
     });
 
     it('exibe aviso role="note" quando fallbackApplied=true ou isReliable=false', () => {
+      // Arrange
       analyticsSpy.getProductElasticity.and.returnValue(
         of(
           makeProductResponse(1001, {
             elasticity: {
-              coefficient: -1.1,
+              coefficient: -1.2,
               classification: 'ELASTICO',
               rSquared: 0.12,
               standardError: 0.48,
-              confidenceInterval: [-2.04, -0.16],
+              confidenceInterval: [-2.14, -0.26],
               confidenceLevel: 'BAIXA',
               isReliable: false,
               observationsCount: 6,
@@ -436,7 +500,10 @@ describe('ElasticityPageComponent', () => {
         ),
       );
 
+      // Act
       createComponent({ sku: '1001' });
+
+      // Assert
       const note = query('[role="note"]');
       expect(note).not.toBeNull();
       expect(normalizeText(note!.textContent)).toContain('Estimativa padrão de segurança (-1,20)');
@@ -445,48 +512,163 @@ describe('ElasticityPageComponent', () => {
       );
     });
 
-    it('exibe aviso de baixa confiabilidade estatística quando isReliable=false e fallbackApplied=false', () => {
+    it('exibe aviso honesto e cobertura indisponível quando recentVolume60d <= 0 sem inventar giro', () => {
+      // Arrange
       analyticsSpy.getProductElasticity.and.returnValue(
+        of(makeProductResponse(1001, {}, { recentVolume60d: 0, isCostEstimated: true, costPrice: 18 })),
+      );
+      analyticsSpy.simulatePriceChange.and.returnValue(
         of(
-          makeProductResponse(1001, {
-            elasticity: {
-              coefficient: -0.95,
-              classification: 'INELASTICO',
-              rSquared: 0.18,
-              standardError: 0.45,
-              confidenceInterval: [-1.83, -0.07],
-              confidenceLevel: 'BAIXA',
-              isReliable: false,
-              observationsCount: 8,
-              fallbackApplied: false,
-              insightMessage: 'Amostra heterogênea.',
-            },
+          makeSimulationResponse(1001, 5, null, {
+            costPrice: 18,
+            isCostEstimated: true,
+            currentVolume: 0,
+            projectedVolume: 0,
+            volumeChangePct: 0,
+            volumeChangeUnits: 0,
+            currentRevenue: 0,
+            projectedRevenue: 0,
+            revenueChangeAbs: 0,
+            revenueChangePct: 0,
+            currentMargin: 0,
+            projectedMargin: 0,
+            marginChangeAbs: 0,
+            marginChangePct: 0,
+            currentUnitMargin: 12,
+            projectedUnitMargin: 13.5,
+            currentUnitMarginPct: 40,
+            projectedUnitMarginPct: 42.86,
+            unitMarginPctChangePp: 2.86,
+            currentDailyUnits: 0,
+            projectedDailyUnits: 0,
+            currentStockDays: null,
+            projectedStockDays: null,
+            stockDaysDelta: null,
           }),
         ),
       );
 
+      // Act
       createComponent({ sku: '1001' });
-      const note = query('[role="note"]');
-      expect(note).not.toBeNull();
-      expect(normalizeText(note!.textContent)).toContain('Previsão com baixa precisão');
-      expect(normalizeText(fixture.nativeElement.textContent)).toContain('Pouco sensível a preço');
-    });
 
-    it('exibe empty state na tabela quando o produto não possui clientes no período', () => {
-      analyticsSpy.getProductElasticity.and.returnValue(
-        of(makeProductResponse(1001, { customers: [] }, { totalItems: 0, totalPages: 0 })),
-      );
-
-      createComponent({ sku: '1001' });
-      expect(query('app-elasticity-diagnostic-card')).not.toBeNull();
-      expect(normalizeText(query('app-elasticity-customers-table')?.textContent)).toContain(
-        'Nenhum cliente com compras válidas no período',
-      );
+      // Assert
+      const simText = normalizeText(query('app-elasticity-simulator-panel')?.textContent);
+      expect(simText).toContain('Estimado (60% do preço)');
+      expect(simText).toContain('Sem vendas nos últimos 60 dias');
+      expect(simText).toContain('Sem giro');
+      expect(simText).toContain('R$ 13,50');
+      const notes = queryAll('[role="note"]').map((el) => normalizeText(el.textContent));
+      expect(notes.some((n) => n.includes('60 dias'))).toBeTrue();
     });
   });
 
+  describe('Custo unitário editável, origem, restauração e validação negativa', () => {
+    it('edita custo unitário com debounce de 180ms, envia costPrice na simulação e sinaliza Editado manualmente', fakeAsync(() => {
+      // Arrange
+      createComponent({ sku: '1001' });
+      analyticsSpy.simulatePriceChange.calls.reset();
+
+      const costInput = query<HTMLInputElement>('#cost-price-input');
+      expect(costInput).not.toBeNull();
+      expect(costInput!.getAttribute('min')).toBe('0');
+      expect(costInput!.getAttribute('step')).toBe('0.01');
+
+      // Act: digita novo custo e aguarda 180ms
+      costInput!.value = '18.5';
+      costInput!.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+      tick(179);
+      expect(analyticsSpy.simulatePriceChange).not.toHaveBeenCalled();
+
+      tick(1);
+      fixture.detectChanges();
+
+      // Assert
+      expect(analyticsSpy.simulatePriceChange).toHaveBeenCalledTimes(1);
+      expect(analyticsSpy.simulatePriceChange).toHaveBeenCalledWith(
+        jasmine.objectContaining({
+          sku: 1001,
+          priceChangePct: 5,
+          costPrice: 18.5,
+        }),
+      );
+      const simText = normalizeText(query('app-elasticity-simulator-panel')?.textContent);
+      expect(simText).toContain('Editado manualmente');
+      expect(simText).toContain('R$ 13,00');
+    }));
+
+    it('restaura custo original do catálogo ao clicar no botão de restauração', () => {
+      // Arrange
+      createComponent({ sku: '1001' });
+      const costInput = query<HTMLInputElement>('#cost-price-input')!;
+      costInput.value = '20';
+      costInput.dispatchEvent(new Event('input'));
+      costInput.dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+
+      const restoreBtn = queryAll<HTMLButtonElement>('app-elasticity-simulator-panel button').find((btn) =>
+        normalizeText(btn.textContent).includes('Restaurar custo do catálogo'),
+      );
+      expect(restoreBtn).toBeDefined();
+      analyticsSpy.simulatePriceChange.calls.reset();
+
+      // Act
+      restoreBtn!.click();
+      fixture.detectChanges();
+
+      // Assert
+      expect(analyticsSpy.simulatePriceChange).toHaveBeenCalledTimes(1);
+      const lastArg = analyticsSpy.simulatePriceChange.calls.mostRecent().args[0];
+      expect(lastArg.sku).toBe(1001);
+      expect(lastArg.costPrice ?? null).toBeNull();
+      expect(normalizeText(query('app-elasticity-simulator-panel')?.textContent)).toContain('Catálogo ERP');
+    });
+
+    it('bloqueia custo unitário negativo com aria-invalid="true" e erro inline sem disparar HTTP', fakeAsync(() => {
+      // Arrange
+      createComponent({ sku: '1001' });
+      analyticsSpy.simulatePriceChange.calls.reset();
+
+      const costInput = query<HTMLInputElement>('#cost-price-input')!;
+
+      // Act
+      costInput.value = '-4.5';
+      costInput.dispatchEvent(new Event('input'));
+      costInput.dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+      tick(250);
+
+      // Assert
+      expect(costInput.getAttribute('aria-invalid')).toBe('true');
+      expect(costInput.getAttribute('aria-describedby')).toBe('cost-validation-error');
+      expect(query('.cost-field-group.has-invalid')).not.toBeNull();
+      expect(analyticsSpy.simulatePriceChange).not.toHaveBeenCalled();
+      const alert = query('#cost-validation-error[role="alert"]');
+      expect(alert).not.toBeNull();
+      expect(normalizeText(alert!.textContent)).toContain('custo');
+
+      // Alterar preset ou slider com custo inválido não dispara simulação com custo stale
+      const zeroBtn = queryAll<HTMLButtonElement>('.btn-quick').find(
+        (btn) => normalizeText(btn.textContent) === '0% (Atual)',
+      )!;
+      zeroBtn.click();
+      fixture.detectChanges();
+      expect(analyticsSpy.simulatePriceChange).not.toHaveBeenCalled();
+
+      // Ao corrigir custo para valor válido, volta a simular normalmente
+      costInput.value = '18.5';
+      costInput.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+      tick(180);
+      expect(analyticsSpy.simulatePriceChange).toHaveBeenCalledWith(
+        jasmine.objectContaining({ sku: 1001, costPrice: 18.5 }),
+      );
+    }));
+  });
+
   describe('Tratamento de erros amigável e isolamento de detalhes técnicos', () => {
-    it('exibe erro amigável e campo inválido no ELA-001 e permite retry', () => {
+    it('exibe erro amigável no ELA-001 e permite retry', () => {
+      // Arrange
       analyticsSpy.getProductElasticity.and.returnValue(
         throwError(() =>
           makeHttpError(404, {
@@ -503,16 +685,19 @@ describe('ElasticityPageComponent', () => {
         'Produto não encontrado ou sem histórico de vendas para cálculo de elasticidade.',
       );
 
+      // Act
       analyticsSpy.getProductElasticity.and.returnValue(of(makeProductResponse(1001)));
       const retryBtn = banner!.querySelector('button')!;
       expect(normalizeText(retryBtn.textContent)).toBe('Tentar novamente');
       retryBtn.click();
       fixture.detectChanges();
 
-      expect(query('app-elasticity-diagnostic-card')).not.toBeNull();
+      // Assert
+      expect(query('app-elasticity-simulator-panel')).not.toBeNull();
     });
 
     it('exibe estado dedicado de dados insuficientes no ELA-003', () => {
+      // Arrange
       analyticsSpy.getProductElasticity.and.returnValue(
         throwError(() =>
           makeHttpError(422, {
@@ -521,7 +706,10 @@ describe('ElasticityPageComponent', () => {
         ),
       );
 
+      // Act
       createComponent({ sku: '1001' });
+
+      // Assert
       expect(query('app-error-banner')).toBeNull();
       expect(normalizeText(fixture.nativeElement.textContent)).toContain(
         'Ainda não há histórico suficiente para este produto',
@@ -529,61 +717,72 @@ describe('ElasticityPageComponent', () => {
     });
 
     it('nunca expõe detail/stacktrace em erro 500 e não fabrica código ELA-001 falso', () => {
+      // Arrange
       analyticsSpy.getProductElasticity.and.returnValue(
-        throwError(() =>
-          makeHttpError(500, { detail: 'Traceback Postgres secret stack' }),
-        ),
+        throwError(() => makeHttpError(500, { detail: 'Traceback Postgres secret stack' })),
       );
 
+      // Act
       createComponent({ sku: '1001' });
+
+      // Assert
       const text = normalizeText(fixture.nativeElement.textContent);
       expect(text).toContain('Não foi possível consultar a elasticidade agora.');
       expect(text).not.toContain('Traceback');
       expect(text).not.toContain('ELA-001');
     });
 
-    it('isola falha do simulador preservando diagnóstico e tabela, com retry funcional', () => {
+    it('isola falha do simulador preservando cabeçalho/controles e permitindo retry', () => {
+      // Arrange
       analyticsSpy.simulatePriceChange.and.returnValue(
         throwError(() => makeHttpError(500, { detail: 'Sim engine crashed' })),
       );
 
       createComponent({ sku: '1001' });
-      expect(query('app-elasticity-diagnostic-card')).not.toBeNull();
-      expect(query('app-elasticity-customers-table')).not.toBeNull();
+      expect(query('app-elasticity-simulator-panel')).not.toBeNull();
 
       const simAlert = query('app-elasticity-simulator-panel [role="alert"]');
       expect(simAlert).not.toBeNull();
       expect(normalizeText(simAlert!.textContent)).toContain('Não foi possível calcular a simulação agora.');
       expect(normalizeText(simAlert!.textContent)).not.toContain('Sim engine crashed');
 
+      // Act
       analyticsSpy.simulatePriceChange.and.returnValue(of(makeSimulationResponse(1001, 5)));
       simAlert!.querySelector('button')!.click();
       fixture.detectChanges();
 
+      // Assert
       expect(query('app-elasticity-simulator-panel [role="alert"]')).toBeNull();
-      expect(normalizeText(query('app-elasticity-simulator-panel')?.textContent)).toContain('R$ 31,39');
+      expect(normalizeText(query('app-elasticity-simulator-panel')?.textContent)).toContain('R$ 31,50');
     });
   });
 
-  describe('Simulador, presets, debounce 180ms e validação de intervalo', () => {
+  describe('Simulador, presets, debounce 180ms, switchMap e acessibilidade', () => {
     it('inclui preset 0% (Atual) e dispara simulação imediata ao clicar', () => {
+      // Arrange
       createComponent({ sku: '1001' });
       analyticsSpy.simulatePriceChange.calls.reset();
 
-      const presetButtons = queryAll<HTMLButtonElement>('.btn-quick');
-      const zeroBtn = presetButtons.find((btn) => normalizeText(btn.textContent) === '0% (Atual)');
+      const zeroBtn = queryAll<HTMLButtonElement>('.btn-quick').find(
+        (btn) => normalizeText(btn.textContent) === '0% (Atual)',
+      );
       expect(zeroBtn).toBeDefined();
+
+      // Act
       zeroBtn!.click();
       fixture.detectChanges();
 
-      expect(analyticsSpy.simulatePriceChange).toHaveBeenCalledWith({
-        sku: 1001,
-        customerCode: null,
-        priceChangePct: 0,
-      });
+      // Assert
+      expect(analyticsSpy.simulatePriceChange).toHaveBeenCalledWith(
+        jasmine.objectContaining({
+          sku: 1001,
+          priceChangePct: 0,
+        }),
+      );
     });
 
     it('aplica debounce de 180ms e switchMap ao arrastar o slider rapidamente, sem desabilitar o slider', fakeAsync(() => {
+      // Arrange
       createComponent({ sku: '1001' });
       analyticsSpy.simulatePriceChange.calls.reset();
 
@@ -591,6 +790,8 @@ describe('ElasticityPageComponent', () => {
       analyticsSpy.simulatePriceChange.and.returnValue(pendingSim$.asObservable());
 
       const slider = query<HTMLInputElement>('#price-slider')!;
+
+      // Act
       slider.value = '10';
       slider.dispatchEvent(new Event('input'));
       fixture.detectChanges();
@@ -604,338 +805,148 @@ describe('ElasticityPageComponent', () => {
 
       tick(1);
       fixture.detectChanges();
-      expect(analyticsSpy.simulatePriceChange).toHaveBeenCalledTimes(1);
-      expect(analyticsSpy.simulatePriceChange).toHaveBeenCalledWith({
-        sku: 1001,
-        customerCode: null,
-        priceChangePct: 25,
-      });
 
-      // Slider nunca perde captura de ponteiro durante a requisição; botões preset ficam travados.
+      // Assert
+      expect(analyticsSpy.simulatePriceChange).toHaveBeenCalledTimes(1);
+      expect(analyticsSpy.simulatePriceChange).toHaveBeenCalledWith(
+        jasmine.objectContaining({
+          sku: 1001,
+          priceChangePct: 25,
+        }),
+      );
       expect(slider.disabled).toBeFalse();
-      const firstPreset = query<HTMLButtonElement>('.btn-quick')!;
-      expect(firstPreset.disabled).toBeTrue();
+      expect(query<HTMLButtonElement>('.btn-quick')!.disabled).toBeTrue();
       expect(query('.simulation-results-grid')?.getAttribute('aria-busy')).toBe('true');
 
       pendingSim$.next(makeSimulationResponse(1001, 25));
       pendingSim$.complete();
       fixture.detectChanges();
-      expect(firstPreset.disabled).toBeFalse();
+      expect(query<HTMLButtonElement>('.btn-quick')!.disabled).toBeFalse();
     }));
 
     it('valida limites [-50, 100] no input numérico e confirma alteração válida via change', () => {
+      // Arrange
       createComponent({ sku: '1001' });
       analyticsSpy.simulatePriceChange.calls.reset();
 
       const numberInput = query<HTMLInputElement>('#price-percent-input')!;
+
+      // Act — valor inválido
       numberInput.value = '150';
       numberInput.dispatchEvent(new Event('input'));
       fixture.detectChanges();
 
+      // Assert — bloqueado
       expect(numberInput.getAttribute('aria-invalid')).toBe('true');
       expect(normalizeText(query('app-elasticity-simulator-panel [role="alert"]')?.textContent)).toContain(
         'Informe um percentual entre -50% e +100%',
       );
       expect(analyticsSpy.simulatePriceChange).not.toHaveBeenCalled();
 
+      // Act — valor válido
       numberInput.value = '15';
       numberInput.dispatchEvent(new Event('input'));
       numberInput.dispatchEvent(new Event('change'));
       fixture.detectChanges();
 
+      // Assert — liberado
       expect(numberInput.getAttribute('aria-invalid')).toBeNull();
-      expect(analyticsSpy.simulatePriceChange).toHaveBeenCalledWith({
-        sku: 1001,
-        customerCode: null,
-        priceChangePct: 15,
-      });
+      expect(analyticsSpy.simulatePriceChange).toHaveBeenCalledWith(
+        jasmine.objectContaining({
+          sku: 1001,
+          priceChangePct: 15,
+        }),
+      );
     });
-  });
 
-  describe('Concorrência (switchMap), clientes, filtro, ordenação e paginação server-side', () => {
-    it('descarta resposta atrasada de SKU anterior via switchMap e limpa cliente selecionado', () => {
+    it('descarta resposta atrasada de SKU anterior via switchMap', () => {
+      // Arrange
       createComponent({ sku: '1001' });
-      const selectBtn = query<HTMLButtonElement>('app-elasticity-customers-table tbody button')!;
-      selectBtn.click();
-      fixture.detectChanges();
-      expect(normalizeText(query('app-elasticity-simulator-panel')?.textContent)).toContain('Cliente #42');
 
-      const slow1001$ = new Subject<ProductElasticityResponse>();
-      const fast2002$ = new Subject<ProductElasticityResponse>();
+      const slow3003$ = new Subject<ProductElasticityResponse>();
+      const fast4004$ = new Subject<ProductElasticityResponse>();
       analyticsSpy.getProductElasticity.and.callFake((sku: number) =>
-        sku === 3003 ? slow1001$.asObservable() : fast2002$.asObservable(),
+        sku === 3003 ? slow3003$.asObservable() : fast4004$.asObservable(),
       );
 
+      // Act
       submitSkuInput('3003');
       submitSkuInput('4004');
 
-      fast2002$.next(makeProductResponse(4004));
-      fast2002$.complete();
+      fast4004$.next(makeProductResponse(4004));
+      fast4004$.complete();
       fixture.detectChanges();
 
-      slow1001$.next(makeProductResponse(3003));
-      slow1001$.complete();
+      slow3003$.next(makeProductResponse(3003));
+      slow3003$.complete();
       fixture.detectChanges();
 
+      // Assert
       const text = normalizeText(fixture.nativeElement.textContent);
       expect(text).toContain('Produto 4004');
       expect(text).not.toContain('Produto 3003');
-      expect(text).not.toContain('Cliente #42');
     });
 
-    it('carrega detalhe bayesiano do cliente (getCustomerElasticity) e alterna de volta para visão geral', () => {
+    it('anuncia simulação via aria-live="polite" e expõe atributos ARIA no slider', () => {
+      // Arrange & Act
       createComponent({ sku: '1001' });
 
-      const firstBtn = query<HTMLButtonElement>('app-elasticity-customers-table tbody button')!;
-      firstBtn.click();
-      fixture.detectChanges();
-
-      expect(analyticsSpy.getCustomerElasticity).toHaveBeenCalledWith(1001, 42);
-      expect(analyticsSpy.simulatePriceChange).toHaveBeenCalledWith({
-        sku: 1001,
-        customerCode: 42,
-        priceChangePct: 5,
-      });
-      expect(firstBtn.getAttribute('aria-pressed')).toBe('true');
-      expect(normalizeText(query('.customer-scope-card')?.textContent)).toContain('72%');
-
-      const clearBtn = query<HTMLButtonElement>('.btn-clear-customer')!;
-      clearBtn.click();
-      fixture.detectChanges();
-
-      expect(firstBtn.getAttribute('aria-pressed')).toBe('false');
-      expect(analyticsSpy.simulatePriceChange).toHaveBeenCalledWith({
-        sku: 1001,
-        customerCode: null,
-        priceChangePct: 5,
-      });
-    });
-
-    it('descarta detalhe atrasado quando o usuário alterna clientes rapidamente', () => {
-      createComponent({ sku: '1001' });
-
-      const slow42$ = new Subject<CustomerElasticityResponse>();
-      const fast99$ = new Subject<CustomerElasticityResponse>();
-      analyticsSpy.getCustomerElasticity.and.callFake((_sku: number, code: number) =>
-        code === 42 ? slow42$.asObservable() : fast99$.asObservable(),
-      );
-
-      const rowButtons = queryAll<HTMLButtonElement>('app-elasticity-customers-table tbody button');
-      rowButtons[0].click();
-      rowButtons[1].click();
-      fixture.detectChanges();
-
-      fast99$.next(makeCustomerDetailResponse(1001, 99));
-      fast99$.complete();
-      fixture.detectChanges();
-
-      slow42$.next(makeCustomerDetailResponse(1001, 42));
-      slow42$.complete();
-      fixture.detectChanges();
-
-      expect(normalizeText(query('.customer-scope-card')?.textContent)).toContain('Cliente #99');
-    });
-
-    it('consulta código exato de cliente na base e preserva contexto se retornar ELA-002', () => {
-      createComponent({ sku: '1001' });
-
-      analyticsSpy.getCustomerElasticity.and.returnValue(
-        throwError(() =>
-          makeHttpError(404, { error: { code: 'ELA-002', message: 'not found', fields: [] } }),
-        ),
-      );
-
-      const lookupInput = query<HTMLInputElement>('#customer-code-filter')!;
-      const lookupForm = query<HTMLFormElement>('app-elasticity-customers-table form')!;
-      lookupInput.value = '8888';
-      lookupInput.dispatchEvent(new Event('input'));
-      fixture.detectChanges();
-      lookupForm.dispatchEvent(new Event('submit'));
-      fixture.detectChanges();
-
-      expect(analyticsSpy.getCustomerElasticity).toHaveBeenCalledWith(1001, 8888);
-      expect(normalizeText(query('#customer-lookup-error')?.textContent)).toContain(
-        'Nenhum histórico de compras registrado para este código de cliente neste produto.',
-      );
-
-      // Agora limpa filtro e confirma restauração dos 2 itens da página
-      query<HTMLButtonElement>('.clear-filter-btn')!.click();
-      fixture.detectChanges();
-      expect(queryAll('app-elasticity-customers-table tbody tr').length).toBe(2);
-    });
-
-    it('filtra localmente e ordena colunas atualizando aria-sort', () => {
-      createComponent({ sku: '1001' });
-
-      const ordersSortBtn = queryAll<HTMLButtonElement>('.sort-btn')[1];
-      ordersSortBtn.click();
-      fixture.detectChanges();
-
-      const ordersHeader = ordersSortBtn.closest('th')!;
-      expect(ordersHeader.getAttribute('aria-sort')).toBe('descending');
-      expect(normalizeText(queryAll('tbody tr td.code-cell')[0].textContent)).toBe('#42');
-
-      ordersSortBtn.click();
-      fixture.detectChanges();
-      expect(ordersHeader.getAttribute('aria-sort')).toBe('ascending');
-      expect(normalizeText(queryAll('tbody tr td.code-cell')[0].textContent)).toBe('#99');
-    });
-
-    it('pagina no servidor via offset e mantém página anterior se próxima página falhar', () => {
-      analyticsSpy.getProductElasticity.and.callFake((sku: number, page) => {
-        if (page.offset === DEFAULT_PAGE_LIMIT) {
-          return of(
-            makeProductResponse(
-              sku,
-              {
-                customers: [
-                  {
-                    customerCode: 501,
-                    ordersCount: 9,
-                    totalUnits: 90,
-                    empiricalElasticity: -1.1,
-                    shrinkageElasticity: -1.2,
-                    classification: 'ELASTICO',
-                    shrinkageWeight: 0.65,
-                  },
-                ],
-              },
-              { totalItems: 120, totalPages: 3, limit: DEFAULT_PAGE_LIMIT, offset: 50 },
-            ),
-          );
-        }
-        return of(
-          makeProductResponse(sku, {}, { totalItems: 120, totalPages: 3, limit: DEFAULT_PAGE_LIMIT, offset: 0 }),
-        );
-      });
-
-      createComponent({ sku: '1001' });
-      expect(normalizeText(query('app-list-pager')?.textContent)).toContain('Página 1 de 3');
-
-      const nextBtn = query<HTMLButtonElement>('app-list-pager button[aria-label="Próxima página"]')!;
-      nextBtn.click();
-      fixture.detectChanges();
-
-      expect(analyticsSpy.getProductElasticity).toHaveBeenCalledWith(1001, {
-        limit: DEFAULT_PAGE_LIMIT,
-        offset: DEFAULT_PAGE_LIMIT,
-      });
-      expect(normalizeText(query('app-list-pager')?.textContent)).toContain('Página 2 de 3');
-      expect(normalizeText(query('tbody')?.textContent)).toContain('#501');
-
-      // Erro ao tentar ir para página 3 preserva página 2 visível e exibe retry local
-      analyticsSpy.getProductElasticity.and.returnValue(
-        throwError(() => makeHttpError(500, { detail: 'Timeout' })),
-      );
-      query<HTMLButtonElement>('app-list-pager button[aria-label="Próxima página"]')!.click();
-      fixture.detectChanges();
-
-      expect(normalizeText(query('app-list-pager')?.textContent)).toContain('Página 2 de 3');
-      expect(query('app-elasticity-customers-table app-error-banner')).not.toBeNull();
-    });
-  });
-
-  describe('Acessibilidade (ARIA)', () => {
-    it('anuncia carregamento e simulação via aria-live="polite" e expõe atributos no slider', () => {
-      createComponent({ sku: '1001' });
-
+      // Assert
       const liveRegion = query<HTMLElement>('p.sr-only[role="status"][aria-live="polite"]')!;
-      expect(normalizeText(liveRegion.textContent)).toContain('Simulação geral do produto');
+      expect(normalizeText(liveRegion.textContent)).toContain('+5,0%');
 
       const slider = query<HTMLInputElement>('#price-slider')!;
       expect(slider.getAttribute('aria-valuemin')).toBe('-50');
       expect(slider.getAttribute('aria-valuemax')).toBe('100');
       expect(slider.getAttribute('aria-valuenow')).toBe('5');
       expect(slider.getAttribute('aria-valuetext')).toContain('+5,0%');
-
-      const numberLabel = query<HTMLLabelElement>('label[for="price-percent-input"]');
-      expect(numberLabel).not.toBeNull();
-    });
-  });
-
-  describe('Camada didática: guia comercial na tabela e popovers <app-info-help>', () => {
-    it('exibe guia comercial e cabeçalhos em linguagem cotidiana na tabela de clientes', () => {
-      // Arrange & Act
-      createComponent({ sku: '1001' });
-      const tableSection = query('app-elasticity-customers-table');
-
-      // Assert
-      expect(tableSection).not.toBeNull();
-      const tableText = normalizeText(tableSection!.textContent);
-      expect(tableText).toContain('Como cada cliente reage ao preço');
-      expect(tableText).toContain('Pouco sensível');
-      expect(tableText).toContain('Sensível');
-
-      const headerTexts = queryAll('app-elasticity-customers-table thead th').map((th) =>
-        normalizeText(th.textContent),
-      );
-      expect(headerTexts.some((h) => h.includes('Peso histórico'))).toBeTrue();
-      expect(headerTexts.some((h) => h.includes('Reação própria'))).toBeTrue();
-      expect(headerTexts.some((h) => h.includes('Sensibilidade usada'))).toBeTrue();
-      expect(headerTexts.some((h) => h.includes('Perfil'))).toBeTrue();
-
-      // Garante presença de orientação comercial acima da tabela
-      const tableEl = query('app-elasticity-customers-table table.customers-table');
-      expect(tableEl).not.toBeNull();
-      const textBeforeTable = normalizeText(
-        tableSection!.innerHTML.split('<table')[0].replace(/<[^>]+>/g, ' '),
-      );
-      expect(textBeforeTable).toContain('Pouco sensível');
-      expect(textBeforeTable).toContain('Sensível');
+      expect(query<HTMLLabelElement>('label[for="price-percent-input"]')).not.toBeNull();
+      expect(query<HTMLLabelElement>('label[for="cost-price-input"]')).not.toBeNull();
     });
 
-    it('mantém botões <app-info-help> presentes e clicáveis sem interferir na simulação ou disparar chamadas HTTP', () => {
+    it('mantém botões <app-info-help> (incluindo dados técnicos Beta/IC 95%/R²) clicáveis sem disparar HTTP', () => {
       // Arrange
       createComponent({ sku: '1001' });
       analyticsSpy.simulatePriceChange.calls.reset();
       analyticsSpy.getProductElasticity.calls.reset();
-      analyticsSpy.getCustomerElasticity.calls.reset();
 
       const helpTriggers = queryAll<HTMLButtonElement>('app-info-help button[aria-label^="Ajuda sobre "]');
-      expect(helpTriggers.length).toBeGreaterThanOrEqual(8);
+      expect(helpTriggers.length).toBeGreaterThanOrEqual(7);
 
-      const simHelpTrigger = query<HTMLButtonElement>(
-        'app-elasticity-simulator-panel app-info-help button[aria-label^="Ajuda sobre "]',
-      )!;
-      const diagHelpTrigger = query<HTMLButtonElement>(
-        'app-elasticity-diagnostic-card app-info-help button[aria-label^="Ajuda sobre "]',
-      )!;
-      expect(simHelpTrigger).not.toBeNull();
-      expect(diagHelpTrigger).not.toBeNull();
+      const techHelpTrigger = helpTriggers.find((btn) =>
+        normalizeText(btn.getAttribute('aria-label')).toLowerCase().includes('estat') ||
+        normalizeText(btn.getAttribute('aria-label')).toLowerCase().includes('técn') ||
+        normalizeText(btn.getAttribute('aria-label')).toLowerCase().includes('confiança'),
+      ) ?? helpTriggers[1];
+      const otherHelpTrigger = helpTriggers.find((btn) => btn !== techHelpTrigger)!;
 
-      // Act: abrir ajuda do diagnóstico e depois alternar para ajuda do simulador
-      diagHelpTrigger.click();
-      fixture.detectChanges();
-      expect(queryAll('[role="dialog"]').length).toBe(1);
-      expect(diagHelpTrigger.getAttribute('aria-expanded')).toBe('true');
-
-      simHelpTrigger.click();
+      // Act: abre popover com detalhes técnicos (Beta, IC 95%, R²)
+      techHelpTrigger.click();
       fixture.detectChanges();
 
-      // Assert: apenas 1 popover aberto, nenhuma chamada HTTP disparada
-      expect(queryAll('[role="dialog"]').length).toBe(1);
-      expect(diagHelpTrigger.getAttribute('aria-expanded')).toBe('false');
-      expect(simHelpTrigger.getAttribute('aria-expanded')).toBe('true');
-      expect(analyticsSpy.simulatePriceChange).not.toHaveBeenCalled();
-      expect(analyticsSpy.getProductElasticity).not.toHaveBeenCalled();
-      expect(analyticsSpy.getCustomerElasticity).not.toHaveBeenCalled();
+      // Assert
+      const dialog = query('[role="dialog"]');
+      expect(dialog).not.toBeNull();
+      const dialogText = normalizeText(dialog!.textContent);
+      expect(dialogText).toContain('-1,50');
+      expect(dialogText).toContain('84,0%');
+      expect(dialogText).toContain('-1,87');
 
-      // Act: fechar por Escape e usar preset de simulação normalmente
+      // Act: alterna para outro popover e fecha por Escape
+      otherHelpTrigger.click();
+      fixture.detectChanges();
+      expect(queryAll('[role="dialog"]').length).toBe(1);
+      expect(techHelpTrigger.getAttribute('aria-expanded')).toBe('false');
+      expect(otherHelpTrigger.getAttribute('aria-expanded')).toBe('true');
+
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
       fixture.detectChanges();
-      expect(queryAll('[role="dialog"]').length).toBe(0);
-      expect(document.activeElement).toBe(simHelpTrigger);
 
-      const zeroBtn = queryAll<HTMLButtonElement>('.btn-quick').find(
-        (btn) => normalizeText(btn.textContent) === '0% (Atual)',
-      )!;
-      zeroBtn.click();
-      fixture.detectChanges();
-      expect(analyticsSpy.simulatePriceChange).toHaveBeenCalledWith({
-        sku: 1001,
-        customerCode: null,
-        priceChangePct: 0,
-      });
+      // Assert
+      expect(queryAll('[role="dialog"]').length).toBe(0);
+      expect(document.activeElement).toBe(otherHelpTrigger);
+      expect(analyticsSpy.simulatePriceChange).not.toHaveBeenCalled();
+      expect(analyticsSpy.getProductElasticity).not.toHaveBeenCalled();
     });
   });
 });

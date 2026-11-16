@@ -1,18 +1,21 @@
 import { InfoHelpContent } from '../components/info-help/info-help.component';
+import { ProductElasticityMetrics } from '../models/elasticity.models';
+import { formatPriceReactionHint, formatPriceReactionRangeHint } from './elasticity-view';
+import { formatDecimal, formatPercent } from './pt-br-format';
 
 /**
- * Copy didática dos guias contextuais `<app-info-help>` da página Elasticidade-Preço (Design Plan v2).
+ * Copy didática dos guias contextuais `<app-info-help>` da Calculadora Unificada v3.
  * Textos 100% puros (sem HTML) para renderização segura via interpolação Angular.
  */
 export const ELASTICITY_HELP_COPY = {
   elasticityOverview: {
-    title: 'Como usar o Simulador de Preço',
+    title: 'Como usar a Calculadora de Preço, Margem e Estoque',
     whatIs:
-      'Esta tela mede o quanto os compradores aumentam ou reduzem os pedidos de um produto quando o preço muda, com base no histórico de vendas.',
+      'Esta ferramenta projeta como uma mudança de preço altera a margem unitária, o lucro bruto e a duração do estoque em um ciclo de 60 dias.',
     howToAnalyze:
-      '1. Confira o diagnóstico do produto no topo. 2. Mova a barra do simulador para testar aumentos ou descontos e observe o Lucro bruto estimado. 3. Compare clientes na tabela para decidir onde reajustar primeiro.',
+      '1. Busque o produto por código ou nome. 2. Confira o custo unitário do catálogo (ou informe um custo manual para simular). 3. Ajuste o percentual de preço e compare os 4 cartões de decisão.',
     insight:
-      'Nem todo aumento de preço faz você vender menos lucro: se a queda de volume for menor do que o ganho por unidade, o lucro total sobe.',
+      'Nem todo aumento reduz o ganho financeiro: se o ganho por unidade superar a perda de volume, o lucro bruto dos 60 dias sobe e o estoque dura mais.',
   },
   classificationBadge: {
     title: 'Classificação de sensibilidade',
@@ -21,209 +24,101 @@ export const ELASTICITY_HELP_COPY = {
     howToAnalyze:
       'Muito sensível a preço (abaixo de -1,00): o volume cai em proporção maior que o aumento de preço. Pouco sensível a preço (entre -1,00 e 0): os clientes continuam comprando quase a mesma quantidade após pequenos reajustes.',
     insight:
-      'Produtos pouco sensíveis têm espaço para recompor margem; nos muito sensíveis, prefira ajustes graduais ou ações de desconto por volume.',
+      'Produtos pouco sensíveis têm espaço para recompor margem; nos muito sensíveis, prefira ajustes graduais ou ações para girar estoque.',
     technicalNote:
       'Ponto de corte econômico em |Beta| = 1,00: valores menores que -1,00 são elásticos e valores entre -1,00 e 0 são inelásticos.',
   },
-  confidenceBadge: {
-    title: 'Confiança da previsão',
+  technicalSummary: {
+    title: 'Detalhes estatísticos do produto',
     whatIs:
-      'Indica o quanto o histórico passado do produto dá segurança para o cálculo da reação ao preço.',
+      'Reúne o coeficiente de sensibilidade (Beta), a faixa provável de reação (IC 95%), o erro padrão, a aderência (R²) e a quantidade de meses válidos usados no cálculo.',
     howToAnalyze:
-      'Confiança alta significa muitos meses com vendas regulares e boa explicação pelo preço. Confiança média pede validação comercial. Confiança baixa (usar com cautela) indica poucos dados ou variações externas fora do preço.',
+      'Beta negativo indica que aumentos reduzem o volume vendido; quanto maior o R² e mais meses válidos, maior a confiança na estimativa histórica.',
     insight:
-      'Quanto maior a confiança, mais firme pode ser o uso da simulação na negociação; em confiança baixa, trate os números apenas como referência inicial.',
+      'Use o intervalo de confiança (IC 95%) para conferir se a decisão continua saudável mesmo no cenário mais conservador.',
     technicalNote:
-      'Combinamos a aderência R², o erro padrão do coeficiente e a quantidade de meses válidos líquidos de devoluções.',
+      'Regressão linear log-log ponderada pelo tempo sobre vendas líquidas de devoluções, com fallback defensivo (-1,20) quando há poucos dados ou preço constante.',
   },
-  priceSensitivity: {
-    title: 'Sensibilidade ao preço',
+  unitCostInput: {
+    title: 'Custo unitário (R$)',
     whatIs:
-      'Mostra quantos porcento o volume vendido costuma mudar para cada 1% de alteração no preço.',
+      'É o custo de reposição usado para calcular a margem unitária e o lucro bruto total da simulação.',
     howToAnalyze:
-      'O número costuma ser negativo porque, quando o preço sobe, a quantidade vendida cai. Ex.: se for -1,50, um aumento de +10% no preço tende a reduzir as unidades vendidas em cerca de 15,0%.',
+      'Por padrão, vem do último custo registrado no ERP ([Pc.Ultimo Custo]). Quando está zerado ou ausente no catálogo, estimamos 60% do preço atual. Você pode digitar outro valor para simular renegociação de compra ou reajuste de fornecedor.',
     insight:
-      'Olhe para a tradução prática em +10% logo abaixo do número principal para decidir se a perda de unidades compensa o ganho de margem.',
+      'Teste aqui o custo de uma nova tabela do fornecedor para descobrir qual preço de venda mantém sua margem saudável antes de comprar.',
     technicalNote:
-      'Coeficiente Beta estimado por regressão linear log-log ponderada pelo tempo (meses mais recentes têm peso maior).',
-  },
-  confidenceInterval: {
-    title: 'Faixa provável de reação',
-    whatIs:
-      'Mostra o intervalo realista onde a reação verdadeira dos compradores costuma ficar, considerando as oscilações normais das vendas.',
-    howToAnalyze:
-      'Faixas estreitas indicam comportamento previsível mês a mês. Faixas muito abertas mostram que o volume variou bastante mesmo em preços parecidos.',
-    insight:
-      'Antes de aprovar um reajuste maior, avalie se a decisão continua lucrativa mesmo no cenário mais conservador da faixa.',
-    technicalNote:
-      'Intervalo de Confiança de 95% (IC 95%) calculado a partir do Beta estimado e do erro padrão amostral.',
-  },
-  rSquaredAndHistory: {
-    title: 'Qualidade do cálculo e histórico',
-    whatIs:
-      'Mede o percentual das mudanças de venda que realmente foi explicado pelo preço, junto ao total de meses válidos analisados.',
-    howToAnalyze:
-      'Valores mais altos (ex.: acima de 50%) mostram forte ligação entre preço e quantidade. Valores baixos indicam que sazonalidade, falta de estoque ou campanhas pesaram mais que o preço.',
-    insight:
-      'Se o percentual for baixo, combine esta simulação com o calendário comercial e o giro de estoque antes de mexer na tabela de preços.',
-    technicalNote:
-      'R² da regressão log-log sobre meses fechados com quantidade líquida positiva (vendas abatidas das devoluções).',
-  },
-  unitPriceCostMargin: {
-    title: 'Preço, Custo e Lucro Unitário',
-    whatIs:
-      'Reúne o preço atual de venda, o custo de reposição do catálogo, quanto sobra de lucro em cada unidade vendida e o estoque disponível.',
-    howToAnalyze:
-      'Confira o Lucro por unidade em reais e em percentual sobre o preço atual antes de testar descontos ou aumentos no simulador.',
-    insight:
-      'Produtos com lucro unitário apertado exigem cuidado redobrado com descontos; já itens com margem folgada suportam promoções para girar estoque.',
-    technicalNote:
-      'Lucro unitário = Preço atual - Custo; Margem unitária (%) = (Preço atual - Custo) / Preço atual × 100.',
-  },
-  priceSimulator: {
-    title: 'Simulador de Reajuste de Preço',
-    whatIs:
-      'Ferramenta interativa para testar cenários de aumento ou desconto entre -50% e +100% antes de alterar a tabela real.',
-    howToAnalyze:
-      'Use os atalhos rápidos (-10% a +20%) ou arraste a barra. Se você selecionar um cliente na tabela abaixo, a simulação passa a refletir o perfil daquele comprador.',
-    insight:
-      'Compare sempre os três cartões juntos: quantidade, faturamento e principalmente o Lucro bruto estimado.',
-  },
-  productBaselineElasticity: {
-    title: 'Média geral do produto',
-    whatIs:
-      'É a reação média observada somando todos os compradores deste produto no histórico avaliado.',
-    howToAnalyze:
-      'Funciona como referência estável quando o cliente selecionado ainda tem poucos pedidos no produto.',
-    insight:
-      'Compare a reação própria do cliente com esta média para saber se ele aceita preço mais alto ou exige mais negociação que a carteira.',
-    technicalNote:
-      'Coeficiente Beta agregado do SKU (prior hierárquica utilizada no modelo de suavização bayesiana).',
-  },
-  customerEmpiricalElasticity: {
-    title: 'Reação própria do cliente',
-    whatIs:
-      'Mede como apenas este cliente específico reagiu às mudanças de preço que encontrou ao longo das próprias compras.',
-    howToAnalyze:
-      'Se o cliente tiver poucos pedidos, esse número isolado pode parecer exagerado ou distorcido por compras esporádicas.',
-    insight:
-      'Observe este dado junto com o Peso do histórico: quanto mais pedidos o cliente tiver, mais fiel à realidade será a reação própria dele.',
-    technicalNote:
-      'Elasticidade empírica individual estimada sobre os meses de compra líquida do cliente no SKU.',
-  },
-  shrinkageElasticity: {
-    title: 'Sensibilidade usada na simulação',
-    whatIs:
-      'É o número equilibrado que o simulador usa para projetar as vendas deste cliente, combinando o histórico próprio dele com a média geral do produto.',
-    howToAnalyze:
-      'Com poucos pedidos, ela fica próxima da média do produto para evitar chutes extremos; conforme o cliente compra mais vezes, o cálculo dá mais peso ao comportamento dele.',
-    insight:
-      'Garante previsões estáveis mesmo para compradores recentes, sem perder a personalização dos clientes recorrentes.',
-    technicalNote:
-      'Suavização Bayesiana (Shrinkage): Beta_ajustado = w × Beta_cliente + (1 - w) × Beta_produto, onde w = n / (n + 10).',
-  },
-  shrinkageWeight: {
-    title: 'Peso do histórico do cliente',
-    whatIs:
-      'Mostra em percentual quanto o histórico próprio de pedidos deste cliente pesa na sensibilidade usada para ele.',
-    howToAnalyze:
-      'Ex.: com n = 3 pedidos o peso é cerca de 23%; com n = 10 pedidos chega a 50%; com n = 30 pedidos sobe para 75%.',
-    insight:
-      'Clientes com peso alto têm padrão próprio bem definido e merecem estratégia de preço personalizada na tabela.',
-    technicalNote:
-      'Fórmula de ponderação w = n / (n + 10), onde n é o total de pedidos válidos do cliente para o produto.',
+      'Origem exibida no selo ao lado: Catálogo ERP, Estimado (60% do preço) ou Editado manualmente (com botão para restaurar o valor do catálogo).',
   },
   appliedElasticity: {
     title: 'Sensibilidade aplicada',
     whatIs:
-      'É o índice exato utilizado neste cálculo: a média do produto na visão geral ou a média ajustada do cliente quando um comprador está selecionado.',
+      'É o índice exato (Beta) utilizado para projetar a variação de unidades vendidas neste produto.',
     howToAnalyze:
-      'Confira este número ao lado do preço projetado para ter certeza de qual referência está dirigindo os cartões de resultado.',
+      'Cada 1% de mudança no preço multiplica esse índice para estimar a mudança percentual no volume do ciclo de 60 dias.',
     insight:
-      'Ao trocar entre visão geral e clientes específicos, note como esse índice altera o volume e o lucro previstos para o mesmo percentual de reajuste.',
+      'Valores mais negativos pedem cautela em aumentos bruscos e favorecem promoções quando há excesso de estoque.',
   },
-  projectedVolume: {
-    title: 'Quantidade prevista',
+  unitMarginCard: {
+    title: 'Margem Unitária (R$/un. e p.p.)',
     whatIs:
-      'Estima quantas unidades serão vendidas no cenário simulado, comparando com a média mensal atual.',
+      'Mostra quanto dinheiro sobra em cada unidade vendida após pagar o custo unitário, tanto em reais (R$/un.) quanto em percentual (%) sobre o preço.',
     howToAnalyze:
-      'Aumentos de preço tendem a reduzir a quantidade prevista; descontos tendem a aumentá-la proporcionalmente à sensibilidade do produto ou cliente.',
+      'Compare o valor atual com o novo cenário. A diferença percentual aparece em pontos percentuais (p.p.), que medem a variação direta entre duas taxas (ex.: de 40,0% para 45,0% = +5,0 p.p.).',
     insight:
-      'Verifique se o estoque atual suporta um eventual salto de unidades quando simular descontos mais agressivos.',
+      'Fique atento ao alerta se a margem unitária ficar igual ou menor que zero: nesse ponto o desconto está vendendo abaixo ou no limite do custo.',
     technicalNote:
-      'Projeção de volume multiplicativo: Q_proj = Q_atual × (1 + ΔPreço)^Elasticidade_aplicada.',
+      'Margem unitária = Preço - Custo; Margem (%) = (Preço - Custo) / Preço × 100; Variação (p.p.) = Margem nova (%) - Margem atual (%).',
   },
-  projectedRevenue: {
-    title: 'Faturamento previsto',
+  projectedMarginCard: {
+    title: 'Lucro Bruto Estimado (60 dias)',
     whatIs:
-      'É a receita bruta estimada (Preço projetado multiplicado pela Quantidade prevista).',
+      'Calcula a Margem de Contribuição total no ciclo de 60 dias: quanto sobra no caixa após pagar o custo das unidades previstas.',
     howToAnalyze:
-      'Observe se o faturamento sobe ou cai em reais e em percentual em relação ao cenário atual.',
+      'Compare o Lucro Bruto Projetado com o cenário de Hoje (0%). O delta em reais e percentual mostra se a mudança de preço aumenta ou reduz o ganho total.',
     insight:
-      'Atenção: faturar mais nem sempre significa lucrar mais. Um desconto pode elevar o faturamento e reduzir o lucro líquido da operação.',
+      'Este é o principal indicador financeiro da decisão: priorize cenários em que o lucro bruto em reais seja maior sem comprometer a saúde do estoque.',
     technicalNote:
-      'Receita bruta projetada = Preço projetado × Volume projetado.',
+      'Lucro bruto (60d) = (Preço projetado - Custo unitário) × Volume projetado (60d).',
   },
-  projectedMargin: {
-    title: 'Lucro bruto estimado',
+  projectedVolumeRevenueCard: {
+    title: 'Unidades Vendidas & Faturamento (60 dias)',
     whatIs:
-      'Calcula quanto sobra após pagar o custo do produto no volume previsto (Margem de Contribuição total).',
+      'Projeta quantas unidades devem sair e qual será a receita bruta no ciclo de 60 dias, comparando com as vendas líquidas dos últimos 60 dias.',
     howToAnalyze:
-      'Este é o cartão principal de decisão: busque cenários onde o ganho em reais seja positivo e alinhado ao posicionamento comercial.',
+      'Observe a quantidade prevista, a variação em unidades (un.) e o ritmo diário (un./dia), além do impacto no faturamento bruto (R$).',
     insight:
-      'Muitas vezes um preço levemente maior com menos unidades vendidas gera mais lucro total no caixa e poupa estoque.',
+      'Atenção: faturar mais com desconto grande pode encolher o lucro bruto total se a margem unitária cair demais.',
     technicalNote:
-      'Margem de Contribuição = (Preço projetado - Custo unitário) × Volume projetado.',
+      'Baseline = vendas líquidas de devoluções nos últimos 60 dias. Volume projetado = Volume 60d × max(0, 1 + Beta × ΔPreço% / 100).',
   },
-  customerLookup: {
-    title: 'Buscar cliente pelo código',
+  stockCoverage60d: {
+    title: 'Cobertura de Estoque (Meta: 60 dias)',
     whatIs:
-      'Campo de duplo uso: filtra instantaneamente os clientes carregados na página atual ou consulta um código exato em toda a base.',
+      'Estima por quantos dias o estoque atual dura no ritmo de vendas de Hoje (0%) versus o ritmo Após a mudança de preço, comparando com a meta de 60 dias.',
     howToAnalyze:
-      'Digite parte do código para filtrar na tabela abaixo. Para buscar um comprador que está em outra página, digite o código completo e clique em "Consultar cliente".',
+      'Dividimos o estoque atual pela venda diária (Vendas 60d ÷ 60). Coberturas até 15 dias sinalizam giro muito rápido (risco de ruptura); entre 16 e 60 dias ficam dentro da meta; acima de 60 dias indicam excesso de estoque.',
     insight:
-      'Use a consulta direta antes de uma ligação ou visita comercial para abrir na hora o perfil de preço daquele cliente.',
-  },
-  tableShrinkageWeight: {
-    title: 'Peso histórico',
-    whatIs:
-      'Indica quanto dos pedidos do próprio cliente influencia a sensibilidade calculada para ele nesta tabela.',
-    howToAnalyze:
-      'Percentuais baixos (ex.: abaixo de 30%) significam histórico curto, puxando o cálculo para a média do produto; percentuais altos mostram histórico robusto.',
-    insight:
-      'Dê mais prioridade às diferenças de sensibilidade dos clientes com peso histórico maior.',
+      'Se o produto está acima de 60 dias (excesso), um desconto controlado pode acelerar o giro até a faixa saudável; se está com giro rápido (<= 15d), um aumento de preço protege o estoque e amplia o lucro.',
     technicalNote:
-      'Peso de suavização w = n / (n + 10) conforme o número de pedidos válidos do comprador.',
-  },
-  tableEmpiricalElasticity: {
-    title: 'Reação própria',
-    whatIs:
-      'Mostra a reação observada apenas nos pedidos deste comprador antes do ajuste de estabilidade.',
-    howToAnalyze:
-      'Use como leitura complementar: em clientes com poucos pedidos, esse valor pode oscilar bastante.',
-    insight:
-      'Quando a reação própria e a sensibilidade usada estiverem próximas, o comportamento do comprador é consistente ao longo do tempo.',
-    technicalNote:
-      'Elasticidade empírica individual antes da aplicação do Shrinkage Bayesiano.',
-  },
-  tableAdjustedElasticity: {
-    title: 'Sensibilidade usada',
-    whatIs:
-      'É o índice final e estabilizado que entra na simulação quando você clica em "Simular" na linha do cliente.',
-    howToAnalyze:
-      'Clique no cabeçalho para ordenar do mais sensível ao menos sensível (ou o inverso) e identificar oportunidades por perfil.',
-    insight:
-      'Clientes com valor entre -1,00 e 0 respondem bem a reajustes leves; valores muito negativos pedem defesa de preço ou contrapartida de volume.',
-    technicalNote:
-      'Estimativa ajustada via Shrinkage Bayesiano combinando a reação própria do cliente e o Beta do produto.',
-  },
-  tableProfile: {
-    title: 'Perfil de sensibilidade',
-    whatIs:
-      'Classifica rapidamente o comprador em "Sensível" ou "Pouco sensível" ao preço para facilitar a leitura da carteira.',
-    howToAnalyze:
-      'Cruze o perfil com as colunas de Pedidos e Volume (un.) para priorizar os compradores mais relevantes do produto.',
-    insight:
-      'Comece protegendo margem nos clientes "Pouco sensível" de alto volume e reserve condições promocionais apenas para os "Sensível".',
+      'Cobertura (dias) = Estoque atual ÷ (Volume do ciclo 60d ÷ 60). Sem vendas líquidas nos últimos 60 dias, a cobertura permanece indisponível (—).',
   },
 } satisfies Record<string, InfoHelpContent>;
+
+/** Monta o guia "Ver detalhes estatísticos" interpolando os números reais do produto (sem HTML). */
+export function buildTechnicalSummaryHelp(elasticity: ProductElasticityMetrics): InfoHelpContent {
+  const betaStr = formatDecimal(elasticity.coefficient, 2);
+  const icLow = formatDecimal(elasticity.confidenceInterval[0], 2);
+  const icHigh = formatDecimal(elasticity.confidenceInterval[1], 2);
+  const seStr = formatDecimal(elasticity.standardError, 2);
+  const r2Str = formatPercent(elasticity.rSquared, 1);
+  const obsStr = formatDecimal(elasticity.observationsCount);
+
+  return {
+    title: ELASTICITY_HELP_COPY.technicalSummary.title,
+    whatIs: `Sensibilidade estimada (Beta): ${betaStr}. ${formatPriceReactionHint(elasticity.coefficient)}.`,
+    howToAnalyze: `Faixa provável (IC 95%): de ${icLow} até ${icHigh} (${formatPriceReactionRangeHint(elasticity.confidenceInterval)}). Aderência (R²): ${r2Str} em ${obsStr} meses válidos líquidos de devoluções.`,
+    insight: elasticity.insightMessage,
+    technicalNote: `Beta = ${betaStr} · IC 95% = [${icLow}; ${icHigh}] · Erro padrão = ±${seStr} · R² = ${r2Str} · Meses válidos = ${obsStr}.`,
+  };
+}

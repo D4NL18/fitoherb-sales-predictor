@@ -100,4 +100,18 @@ describe('AnalyticsService', () => {
     expect(setItem).not.toHaveBeenCalled();
     expect(log).not.toHaveBeenCalled();
   });
+
+  it('simulatePriceChange omite costPrice quando null/undefined e envia costPrice quando informado', () => {
+    service.simulatePriceChange({ sku: 1001, priceChangePct: 5, costPrice: null }).subscribe();
+    const reqWithoutCost = http.expectOne('/api/v1/analytics/elasticity/simulate');
+    expect(reqWithoutCost.request.method).toBe('POST');
+    expect(reqWithoutCost.request.body).toEqual({ sku: 1001, priceChangePct: 5 });
+    reqWithoutCost.flush({ data: {}, meta: { timestamp: '2026-11-16T12:00:00Z', version: '1.0.0' } });
+
+    service.simulatePriceChange({ sku: 1001, priceChangePct: -10, costPrice: 13.5 }).subscribe();
+    const reqWithCost = http.expectOne('/api/v1/analytics/elasticity/simulate');
+    expect(reqWithCost.request.method).toBe('POST');
+    expect(reqWithCost.request.body).toEqual({ sku: 1001, priceChangePct: -10, costPrice: 13.5 });
+    reqWithCost.flush({ data: {}, meta: { timestamp: '2026-11-16T12:00:00Z', version: '1.0.0' } });
+  });
 });

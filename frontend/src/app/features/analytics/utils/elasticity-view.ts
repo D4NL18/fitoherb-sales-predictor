@@ -3,7 +3,6 @@
  * Sem dependência de DOM ou serviços: facilita testes unitários rápidos e mantém componentes enxutos.
  */
 import {
-  CustomerElasticityItem,
   ElasticityClassification,
   ElasticityConfidenceLevel,
   ProductElasticityDetail,
@@ -16,10 +15,12 @@ export const PRICE_CHANGE_MIN = -50;
 export const PRICE_CHANGE_MAX = 100;
 export const PRICE_CHANGE_DEFAULT = 5;
 export const PRICE_PRESETS: readonly number[] = [-10, -5, 0, 5, 10, 20];
+export const STOCK_TARGET_DAYS_DEFAULT = 60;
+export const FAST_STOCK_TURN_DAYS = 15;
+export const STOCK_COVERAGE_BAR_MAX_DAYS = 90;
 
 export type DeltaTone = 'positive' | 'negative' | 'neutral';
-export type CustomerSortKey = 'customerCode' | 'ordersCount' | 'totalUnits' | 'shrinkageElasticity';
-export type SortDirection = 'asc' | 'desc';
+export type StockCoverageStatus = 'healthy' | 'excess' | 'critical-fast' | 'empty' | 'no-sales';
 
 export interface ElasticityTagMeta {
   label: string;
@@ -31,6 +32,13 @@ export interface ElasticityTagMeta {
 export interface UnitMarginSummary {
   amount: number;
   marginPct: number;
+}
+
+export interface StockCoverageMeta {
+  status: StockCoverageStatus;
+  label: string;
+  shortLabel: string;
+  tagClass: string;
 }
 
 const CLASSIFICATION_META: Record<ElasticityClassification, ElasticityTagMeta> = {
@@ -77,6 +85,53 @@ export function getConfidenceMeta(level: ElasticityConfidenceLevel): ElasticityT
   return CONFIDENCE_META[level];
 }
 
+/** Classifica a cobertura de estoque em dias frente à meta corporativa (padrão 60 dias). */
+export function getStockCoverageStatus(
+  days: number | null | undefined,
+  stock: number,
+  dailyUnits: number,
+  targetDays = STOCK_TARGET_DAYS_DEFAULT,
+): StockCoverageMeta {
+  if (!Number.isFinite(stock) || stock <= 0) {
+    return {
+      status: 'empty',
+      label: 'Estoque zerado',
+      shortLabel: 'Sem estoque',
+      tagClass: 'tag-critical',
+    };
+  }
+  if (!Number.isFinite(dailyUnits) || dailyUnits <= 0 || days === null || days === undefined || !Number.isFinite(days)) {
+    return {
+      status: 'no-sales',
+      label: 'Sem giro nos últimos 60 dias',
+      shortLabel: 'Sem giro 60d',
+      tagClass: 'tag-neutral',
+    };
+  }
+  if (days <= FAST_STOCK_TURN_DAYS) {
+    return {
+      status: 'critical-fast',
+      label: 'Giro rápido ≤ 15d',
+      shortLabel: 'Giro rápido',
+      tagClass: 'tag-warning',
+    };
+  }
+  if (days <= targetDays) {
+    return {
+      status: 'healthy',
+      label: `Dentro da meta de ${targetDays} dias`,
+      shortLabel: 'Dentro da meta',
+      tagClass: 'tag-positive',
+    };
+  }
+  return {
+    status: 'excess',
+    label: `Acima de ${targetDays} dias`,
+    shortLabel: `Acima de ${targetDays}d`,
+    tagClass: 'tag-info',
+  };
+}
+
 /** Formata valor monetário em BRL com sinal explícito (`+R$ 72,59`, `-R$ 232,21`, `R$ 0,00`). */
 export function formatSignedCurrency(value: number): string {
   const rounded = normalizeZero(roundHalfUp(value, 2));
@@ -91,10 +146,45 @@ export function formatSignedPercentValue(value: number, fractionDigits = 1): str
   return rounded > 0 ? `+${formatted}%` : `${formatted}%`;
 }
 
+/** Formata variação em pontos percentuais com sinal explícito (`+4,8 p.p.`, `-2,1 p.p.`, `0,0 p.p.`). */
+export function formatSignedPp(value: number, fractionDigits = 1): string {
+  const rounded = normalizeZero(roundHalfUp(value, fractionDigits));
+  const formatted = formatDecimal(rounded, fractionDigits);
+  return rounded > 0 ? `+${formatted} p.p.` : `${formatted} p.p.`;
+}
+
 /** Formata unidades evitando `.0` desnecessário, mas preservando frações (`350`, `324,6`). */
 export function formatUnits(value: number): string {
   const rounded = normalizeZero(roundHalfUp(value, 1));
   return Number.isInteger(rounded) ? formatDecimal(rounded, 0) : formatDecimal(rounded, 1);
+}
+
+/** Formata variação absoluta de unidades com sinal (`+12 un.`, `-25,4 un.`, `0 un.`). */
+export function formatSignedUnits(value: number): string {
+  const rounded = normalizeZero(roundHalfUp(value, 1));
+  const formatted = Number.isInteger(rounded) ? formatDecimal(rounded, 0) : formatDecimal(rounded, 1);
+  return rounded > 0 ? `+${formatted} un.` : `${formatted} un.`;
+}
+
+/** Formata dias de cobertura de estoque (`~47 dias`, `~1 dia`, `Sem giro`). */
+export function formatStockDays(days: number | null | undefined): string {
+  if (days === null || days === undefined || !Number.isFinite(days)) {
+    return 'Sem giro';
+  }
+  const rounded = normalizeZero(roundHalfUp(Math.max(0, days), 0));
+  const unit = rounded === 1 ? 'dia' : 'dias';
+  return `~${formatDecimal(rounded, 0)} ${unit}`;
+}
+
+/** Formata variação comparativa de dias de estoque vs hoje (`+36 dias vs hoje`, `-14 dias vs hoje`, `—`). */
+export function formatSignedStockDays(delta: number | null | undefined): string {
+  if (delta === null || delta === undefined || !Number.isFinite(delta)) {
+    return '—';
+  }
+  const rounded = normalizeZero(roundHalfUp(delta, 0));
+  const unit = Math.abs(rounded) === 1 ? 'dia' : 'dias';
+  const formatted = formatDecimal(rounded, 0);
+  return rounded > 0 ? `+${formatted} ${unit} vs hoje` : `${formatted} ${unit} vs hoje`;
 }
 
 export function deltaTone(value: number): DeltaTone {
@@ -148,8 +238,8 @@ export function computeUnitMargin(currentPrice: number, costPrice: number): Unit
 export function buildElasticityInitialState(): ResultStateView {
   return {
     icon: 'chart',
-    title: 'Veja como o preço afeta as vendas antes de reajustar',
-    text: '1. Veja a sensibilidade do produto · 2. Teste cenários de aumento ou desconto · 3. Compare como cada cliente reage ao preço.',
+    title: 'Veja como o preço afeta vendas, lucro e estoque antes de reajustar',
+    text: '1. Busque um produto · 2. Confira ou ajuste o custo unitário · 3. Simule preço, lucro bruto e cobertura de estoque para 60 dias.',
     actionLabel: 'Escolher um produto',
     action: 'focus-field',
     tone: 'neutral',
@@ -167,48 +257,20 @@ export function buildElasticityInsufficientDataState(): ResultStateView {
   };
 }
 
-export function buildElasticityEmptyCustomersState(): ResultStateView {
-  return {
-    icon: 'box',
-    title: 'Nenhum cliente com compras válidas no período',
-    text: 'Este produto não tem clientes individuais listados no histórico avaliado. A simulação geral do produto continua disponível acima.',
-    actionLabel: 'Buscar outro produto',
-    action: 'new-search',
-    tone: 'neutral',
-  };
-}
-
-export function filterAndSortCustomers(
-  customers: readonly CustomerElasticityItem[],
-  filterQuery: string,
-  sortKey: CustomerSortKey | null,
-  sortDir: SortDirection,
-): CustomerElasticityItem[] {
-  const term = filterQuery.trim();
-  const filtered = term
-    ? customers.filter((c) => String(c.customerCode).includes(term))
-    : [...customers];
-
-  if (sortKey === null) return filtered;
-
-  const multiplier = sortDir === 'asc' ? 1 : -1;
-  return [...filtered].sort((a, b) => (a[sortKey] - b[sortKey]) * multiplier);
-}
-
 export function sliderMarkLeftPct(value: number): number {
   const clamped = Math.min(Math.max(value, PRICE_CHANGE_MIN), PRICE_CHANGE_MAX);
   return ((clamped - PRICE_CHANGE_MIN) / (PRICE_CHANGE_MAX - PRICE_CHANGE_MIN)) * 100;
 }
 
-export function buildProductLiveAnnouncement(detail: ProductElasticityDetail, totalClients: number): string {
+export function buildProductLiveAnnouncement(detail: ProductElasticityDetail): string {
   const cls = getClassificationMeta(detail.elasticity.classification).label;
   const coef = formatDecimal(detail.elasticity.coefficient, 2);
-  return `Análise carregada para ${detail.product.description}: ${cls}, sensibilidade ${coef}, ${formatDecimal(totalClients)} clientes na base.`;
+  return `Análise carregada para ${detail.product.description}: ${cls}, sensibilidade ${coef}.`;
 }
 
 export function buildSimulationLiveAnnouncement(sim: SimulationImpactData): string {
   const scope = sim.customerCode ? `para o cliente ${sim.customerCode}` : 'geral do produto';
-  return `Simulação ${scope} com reajuste de ${formatSignedPercentValue(sim.priceChangePct, 1)}: preço ${formatCurrency(sim.projectedPrice)}, volume ${formatUnits(sim.projectedVolume)} unidades, faturamento ${formatCurrency(sim.projectedRevenue)} e margem ${formatCurrency(sim.projectedMargin)}.`;
+  return `Simulação ${scope} com reajuste de ${formatSignedPercentValue(sim.priceChangePct, 1)}: preço ${formatCurrency(sim.projectedPrice)}, volume ${formatUnits(sim.projectedVolume)} unidades, faturamento ${formatCurrency(sim.projectedRevenue)} e lucro bruto ${formatCurrency(sim.projectedMargin)}.`;
 }
 
 function normalizeZero(value: number): number {

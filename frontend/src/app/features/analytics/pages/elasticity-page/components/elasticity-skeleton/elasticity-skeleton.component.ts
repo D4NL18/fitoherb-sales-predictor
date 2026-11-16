@@ -8,7 +8,5 @@ import { ChangeDetectionStrategy, Component } from '@angular/core';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ElasticitySkeletonComponent {
-  protected readonly metricPlaceholders = [0, 1, 2, 3];
-  protected readonly simPlaceholders = [0, 1, 2];
-  protected readonly rowPlaceholders = [0, 1, 2, 3, 4];
+  protected readonly cardPlaceholders = [0, 1, 2, 3];
 }
