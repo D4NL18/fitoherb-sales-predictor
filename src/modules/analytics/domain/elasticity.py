@@ -31,6 +31,9 @@ CONFIDENCE_MEDIUM_MIN_OBS: int = 6
 INELASTIC_THRESHOLD: float = -1.0
 MIN_SIMULATION_PRICE_CHANGE: float = -50.0
 MAX_SIMULATION_PRICE_CHANGE: float = 100.0
+STOCK_TARGET_DAYS: int = 60
+FAST_STOCK_TURN_DAYS: int = 15
+COST_FALLBACK_RATIO: float = 0.60
 
 
 @dataclass(frozen=True)
@@ -81,6 +84,22 @@ class SimulationImpactResult:
     margin_change_pct: float
     margin_change_abs: float
     recommendation: str
+    cost_price: float = 0.0
+    is_cost_estimated: bool = False
+    is_cost_override: bool = False
+    stock: float = 0.0
+    stock_target_days: int = STOCK_TARGET_DAYS
+    current_unit_margin: float = 0.0
+    projected_unit_margin: float = 0.0
+    current_unit_margin_pct: float = 0.0
+    projected_unit_margin_pct: float = 0.0
+    unit_margin_pct_change_pp: float = 0.0
+    volume_change_units: float = 0.0
+    current_daily_units: float = 0.0
+    projected_daily_units: float = 0.0
+    current_stock_days: Optional[float] = None
+    projected_stock_days: Optional[float] = None
+    stock_days_delta: Optional[float] = None
 
 
 def calculate_decay_weights(
@@ -315,13 +334,21 @@ def simulate_price_impact(
     price_change_pct: float,
     sku: int = 0,
     customer_code: Optional[int] = None,
+    stock: float = 0.0,
+    window_days: int = STOCK_TARGET_DAYS,
+    is_cost_estimated: bool = False,
+    is_cost_override: bool = False,
 ) -> SimulationImpactResult:
     """
-    Calcula o impacto projetado de uma variação percentual de preço em volume, receita e margem (P-101).
+    Calcula o impacto projetado de uma variação percentual de preço em volume, receita, margem e estoque (P-101).
     """
     # Validação do intervalo permitido [-50.0%, +100.0%]
     if price_change_pct < MIN_SIMULATION_PRICE_CHANGE or price_change_pct > MAX_SIMULATION_PRICE_CHANGE:
         raise ValueError(f"priceChangePct fora da faixa [{MIN_SIMULATION_PRICE_CHANGE}, {MAX_SIMULATION_PRICE_CHANGE}]")
+
+    effective_window = max(1, int(window_days))
+    safe_volume = max(0.0, float(current_volume))
+    safe_stock = max(0.0, float(stock))
 
     price_factor = 1.0 + (price_change_pct / 100.0)
     projected_price = round(current_price * price_factor, 2)
@@ -329,9 +356,11 @@ def simulate_price_impact(
     # Variação projetada de volume: delta_volume% = beta * delta_preco%
     volume_change_pct = round(elasticity * price_change_pct, 2)
     volume_factor = max(0.0, 1.0 + (volume_change_pct / 100.0))
-    projected_volume = round(current_volume * volume_factor, 2)
+    projected_volume = round(safe_volume * volume_factor, 2)
+    rounded_current_volume = round(safe_volume, 2)
+    volume_change_units = round(projected_volume - rounded_current_volume, 2)
 
-    current_revenue = round(current_price * current_volume, 2)
+    current_revenue = round(current_price * safe_volume, 2)
     projected_revenue = round(projected_price * projected_volume, 2)
     revenue_change_abs = round(projected_revenue - current_revenue, 2)
     revenue_change_pct = (
@@ -340,16 +369,51 @@ def simulate_price_impact(
         else 0.0
     )
 
-    current_unit_margin = current_price - cost_price
-    projected_unit_margin = projected_price - cost_price
+    current_unit_margin_raw = current_price - cost_price
+    projected_unit_margin_raw = projected_price - cost_price
+    current_unit_margin = round(current_unit_margin_raw, 2)
+    projected_unit_margin = round(projected_unit_margin_raw, 2)
 
-    current_margin = round(current_unit_margin * current_volume, 2)
-    projected_margin = round(projected_unit_margin * projected_volume, 2)
+    current_unit_margin_pct = (
+        round((current_unit_margin_raw / current_price) * 100.0, 2)
+        if current_price > 0
+        else 0.0
+    )
+    projected_unit_margin_pct = (
+        round((projected_unit_margin_raw / projected_price) * 100.0, 2)
+        if projected_price > 0
+        else 0.0
+    )
+    unit_margin_pct_change_pp = round(projected_unit_margin_pct - current_unit_margin_pct, 2)
+
+    current_margin = round(current_unit_margin_raw * safe_volume, 2)
+    projected_margin = round(projected_unit_margin_raw * projected_volume, 2)
     margin_change_abs = round(projected_margin - current_margin, 2)
     margin_change_pct = (
-        round((margin_change_abs / current_margin) * 100.0, 2)
+        round((margin_change_abs / abs(current_margin)) * 100.0, 2)
         if abs(current_margin) > 0
         else 0.0
+    )
+
+    current_daily_raw = safe_volume / effective_window
+    projected_daily_raw = projected_volume / effective_window
+    current_daily_units = round(current_daily_raw, 4)
+    projected_daily_units = round(projected_daily_raw, 4)
+
+    current_stock_days = (
+        round(safe_stock / current_daily_raw, 1)
+        if current_daily_raw > 0
+        else None
+    )
+    projected_stock_days = (
+        round(safe_stock / projected_daily_raw, 1)
+        if projected_daily_raw > 0
+        else None
+    )
+    stock_days_delta = (
+        round(projected_stock_days - current_stock_days, 1)
+        if current_stock_days is not None and projected_stock_days is not None
+        else None
     )
 
     if margin_change_abs > 0:
@@ -366,7 +430,7 @@ def simulate_price_impact(
         price_change_pct=round(price_change_pct, 2),
         current_price=round(current_price, 2),
         projected_price=projected_price,
-        current_volume=round(current_volume, 2),
+        current_volume=rounded_current_volume,
         projected_volume=projected_volume,
         volume_change_pct=volume_change_pct,
         current_revenue=current_revenue,
@@ -378,4 +442,20 @@ def simulate_price_impact(
         margin_change_pct=margin_change_pct,
         margin_change_abs=margin_change_abs,
         recommendation=recommendation,
+        cost_price=round(float(cost_price), 2),
+        is_cost_estimated=bool(is_cost_estimated),
+        is_cost_override=bool(is_cost_override),
+        stock=round(float(stock), 2),
+        stock_target_days=effective_window,
+        current_unit_margin=current_unit_margin,
+        projected_unit_margin=projected_unit_margin,
+        current_unit_margin_pct=current_unit_margin_pct,
+        projected_unit_margin_pct=projected_unit_margin_pct,
+        unit_margin_pct_change_pp=unit_margin_pct_change_pp,
+        volume_change_units=volume_change_units,
+        current_daily_units=current_daily_units,
+        projected_daily_units=projected_daily_units,
+        current_stock_days=current_stock_days,
+        projected_stock_days=projected_stock_days,
+        stock_days_delta=stock_days_delta,
     )

@@ -14,8 +14,9 @@ do driver (LGPD-05). `RETURN_OPERATION_PATTERN` existe por P-058.5, mas devoluç
 from __future__ import annotations
 
 import logging
+import math
 from contextlib import contextmanager
-from datetime import date
+from datetime import date, timedelta
 from typing import Iterator, List, Sequence
 
 import numpy as np
@@ -181,6 +182,15 @@ WHERE [Cod Produto] = ?
 GROUP BY YEAR([Data]), MONTH([Data]), [Operação]
 """.strip()
 
+_PRODUCT_RECENT_VOLUME_SQL = f"""
+SELECT SUM([Qtd Venda]) AS net_volume
+FROM Externo01.Vendas
+WHERE [Cod Produto] = ?
+  AND [Data] >= ?
+  AND [Data] < ?
+  AND ([Operação] = '{SALE_OPERATION}' OR [Operação] LIKE '{RETURN_OPERATION_PATTERN}')
+""".strip()
+
 
 def fetch_product_price_points(sku: int, cutoff: date) -> pd.DataFrame:
     """
@@ -207,3 +217,18 @@ def fetch_single_customer_points(sku: int, customer_code: int, cutoff: date) -> 
     with _execute_readonly(_SINGLE_CUSTOMER_POINTS_SQL, (sku, customer_code, cutoff)) as cursor:
         rows = [tuple(row) for row in cursor.fetchall()]
     return pd.DataFrame(rows, columns=["ano", "mes", "operacao", "qtd", "valor"])
+
+
+def fetch_product_recent_volume_60d(sku: int, cutoff: date, window_days: int = 60) -> float:
+    """
+    Volume líquido de vendas (VENDA - DEVOLU%) do produto nos últimos `window_days` dias até `cutoff` (P-101).
+    """
+    start_date = cutoff - timedelta(days=max(1, int(window_days)))
+    with _execute_readonly(_PRODUCT_RECENT_VOLUME_SQL, (sku, start_date, cutoff)) as cursor:
+        rows = cursor.fetchall()
+    if not rows or rows[0][0] is None:
+        return 0.0
+    net_volume = float(rows[0][0])
+    if math.isnan(net_volume):
+        return 0.0
+    return max(0.0, net_volume)

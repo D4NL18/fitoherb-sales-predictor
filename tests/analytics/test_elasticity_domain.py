@@ -17,8 +17,11 @@ import pandas as pd
 import pytest
 
 from src.modules.analytics.domain.elasticity import (
+    COST_FALLBACK_RATIO,
     DEFAULT_ELASTICITY,
+    FAST_STOCK_TURN_DAYS,
     K_SHRINKAGE,
+    STOCK_TARGET_DAYS,
     calculate_decay_weights,
     estimate_customer_elasticity,
     estimate_product_elasticity,
@@ -261,3 +264,130 @@ def test_simulate_price_impact_elastic_and_inelastic():
     assert sim_elastic.revenue_change_abs == pytest.approx(-875.0)
     assert sim_elastic.projected_margin == pytest.approx(1875.0)
     assert sim_elastic.margin_change_abs == pytest.approx(-125.0)
+
+
+def test_simulate_price_impact_unit_margin_pp_and_negative_base_margin_abs():
+    """T-08: Calcula margem unitária (R$/un., %, delta p.p.) e usa abs(current_margin) quando margem base é negativa."""
+    # Arrange — Cenário A: margem positiva com override de custo
+    sim_pos = simulate_price_impact(
+        elasticity=-1.0,
+        current_price=50.0,
+        cost_price=30.0,
+        current_volume=120.0,
+        price_change_pct=10.0,
+        is_cost_estimated=False,
+        is_cost_override=True,
+    )
+
+    # Assert — Cenário A
+    assert sim_pos.cost_price == pytest.approx(30.0)
+    assert sim_pos.is_cost_estimated is False
+    assert sim_pos.is_cost_override is True
+    assert sim_pos.current_unit_margin == pytest.approx(20.0)
+    assert sim_pos.projected_unit_margin == pytest.approx(25.0)
+    assert sim_pos.current_unit_margin_pct == pytest.approx(40.0)
+    assert sim_pos.projected_unit_margin_pct == pytest.approx(45.45, abs=0.05)
+    assert sim_pos.unit_margin_pct_change_pp == pytest.approx(5.45, abs=0.05)
+    assert sim_pos.volume_change_units == pytest.approx(-12.0)
+
+    # Arrange — Cenário B: margem atual negativa (-10/un * 100 = -1000); reajuste reduz prejuízo para -540 (+460)
+    sim_neg = simulate_price_impact(
+        elasticity=-0.5,
+        current_price=20.0,
+        cost_price=30.0,
+        current_volume=100.0,
+        price_change_pct=20.0,
+    )
+
+    # Assert — Cenário B: margin_change_pct deve ser +46.0% usando abs(current_margin)
+    assert sim_neg.current_margin == pytest.approx(-1000.0)
+    assert sim_neg.projected_margin == pytest.approx(-540.0)
+    assert sim_neg.margin_change_abs == pytest.approx(460.0)
+    assert sim_neg.margin_change_pct == pytest.approx(46.0)
+
+
+def test_simulate_price_impact_stock_coverage_60d_and_constants():
+    """T-09: Calcula ritmo diário (janela 60d) e cobertura de estoque hoje vs proposto."""
+    # Arrange
+    assert STOCK_TARGET_DAYS == 60
+    assert FAST_STOCK_TURN_DAYS == 15
+    assert COST_FALLBACK_RATIO == pytest.approx(0.60)
+
+    # Act: volume 60d = 120 un. (2,0 un./dia), estoque = 90 un. -> hoje = 45,0 dias.
+    # Reajuste +20% com beta -1,25 -> volume cai 25% -> 90 un. (1,5 un./dia) -> proposto = 60,0 dias (+15,0 dias).
+    sim = simulate_price_impact(
+        elasticity=-1.25,
+        current_price=40.0,
+        cost_price=24.0,
+        current_volume=120.0,
+        price_change_pct=20.0,
+        stock=90.0,
+        window_days=STOCK_TARGET_DAYS,
+        is_cost_estimated=True,
+        is_cost_override=False,
+    )
+
+    # Assert
+    assert sim.stock == pytest.approx(90.0)
+    assert sim.stock_target_days == 60
+    assert sim.is_cost_estimated is True
+    assert sim.is_cost_override is False
+    assert sim.current_daily_units == pytest.approx(2.0)
+    assert sim.projected_daily_units == pytest.approx(1.5)
+    assert sim.current_stock_days == pytest.approx(45.0)
+    assert sim.projected_stock_days == pytest.approx(60.0)
+    assert sim.stock_days_delta == pytest.approx(15.0)
+
+
+def test_simulate_price_impact_stock_zero_and_zero_volume_returns_none_stock_days():
+    """T-10: Trata estoque <= 0 e volume == 0 retornando None para cobertura em dias sem inventar giro."""
+    # Arrange & Act — Caso A: vendas 60d == 0 -> ambos stock_days e delta são None, margem unitária segue calculada
+    sim_no_sales = simulate_price_impact(
+        elasticity=-1.2,
+        current_price=50.0,
+        cost_price=30.0,
+        current_volume=0.0,
+        price_change_pct=10.0,
+        stock=100.0,
+    )
+
+    # Assert — Caso A
+    assert sim_no_sales.current_daily_units == 0.0
+    assert sim_no_sales.projected_daily_units == 0.0
+    assert sim_no_sales.current_stock_days is None
+    assert sim_no_sales.projected_stock_days is None
+    assert sim_no_sales.stock_days_delta is None
+    assert sim_no_sales.current_unit_margin == pytest.approx(20.0)
+    assert sim_no_sales.projected_unit_margin == pytest.approx(25.0)
+
+    # Arrange & Act — Caso B: volume atual positivo, mas aumento zera demanda projetada
+    sim_zero_proj = simulate_price_impact(
+        elasticity=-2.0,
+        current_price=50.0,
+        cost_price=30.0,
+        current_volume=120.0,
+        price_change_pct=50.0,
+        stock=100.0,
+    )
+
+    # Assert — Caso B
+    assert sim_zero_proj.current_stock_days == pytest.approx(50.0)
+    assert sim_zero_proj.projected_volume == 0.0
+    assert sim_zero_proj.projected_daily_units == 0.0
+    assert sim_zero_proj.projected_stock_days is None
+    assert sim_zero_proj.stock_days_delta is None
+
+    # Arrange & Act — Caso C: estoque negativo ou zerado clampa cobertura para 0.0 quando há giro
+    sim_no_stock = simulate_price_impact(
+        elasticity=-1.0,
+        current_price=50.0,
+        cost_price=30.0,
+        current_volume=120.0,
+        price_change_pct=0.0,
+        stock=-5.0,
+    )
+
+    # Assert — Caso C
+    assert sim_no_stock.current_stock_days == pytest.approx(0.0)
+    assert sim_no_stock.projected_stock_days == pytest.approx(0.0)
+    assert sim_no_stock.stock_days_delta == pytest.approx(0.0)

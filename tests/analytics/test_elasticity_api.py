@@ -247,10 +247,15 @@ def test_real_service_uses_catalog_snapshot_entries_and_decimal_rows():
         patch("src.modules.analytics.repository.sales_repository.fetch_product_price_points", return_value=price_points),
         patch("src.modules.analytics.repository.sales_repository.fetch_product_customers", return_value=customers_df),
         patch("src.modules.analytics.repository.sales_repository.fetch_single_customer_points", return_value=price_points),
+        patch("src.modules.analytics.repository.sales_repository.fetch_product_recent_volume_60d", return_value=120.0),
     ):
         resp_prod = client.get(f"{BASE_URL}/product/100002")
         assert resp_prod.status_code == 200
-        assert resp_prod.json()["data"]["product"]["code"] == 100002
+        prod_header = resp_prod.json()["data"]["product"]
+        assert prod_header["code"] == 100002
+        assert prod_header["isCostEstimated"] is False
+        assert prod_header["recentVolume60d"] == pytest.approx(120.0)
+        assert prod_header["stockTargetDays"] == 60
         assert resp_prod.json()["data"]["customers"][0]["customerCode"] == 4501
 
         resp_missing = client.get(f"{BASE_URL}/product/999999")
@@ -263,4 +268,123 @@ def test_real_service_uses_catalog_snapshot_entries_and_decimal_rows():
 
         resp_sim = client.post(f"{BASE_URL}/simulate", json={"sku": 100002, "priceChangePct": 10.0})
         assert resp_sim.status_code == 200
-        assert resp_sim.json()["data"]["sku"] == 100002
+        sim_data = resp_sim.json()["data"]
+        assert sim_data["sku"] == 100002
+        assert sim_data["currentVolume"] == pytest.approx(120.0)
+        assert sim_data["costPrice"] == pytest.approx(14.00)
+        assert sim_data["isCostEstimated"] is False
+        assert sim_data["isCostOverride"] is False
+        assert sim_data["stock"] == pytest.approx(150.0)
+        assert sim_data["stockTargetDays"] == 60
+        assert sim_data["currentUnitMargin"] == pytest.approx(15.90, abs=0.01)
+        assert sim_data["projectedUnitMargin"] == pytest.approx(18.89, abs=0.01)
+        assert sim_data["currentDailyUnits"] == pytest.approx(2.0)
+        assert sim_data["currentStockDays"] == pytest.approx(75.0)
+        assert sim_data["projectedStockDays"] is not None
+        assert sim_data["stockDaysDelta"] is not None
+
+
+def test_simulate_price_impact_with_manual_cost_price_override():
+    """T-API-08: POST /elasticity/simulate com costPrice manual recalcula margens e sinaliza override."""
+    from decimal import Decimal
+    import pandas as pd
+
+    snapshot = _real_catalog_snapshot()
+    price_points = pd.DataFrame([
+        {"ano": 2026, "mes": m, "operacao": "VENDA", "qtd": Decimal(100 - m * 5), "valor": Decimal((100 - m * 5) * (25 + m))}
+        for m in range(1, 7)
+    ])
+
+    with (
+        patch("src.modules.analytics.service.analytics_cache.get_catalog", return_value=snapshot),
+        patch("src.modules.analytics.repository.sales_repository.fetch_product_price_points", return_value=price_points),
+        patch("src.modules.analytics.repository.sales_repository.fetch_product_recent_volume_60d", return_value=120.0),
+    ):
+        response = client.post(
+            f"{BASE_URL}/simulate",
+            json={"sku": 100002, "priceChangePct": 10.0, "costPrice": 20.0},
+        )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["costPrice"] == pytest.approx(20.0)
+    assert data["isCostOverride"] is True
+    assert data["isCostEstimated"] is False
+    assert data["currentUnitMargin"] == pytest.approx(9.90, abs=0.01)
+    assert data["projectedUnitMargin"] == pytest.approx(12.89, abs=0.01)
+    assert data["currentUnitMarginPct"] == pytest.approx((9.90 / 29.90) * 100.0, abs=0.1)
+    assert data["projectedUnitMarginPct"] == pytest.approx((12.89 / 32.89) * 100.0, abs=0.1)
+    assert data["unitMarginPctChangePp"] > 0.0
+    assert data["currentMargin"] == pytest.approx(9.90 * 120.0, abs=0.5)
+
+
+def test_simulate_price_impact_negative_cost_price_returns_ela_004():
+    """T-API-09: POST /elasticity/simulate com costPrice negativo retorna 400 ELA-004."""
+    payload = {"sku": 1001, "priceChangePct": 5.0, "costPrice": -2.0}
+    response = client.post(f"{BASE_URL}/simulate", json=payload)
+
+    assert response.status_code == 400
+    json_data = response.json()
+    assert json_data["error"]["code"] == "ELA-004"
+    assert "costPrice" in json_data["error"]["fields"]
+
+
+def test_real_service_zero_recent_volume_and_estimated_cost_fallback():
+    """T-API-10: Volume 60d zerado não cai em fallback 100.0 e custo ausente usa fallback 60%."""
+    from datetime import datetime, timezone
+    from decimal import Decimal
+    import pandas as pd
+    from src.modules.analytics.domain.cross_sell import CatalogEntry
+    from src.modules.analytics.service.analytics_cache import CatalogSnapshot
+
+    snapshot = CatalogSnapshot(
+        reference_date=date(2026, 11, 12),
+        loaded_at=datetime(2026, 11, 12, 12, 0, tzinfo=timezone.utc),
+        entries={
+            100003: CatalogEntry(
+                code=100003,
+                description="CHA DE CAMOMILA 100G",
+                supplier="FITOHERB LAB",
+                stock=80.0,
+                price=50.0,
+                unit_cost=30.0,
+                is_cost_estimated=True,
+            )
+        },
+        search_index=(),
+    )
+    price_points = pd.DataFrame([
+        {"ano": 2026, "mes": m, "operacao": "VENDA", "qtd": Decimal(50 - m * 2), "valor": Decimal((50 - m * 2) * (45 + m))}
+        for m in range(1, 7)
+    ])
+    customers_df = pd.DataFrame(columns=["customer_code", "orders_count", "total_units", "total_revenue"])
+
+    with (
+        patch("src.modules.analytics.service.analytics_cache.get_catalog", return_value=snapshot),
+        patch("src.modules.analytics.repository.sales_repository.fetch_product_price_points", return_value=price_points),
+        patch("src.modules.analytics.repository.sales_repository.fetch_product_customers", return_value=customers_df),
+        patch("src.modules.analytics.repository.sales_repository.fetch_product_recent_volume_60d", return_value=0.0),
+    ):
+        resp_prod = client.get(f"{BASE_URL}/product/100003")
+        assert resp_prod.status_code == 200
+        prod = resp_prod.json()["data"]["product"]
+        assert prod["isCostEstimated"] is True
+        assert prod["recentVolume60d"] == 0.0
+        assert prod["stockTargetDays"] == 60
+
+        resp_sim = client.post(f"{BASE_URL}/simulate", json={"sku": 100003, "priceChangePct": 10.0})
+        assert resp_sim.status_code == 200
+        sim = resp_sim.json()["data"]
+        assert sim["currentVolume"] == 0.0
+        assert sim["projectedVolume"] == 0.0
+        assert sim["volumeChangeUnits"] == 0.0
+        assert sim["currentDailyUnits"] == 0.0
+        assert sim["projectedDailyUnits"] == 0.0
+        assert sim["currentStockDays"] is None
+        assert sim["projectedStockDays"] is None
+        assert sim["stockDaysDelta"] is None
+        assert sim["isCostEstimated"] is True
+        assert sim["isCostOverride"] is False
+        assert sim["costPrice"] == pytest.approx(30.0)
+        assert sim["currentUnitMargin"] == pytest.approx(20.0)
+        assert sim["projectedUnitMargin"] == pytest.approx(25.0)
