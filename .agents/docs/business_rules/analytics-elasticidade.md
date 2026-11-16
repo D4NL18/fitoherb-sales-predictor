@@ -12,8 +12,8 @@
 | **Faixa de Regras** | P-095 a P-105 |
 | **Prefixo de Erros** | `ELA-XXX` |
 | **Origem** | Plano mestre `.agents/docs/tasks/ia-analytics-vendas.md` (§2, §4) e decisões D1–D4 do `STATE.md` |
-| **Autor** | Analista (Etapa 1) |
-| **Status** | Especificado |
+| **Autor** | Analista (Etapa 1) · Revisão v3: Arquiteto + Designer (Etapa 2) |
+| **Status** | Especificado (Revisão v3 — Calculadora Unificada e Estoque 60d) |
 
 ---
 
@@ -47,6 +47,9 @@
 | `CONFIDENCE_MEDIUM_R2` | `0.20` | P-099 | R² mínimo para classificação de confiança MEDIA |
 | `CONFIDENCE_MEDIUM_MIN_OBS` | `6` | P-099 | Mínimo de observações mensais para confiança MEDIA |
 | `INELASTIC_THRESHOLD` | `-1.0` | P-100 | Limiar divisor entre demanda Elástica (< -1.0) e Inelástica (>= -1.0) |
+| `STOCK_TARGET_DAYS` | `60` | P-101 | Janela baseline de vendas (60 dias) e meta de cobertura de estoque da empresa |
+| `FAST_STOCK_TURN_DAYS` | `15` | P-101 | Limiar de giro muito rápido (alerta de risco de ruptura <= 15 dias) |
+| `COST_FALLBACK_RATIO` | `0.60` | P-101 | Custo unitário estimado (60% do preço atual) quando `[Pc.Ultimo Custo] <= 0` no ERP |
 
 ---
 
@@ -104,16 +107,28 @@
   - `INELASTICO`: se `-1.0 <= elasticity <= 0.0` (demanda pouco sensível; oportunidade para reajuste moderado de preço aumentando faturamento total).
   - Indicação Comercial: para produtos `INELASTICO` com margem unitária positiva e boa confiabilidade, o sistema DEVE emitir recomendação contextual de oportunidade de rentabilização.
 
-### `P-101`: Motor de Simulação de Variação de Preço
-- **Declaração Mandatória:** O endpoint `POST /analytics/elasticity/simulate` DEVE calcular o impacto projetado de uma variação percentual de preço informada (`priceChangePct`, entre -50.0% e +100.0%):
+### `P-101`: Motor de Simulação Unificado (Janela 60 Dias, Custo Editável e Cobertura de Estoque)
+- **Declaração Mandatória:** O endpoint `POST /analytics/elasticity/simulate` DEVE calcular o impacto projetado de uma variação percentual de preço (`priceChangePct`, entre `-50.0%` e `+100.0%`) e de um custo unitário opcional (`costPrice >= 0`) sobre o ritmo de vendas líquido dos últimos **60 dias** (`recentVolume60d`, vendas `VENDA` abatidas de devoluções `DEVOLU%` em `Externo01.Vendas` na janela `[cutoff - 60d, cutoff)`, limitado a `>= 0.0`).
+- **Regra de Custo Unitário:**
+  - Se `costPrice` for informado na requisição (`costPrice >= 0`), utiliza esse valor na simulação e sinaliza `isCostOverride = True`, `isCostEstimated = False`.
+  - Se `costPrice` for omitido (`null`), utiliza `[Pc.Ultimo Custo]` do catálogo quando positivo (`isCostEstimated = False`) ou o fallback defensivo de `60%` do preço atual (`isCostEstimated = True`) quando zerado/ausente no ERP, com `isCostOverride = False`.
+- **Fórmulas Mandatórias (Volume, Preço, Margem Unitária/Total e Estoque 60 Dias):**
   - $\Delta Volume\% \approx \beta \cdot \Delta Preço\%$
-  - $Volume_{novo} = Volume_{atual} \cdot (1 + \frac{\Delta Volume\%}{100})$
-  - $Preco_{novo} = Preco_{atual} \cdot (1 + \frac{\Delta Preco\%}{100})$
-  - $Receita_{nova} = Preco_{novo} \cdot Volume_{novo}$
-  - $Margem_{nova} = (Preco_{novo} - Custo_{unitario}) \cdot Volume_{novo}$
-  - $\Delta Receita = Receita_{nova} - Receita_{atual}$
-  - $\Delta Margem = Margem_{nova} - Margem_{atual}$
-- **Validações:** Se `priceChangePct` estiver fora de `[-50.0, 100.0]`, retornar erro `ELA-004` (400) com campo `priceChangePct`.
+  - $Volume_{novo} = Volume_{atual} \cdot \max\left(0,\; 1 + \frac{\Delta Volume\%}{100}\right)$ e $\Delta Volume_{un} = Volume_{novo} - Volume_{atual}$
+  - $Preco_{novo} = Preco_{atual} \cdot \left(1 + \frac{\Delta Preco\%}{100}\right)$
+  - $MargemUnit_{atual} = Preco_{atual} - Custo_{aplicado}$ · $MargemUnit\%_{atual} = \frac{MargemUnit_{atual}}{Preco_{atual}} \cdot 100$ (se $Preco_{atual} > 0$, senão `0`)
+  - $MargemUnit_{nova} = Preco_{novo} - Custo_{aplicado}$ · $MargemUnit\%_{nova} = \frac{MargemUnit_{nova}}{Preco_{novo}} \cdot 100$ (se $Preco_{novo} > 0$, senão `0`)
+  - $\Delta MargemUnit_{pp} = MargemUnit\%_{nova} - MargemUnit\%_{atual}$ (variação em pontos percentuais `p.p.`)
+  - $Receita_{atual} = Preco_{atual} \cdot Volume_{atual}$ · $Receita_{nova} = Preco_{novo} \cdot Volume_{novo}$ · $\Delta Receita = Receita_{nova} - Receita_{atual}$
+  - $Margem_{atual} = MargemUnit_{atual} \cdot Volume_{atual}$ · $Margem_{nova} = MargemUnit_{nova} \cdot Volume_{novo}$ · $\Delta Margem = Margem_{nova} - Margem_{atual}$
+  - Ritmo diário e cobertura de estoque sob a meta de `STOCK_TARGET_DAYS` (`60` dias):
+    - $RitmoDiario_{atual} = Volume_{atual} / 60$ · $RitmoDiario_{novo} = Volume_{novo} / 60$
+    - $DiasEstoque_{atual} = \max(0,\; Estoque) / RitmoDiario_{atual}$ (se $RitmoDiario_{atual} > 0$, senão `null`)
+    - $DiasEstoque_{novo} = \max(0,\; Estoque) / RitmoDiario_{novo}$ (se $RitmoDiario_{novo} > 0$, senão `null`)
+    - $\Delta DiasEstoque = DiasEstoque_{novo} - DiasEstoque_{atual}$ (quando ambos não nulos, senão `null`)
+    - Faixas de sinalização de estoque: ruptura (`estoque <= 0`), giro muito rápido (`<= 15` dias), dentro da meta (`15 < dias <= 60`), excesso de estoque (`> 60` dias) ou sem vendas 60d (`recentVolume60d == 0`, onde `DiasEstoque` permanece `null` sem inventar volume baseline).
+- **Retrocompatibilidade:** Quando `customerCode` for informado diretamente na API (sem exposição na UI v3), preserva a simulação por elasticidade shrinkage do cliente; os novos campos de margem unitária, custo e estoque continuam sendo computados normalmente.
+- **Validações:** Se `priceChangePct` estiver fora de `[-50.0, 100.0]` ou `costPrice < 0`, retornar erro `ELA-004` (400) informando o campo inválido (`priceChangePct` ou `costPrice`).
 
 ### `P-102`: Catálogo de Exceções de Domínio `ELA-XXX`
 - **Declaração Mandatória:** Os erros do subdomínio de elasticidade DEVEM seguir o padrão de código semântico `ELA-XXX` no envelope padronizado:
@@ -129,16 +144,21 @@
 ### `P-104`: Conformidade com LGPD e Isolamento de PII
 - **Declaração Mandatória:** Clientes são identificados estritamente pelo identificador numérico `customerCode`. Nenhum dado pessoal (nome, CPF, CNPJ, razão social, endereço, telefone ou e-mail) DEVE ser exposto na API, renderizado na tela ou gravado em logs. Logs do sistema registram apenas métricas operacionais e códigos de erro semânticos.
 
-### `P-105`: Interface Reativa Angular e os 8 Estados Interativos
-- **Declaração Mandatória:** A tela de Elasticidade (`/analytics/elasticity`) DEVE ser integrada à navegação do módulo Analytics e suportar integralmente os 8 estados:
-  1. *Initial / Idle*: Campo de busca de produto ativo com instruções.
-  2. *Loading*: Skeleton loader durante consulta e processamento.
-  3. *Success*: Cards de elasticidade, badge de confiança, simulador interativo com slider e tabela de clientes.
-  4. *Empty*: Aviso quando não houver clientes com compras do produto.
-  5. *Error*: Card de erro contextual com botão de retry sem tela quebrada.
-  6. *Disabled*: Controles de simulação bloqueados durante processamento.
-  7. *Invalid*: Validação visual imediata para valores de slider ou busca fora de escopo.
-  8. *Partial / Low-Confidence*: Badge de alerta visual claro quando o resultado for de baixa confiabilidade estatística, explicando a aplicação do fallback defensivo.
+### `P-105`: Interface Reativa Angular Somente Calculadora (v3) e os 8 Estados Interativos
+- **Declaração Mandatória:** A tela de Elasticidade (`/analytics/elasticity`) DEVE apresentar exclusivamente a **busca de produto** e a **Calculadora Unificada de Preço, Margem e Estoque (60 dias)** — sem seção separada de Diagnóstico (`<app-elasticity-diagnostic-card>`) e sem seção/tabela de Análise por Comprador (`<app-elasticity-customers-table>`). A calculadora DEVE conter:
+  - Cabeçalho compacto do produto (SKU, descrição, fornecedor, badges de sensibilidade e confiança + botão `"i"` `<app-info-help>` com Beta, IC 95%, R², erro padrão e meses válidos).
+  - Exibição e edição manual do **custo unitário** (indicando origem: `[Pc.Ultimo Custo]` ERP, fallback 60% ou editado manualmente, com opção de restaurar custo original do catálogo).
+  - Impacto claro em **margem unitária** (`R$/un.`, `%` e variação em `p.p.`) e **lucro bruto total estimado (Margem de Contribuição)** no ciclo de 60 dias, além de **volume e faturamento previstos**.
+  - Comparativo de **cobertura de estoque em dias** (hoje `0%` vs cenário simulado `±%` contra a meta de 60 dias, sinalizando giro dentro de 60d, excesso > 60d, giro muito rápido <= 15d, ruptura e vendas 60d == 0).
+- **Os 8 Estados Interativos Obrigatórios:**
+  1. *Initial / Idle*: Campo de busca de produto ativo com instruções da calculadora.
+  2. *Loading*: Skeleton loader espelhando busca + calculadora unificada (sem blocos de diagnóstico separado nem tabela).
+  3. *Success*: Cabeçalho compacto do produto + controles de preço/custo + resumo + 4 cards de decisão (margem unitária, lucro bruto 60d, volume/faturamento 60d, cobertura de estoque 60d) + barra de recomendação.
+  4. *Empty / Sem Vendas 60d*: Tratamento honesto quando `recentVolume60d == 0`, exibindo aviso claro de ausência de vendas nos últimos 60 dias e cobertura em dias indisponível (`—`), mantendo o cálculo unitário de preço e margem ativo.
+  5. *Error*: Card de erro contextual com botão de retry sem tela quebrada; erro de simulação exibido inline com retry.
+  6. *Disabled / Busy*: Atalhos rápidos e botão de restaurar custo bloqueados durante requisição em voo (`aria-busy="true"`), mantendo slider e input de custo responsivos.
+  7. *Invalid*: Validação visual imediata (`aria-invalid="true"`) para percentual fora de `[-50, 100]`, custo unitário `< 0` ou SKU inválido, bloqueando chamadas HTTP inválidas.
+  8. *Partial / Low-Confidence*: Aviso `role="note"` contrastante no cabeçalho compacto da calculadora quando houver fallback defensivo (`-1,20`) ou baixa confiabilidade estatística (`!isReliable`).
 
 ---
 
@@ -156,6 +176,10 @@
 | E-08 | Simulação com +10% | `priceChangePct: 10.0` | Projeta delta volume, receita e margem monetária | 200 |
 | E-09 | Simulação fora da faixa (+150%) | `priceChangePct: 150.0` | Lança `InvalidParametersError` `ELA-004` com campo `priceChangePct` | 400 |
 | E-10 | Paginação de clientes inválida | `limit: 500` | Lança `InvalidParametersError` `ELA-004` | 400 |
+| E-11 | Custo unitário manual válido | `costPrice: 15.0` | Usa `15.0`, `isCostOverride: true`, `isCostEstimated: false` e recalcula margens | 200 |
+| E-12 | Custo unitário negativo | `costPrice: -2.0` | Retorna erro `ELA-004` com campo `costPrice` | 400 |
+| E-13 | Vendas nos últimos 60d zeradas | `recentVolume60d == 0` | `currentVolume: 0`, `currentStockDays: null`, `projectedStockDays: null`; margem unitária calculada | 200 |
+| E-14 | Cobertura de estoque vs meta 60d | `stock: 150`, `recentVolume60d: 120` | `currentDailyUnits: 2.0`, `currentStockDays: 75.0` (excesso > 60d) | 200 |
 
 ---
 

@@ -97,3 +97,21 @@
   - Commit `def2125`: fix(analytics-ui): corrige contraste hover ativo, touch target e refatora info-help (P-095..P-105)
   - Commit `56f04ea`: docs(analytics): atualiza design plan v2 e estado da elasticidade (P-095..P-105)
 
+---
+
+## 6. Rodada v3 — Calculadora Unificada com Custo Editável e Estoque 60 Dias (2026-11-16)
+
+- **Triagem Prévia (Categoria A — T1/T2+T3 Evolução Full-Stack):**
+  - `analyst` / `architect`: **ACIONADO** — Atualização de `P-101` e `P-105` em `.agents/docs/business_rules/analytics-elasticidade.md` (preservando `P-095..P-100` e `P-102..P-104`), extensão retrocompatível do contrato REST em `.agents/docs/api_contracts/analytics-elasticidade.md` (`ProductHeader`, `ElasticitySimulationRequest`, `SimulationImpactData` + limpeza de schemas duplicados em `schemas.py`).
+  - `designer`: **ACIONADO** — Design Plan v3 atualizado em `.agents/docs/design/plans/analytics-elasticidade.md` (tela enxuta somente Busca + Calculadora Unificada, sem `<app-elasticity-diagnostic-card>` e sem `<app-elasticity-customers-table>`, custo editável com origem/restauração, margem unitária `R$/un.`/`%`/`p.p.`, lucro bruto 60d e cobertura de estoque 60d).
+  - `dba`: **BYPASS** (somente leitura na view/tabela existente `Externo01.Vendas` para janela de 60 dias, sem alteração de schema).
+  - `ai_specialist`: **BYPASS** (cálculo determinístico sobre regressão log-log existente).
+  - `privacy_officer`: **BYPASS** (remoção de tabela de clientes da tela reduz superfície de exibição; API legada preserva `customerCode` pseudonimizado sem PII conforme parecer aprovado).
+  - `tester` + `developer`: **PRÓXIMOS** (Etapa 3 — TDD First e Implementação Backend + Frontend).
+- [x] **Etapa 2 (Regras v3 + Contrato REST v3 + Design Plan v3):** Concluída e documentada em:
+  - `.agents/docs/business_rules/analytics-elasticidade.md` (`P-101`, `P-105`, constantes e edge cases E-11..E-14)
+  - `.agents/docs/api_contracts/analytics-elasticidade.md` (extensão retrocompatível de schemas + limpeza de duplicatas em `schemas.py`)
+  - `.agents/docs/design/plans/analytics-elasticidade.md` (Design Plan v3)
+- [x] **Etapa 3 (TDD + Implementação):** Concluída em Backend (`283 passed` em `tests/analytics/`) e Frontend (`206/206 SUCCESS` Karma + `ng build` exit code 0) — baseline de vendas líquidas dos últimos 60 dias (`fetch_product_recent_volume_60d`), custo unitário editável (`costPrice` opcional em `POST /simulate`), cálculo de margem unitária (`R$/un.`, `%`, `p.p.`), cobertura de estoque em dias (Hoje `0%` vs Proposto contra meta de `60 dias`) e remoção de `<app-elasticity-diagnostic-card>` e `<app-elasticity-customers-table>`.
+- [x] **Etapa 4 (Quality Gate 360):** **APROVADO** por `ux_reviewer` (escala `320px`, skeleton `320px`, ícone colorblind-safe em `.stock-status-tag`, validação/borda crítica do custo e Papel & Tinta) e `reviewer` (46 passed backend elasticidade, 116 SUCCESS analytics frontend, remoção de fallbacks `100.0`/`10.0`, validação cruzada `% × R$`, limpeza de código morto e zero violações XSS/LGPD/governança).
+

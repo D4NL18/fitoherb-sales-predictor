@@ -1,132 +1,188 @@
-# Design Plan: Analytics Comercial — F5 Elasticidade-preço por produto e cliente
+# Design Plan: Analytics Comercial — F5 Calculadora Unificada de Preço, Margem e Estoque (v3)
 
 > **Localização Mandatória:** `.agents/docs/design/plans/analytics-elasticidade.md`
 > **Responsável:** Designer (`designer`) / `uiux-expert`
 > **Auditor:** UX Reviewer (`ux_reviewer`)
-> **Status:** v2 — Camada Didática, Linguagem Acessível e Guias Contextuais (`<app-info-help>`)
+> **Status:** v3 — Calculadora Unificada Enxuta (Custo Editável + Margem Unitária/Total + Estoque 60 Dias)
 > **Alinhamento:** `frontend/src/styles.scss`, `frontend/src/app/features/analytics/styles/_analytics-ui.scss` e `.agents/rules/frontend-ui-anti-patterns.md`
 
-/* Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V4 */
+/* Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V5 */
 
 ---
 
-## 1. Visão Geral e Filosofia Visual (Papel & Tinta + Clareza Didática)
+## 1. Identificação, Objetivo de UX e Escopo v3
 
-A funcionalidade de Elasticidade-Preço atende gestores comerciais e usuários não especialistas dentro da shell compartilhada de Analytics, seguindo integralmente o sistema visual **Papel & Tinta** (editorial, sólido, sem gradientes genéricos, sem glassmorphism e sem cores Tailwind hardcoded):
-- Superfícies em papel quente (`--bg-canvas: #F5F2EB`, `--bg-surface: #FFFFFF`, `--bg-subtle: #ECE7DC`, `--bg-muted: #E2DDD0`), tinta vegetal escura (`--text-primary: #181D19`) e verde botânico (`--brand-primary: #1D4528`).
-- Tipografia oficial: títulos em `Signika` (`--font-family-headline`), corpo em `Source Sans 3` (`--font-family-body`) e números tabulares/códigos em `Overpass Mono` (`--font-family-mono`) com `tabular-nums` e formatação brasileira (`BrlPipe`, `PtDecimalPipe`, `PtPercentPipe`).
-- **Camada Didática v2 (Divulgação Progressiva):** a página combina **linguagem cotidiana** nos rótulos principais, **traduções práticas imediatas** (ex.: efeito de `+10%` no preço e lucro unitário) e o componente contextual **`<app-info-help>`** (botão `"i"`) que preserva a profundidade estatística (`Beta`, `IC 95%`, `R²`, `Shrinkage Bayesiano`, diferença entre `Faturamento` e `Margem de Contribuição`) sem poluir a leitura principal.
-
----
-
-## 2. Checklist Anti-IA (Filtro Anti-Slop)
-
-- [x] **Sem "AI Purple":** nenhum gradiente azul-roxo; toda ênfase usa verde botânico `--brand-primary` (`#1D4528`) e neutros Papel & Tinta.
-- [x] **Sem Glassmorphism no Popover:** `<app-info-help>` usa superfície sólida `--bg-surface` (`#FFFFFF`) com borda `--border-strong` e sombra seca `--shadow-lg`.
-- [x] **Font Pairing Editorial:** `Signika` nos títulos (sem itálico em headers), `Source Sans 3` no texto e `Overpass Mono` nos valores.
-- [x] **Copywriting Humano e Honesto:** zero buzzwords e zero métricas fictícias; exemplos nos guias são explicitamente hipotéticos (*"Ex.: se for -1,50..."*).
-- [x] **Zero Spinners Solitários no Carregamento:** `<app-elasticity-skeleton>` espelha a geometria da tela.
-- [x] **Zero Telas Vazias:** `<app-result-state>` cobre estado inicial, histórico insuficiente (`ELA-003`) e lista de clientes vazia.
+- **User Story Relacionada:** US-F5 — *Como gestor comercial ou analista de pricing da Fitoherb, quero buscar um produto, conferir e ajustar seu custo unitário se necessário, e simular variações de preço para visualizar instantaneamente o impacto na margem unitária, no lucro bruto estimado e na cobertura do estoque sob a política de 60 dias.*
+- **Mudança Estrutural v3 (Simplificação Focada em Decisão):**
+  - **Removidos da página `/analytics/elasticity`:** seção separada de Diagnóstico (`<app-elasticity-diagnostic-card>`) e seção inteira de Análise por Comprador / Tabela de Clientes (`<app-elasticity-customers-table>`).
+  - **Mantidos e Aprimorados:** Painel de busca de produto (`<app-code-search-form>`) + **Calculadora Unificada** (`<app-elasticity-simulator-panel>`) com cabeçalho compacto do produto no topo, editor de custo unitário com origem e restauração, controle de reajuste de preço e 4 cards de impacto orientados à decisão comercial.
+- **Filosofia Visual (Papel & Tinta):**
+  - Superfícies sólidas em papel quente (`--bg-canvas: #F5F2EB`, `--bg-surface: #FFFFFF`, `--bg-subtle: #ECE7DC`, `--bg-muted: #E2DDD0`, `--bg-table-row-zebra: #FAF8F4`), tinta escura (`--text-primary: #181D19`) e verde botânico (`--brand-primary: #1D4528`).
+  - Tipografia editorial: `Signika` (`--font-family-headline`), `Source Sans 3` (`--font-family-body`) e `Overpass Mono` (`--font-family-mono`) com `tabular-nums` e formatação pt-BR (`BrlPipe`, `PtDecimalPipe`, `PtPercentPipe`).
 
 ---
 
-## 3. Mapeamento de Linguagem Acessível (Camada Didática v2)
+## 2. Checklist Anti-IA (Filtro Anti-Slop Obrigatório)
 
-### 3.1 Cabeçalho e Estados (`elasticity-page.component.html`, `elasticity-view.ts`)
-- **Eyebrow:** `Decisão de Preço & Lucro`
-- **Título (`h2`):** `Simulador de Preço e Reação de Vendas` + `<app-info-help>` (`elasticityOverview`)
-- **Subtítulo:** `Veja como os compradores reagem quando o preço muda e teste cenários de aumento ou desconto antes de decidir.`
-- **Busca (`app-code-search-form`):** `label="Escolha o produto"`, `hint="Digite o código ou nome do produto e selecione na lista."`, `submitLabel="Analisar produto"`.
-- **Estado Inicial (`buildElasticityInitialState`):** título `"Veja como o preço afeta as vendas antes de reajustar"`, texto orientado aos 3 passos (ver sensibilidade → testar reajuste → comparar clientes), CTA `"Escolher um produto"`.
-- **Histórico Insuficiente (`buildElasticityInsufficientDataState`):** título `"Ainda não há histórico suficiente para este produto"`, explicando em linguagem simples a exigência mínima de meses regulares líquidos de devoluções.
-
-### 3.2 Diagnóstico do Produto (`elasticity-diagnostic-card.component.html`)
-- **Badges (`getClassificationMeta`, `getConfidenceMeta`):**
-  - `ELASTICO` → `Muito sensível a preço` (`shortLabel` na tabela: `Sensível`)
-  - `INELASTICO` → `Pouco sensível a preço` (`shortLabel` na tabela: `Pouco sensível`)
-  - `ALTA` / `MEDIA` / `BAIXA` → `Confiança alta` / `Confiança média` / `Confiança baixa (usar com cautela)`
-  - Cada badge tem `<app-info-help>` posicionado **fora** da pill `.tag` (wrapper `.badge-with-help`) para manter contraste sobre `--bg-surface`.
-- **Avisos `role="note"`:**
-  - `fallbackApplied`: `"Estimativa padrão de segurança (-1,20): como este produto quase não mudou de preço no passado (ou teve poucos meses de venda), não foi possível medir a reação real dos clientes. Aplicamos uma referência conservadora de mercado (-1,20) para evitar simulações irreais."`
-  - `!isReliable`: `"Previsão com baixa precisão: as vendas passadas variaram por outros motivos além do preço. Use os resultados abaixo como ponto de partida junto com a visão comercial."`
-- **4 Cards Métricos (`metrics-grid`):**
-  1. `Sensibilidade ao preço` (`+ <app-info-help>`): exibe `coefficient` (`-1,45`) + tradução prática calculada em helper puro (`"A cada +10% no preço, o volume cai cerca de 14,5%"`).
-  2. `Faixa provável de reação` (`+ <app-info-help>`): exibe intervalo `de -1,80 até -1,10` + tradução em `+10%` (`"Com +10% no preço, queda entre 11,0% e 18,0% · Erro padrão: ±0,18"`).
-  3. `Qualidade do cálculo e histórico` (`+ <app-info-help>`): exibe `rSquared` (`58,0%`) + subtexto `"O preço explica 58,0% das variações de venda · 18 meses válidos"`.
-  4. `Preço, Custo e Lucro Unitário` (`+ <app-info-help>`): exibe `currentPrice` + subtexto `"Custo: R$ 12,00 · Lucro por un.: R$ 13,50 (52,9%) · Estoque: 420 un."` (margem unitária calculada localmente sem nova chamada HTTP).
-- **Insight Box:** prefixo `Resumo da análise:` seguido de `elasticity().insightMessage`.
-
-### 3.3 Simulador de Impacto (`elasticity-simulator-panel.component.html`)
-- **Título e subtítulo:** `Simulador de Reajuste de Preço` (`+ <app-info-help>`) · `Mova a barra ou escolha um percentual para ver na hora o efeito nas unidades vendidas, no faturamento e no lucro.`
-- **Atalhos:** rótulo `Testar rápido:` com presets `-10%`, `-5%`, `0% (Atual)`, `+5%`, `+10%`, `+20%`.
-- **Bloco de Cliente Selecionado (`customer-scope-card`):**
-  - Título: `Simulação personalizada para este cliente` · Botão: `Voltar para visão geral do produto`.
-  - Estatísticas `<dl>` com `<app-info-help>` em cada item:
-    1. `Média geral do produto` (`productElasticity`)
-    2. `Reação própria do cliente` (`customerEmpiricalElasticity`)
-    3. `Sensibilidade usada na simulação` (`customerElasticity`, sub-rótulo `Média ajustada (Shrinkage)`) — popover explica por que mistura cliente e média do produto ($w = n / (n + 10)$).
-    4. `Peso do histórico dele (n pedidos)` (`shrinkageWeight` + `totalUnits`) — popover traduz exemplos de $n = 3, 10, 30$ pedidos.
-- **Slider:** label `Quanto você quer alterar no preço?` + marcas `-50%`, `0%`, `+50%`, `+100%` com legenda discreta (`Desconto` · `Preço atual` · `Aumento`).
-- **Faixa Resumo:** `Preço atual` → `Preço projetado` + `Sensibilidade aplicada` (`+ <app-info-help>`).
-- **3 Cards de Resultado:**
-  1. `Quantidade prevista` (sub: `Volume projetado` + `<app-info-help>`)
-  2. `Faturamento previsto` (sub: `Receita bruta` + `<app-info-help>` alertando sobre faturar vs lucrar)
-  3. `Lucro bruto estimado` (sub: `Margem de Contribuição`, destaque `.sim-card-highlight` + `<app-info-help>` detalhando por que preço maior com menos unidades pode gerar mais lucro).
-- **Barra de Recomendação:** prefixo `Recomendação:` + `sim.recommendation`.
-
-### 3.4 Tabela de Clientes (`elasticity-customers-table.component.html`)
-- **Cabeçalho:** eyebrow `Análise por comprador` · título `Como cada cliente reage ao preço` · subtítulo `Compare a sensibilidade de cada comprador e clique em "Simular" para testar um reajuste específico para ele.`
-- **Faixa de Orientação Comercial (compacta acima da tabela):** resume em 3 pontos objetivos como usar `Pouco sensível` vs `Sensível` e a ordenação por Volume/Sensibilidade para priorizar reajustes sem perda de vendas.
-- **Busca:** label `Buscar cliente pelo código` (`+ <app-info-help>` explicando filtro local na página vs `Consultar cliente` na base inteira `ELA-002`).
-- **Cabeçalhos da tabela:** `Cód. Cliente` | `Pedidos` | `Volume (un.)` | `Peso histórico` (`+ <app-info-help>`) | `Reação própria` (`+ <app-info-help>`) | `Sensibilidade usada` (`+ <app-info-help>`) | `Perfil` (`+ <app-info-help>`) | `Ação`.
+- [x] **Sem "AI Purple":** nenhum gradiente genérico azul-roxo; toda ênfase usa verde botânico `--brand-primary` (`#1D4528`) e neutros Papel & Tinta.
+- [x] **Sem 3 Colunas Mecânicas SaaS:** workbench analítico com cabeçalho compacto + controles integrados de preço/custo + grade 2×2 de decisão com destaque hierárquico no Lucro Bruto e Cobertura de Estoque 60 dias.
+- [x] **Sem Glassmorphism / Fake Chrome:** popovers `<app-info-help>` e painéis usam superfícies sólidas (`--bg-surface`) com bordas `1px solid` (`--border-default`/`--border-strong`) e sombras secas (`--shadow-xs`/`--shadow-lg`).
+- [x] **Pureza Tipográfica:** `Signika` nos títulos (sem itálico em headers), `Source Sans 3` no corpo e `Overpass Mono` em códigos/valores.
+- [x] **Copy Honesto (Zero Métricas Inventadas):** quando `recentVolume60d === 0`, a tela não exibe volume fictício nem cobertura em dias inventada; exibe `—` com aviso claro de ausência de vendas nos últimos 60 dias.
+- [x] **Zero Spinners Solitários no Carregamento:** `<app-elasticity-skeleton>` espelha exclusivamente a geometria da Calculadora Unificada (sem skeleton de diagnóstico separado nem de tabela).
+- [x] **Zero Telas Vazias:** `<app-result-state>` cobre estado inicial (`initial`) e histórico insuficiente (`ELA-003`).
 
 ---
 
-## 4. Especificação do Componente `<app-info-help>`
+## 3. Tokens do Design System Aplicados (`styles.scss` & `_analytics-ui.scss`)
 
-### 4.1 Localização e Segurança
-- **Componente:** `frontend/src/app/features/analytics/components/info-help/info-help.component.ts` (`.html`, `.scss`), `ChangeDetectionStrategy.OnPush`.
-- **Coordenador:** `InfoHelpCoordinatorService` (`providedIn: 'root'`) mantendo `activeHelpId = signal<string | null>(null)` para garantir **no máximo 1 popover aberto por vez**.
-- **Copy tipada:** `frontend/src/app/features/analytics/utils/elasticity-help-copy.ts` com `InfoHelpContent { title, whatIs, howToAnalyze, insight, technicalNote? }`.
-- **Segurança XSS:** **zero `[innerHTML]`** — renderização 100% via interpolação Angular e `@if`.
+*O Desenvolvedor NÃO deve usar hexadecimais hardcoded nem criar tokens fora de `styles.scss`.*
 
-### 4.2 Anatomia, Posicionamento e Responsividade
-- **Botão gatilho (`.info-help-trigger`):**
-  - Círculo `20px × 20px` (`size="sm"`) ou `22px × 22px` (`size="md"`), ícone `"i"` SVG (`aria-hidden="true"`), `aria-label="Ajuda sobre {{ topicLabel() }}"`, `aria-expanded`, `aria-controls`.
-  - Hit target acessível >= `40px` (`$touch-target`) via `::before { content: ''; position: absolute; inset: -10px; }` sem deformar `<th>` ou labels.
-- **Popover (`.info-help-popover`, `role="dialog"`, `aria-modal="false"`):**
-  - **Posicionamento `position: fixed` dinâmico (`getBoundingClientRect()`):** evita corte pelo `overflow-x: auto` da `.table-wrap`.
-  - **Desktop/Tablet (`>= 640px`):** largura `min(340px, calc(100vw - 24px))`. Calcula alinhamento horizontal automático (`start` / `center` / `end`) respeitando margem de `12px` das bordas e faz flip vertical para cima se não couber abaixo. Recalcula em `scroll`/`resize` enquanto aberto.
-  - **Mobile (`< 640px`):** assume apresentação em folha inferior ancorada (`left: var(--space-3); right: var(--space-3); bottom: var(--space-3); max-height: 75vh; overflow-y: auto;`) com backdrop translúcido neutro, evitando cortar em `320px`/`375px`/`414px` ou cobrir o campo de busca no topo.
-- **Seções internas:** Header (Título + botão fechar `×`) → `O que é` → `Como analisar` → `Qual insight tirar` (caixa `--brand-primary-subtle` com borda `--brand-primary`) → `Detalhe técnico` (opcional, caixa `--bg-table-row-zebra` com texto `--text-secondary`).
-- **Abertura/fechamento:** abre/fecha apenas por clique/toque/teclado (`Enter`/`Space`); fecha em `Escape` (devolvendo foco ao botão gatilho), clique fora (`document` pointerdown/click), clique em `×`, ou abertura de outro `<app-info-help>`.
+| Categoria | Tokens / Mixins Utilizados | Aplicação na Calculadora v3 |
+| :--- | :--- | :--- |
+| **Superfícies** | `--bg-canvas`, `--bg-surface`, `--bg-subtle`, `--bg-muted`, `--bg-table-row-zebra` | Canvas geral, cards da calculadora (`ui.panel`), caixa de controles de preço/custo, faixa resumo, cabeçalho compacto |
+| **Textos** | `--text-primary` (`#181D19`), `--text-secondary` (`#434B44`), `--text-on-brand` (`#FFFFFF`) | Títulos, rótulos e subtítulos sobre bege (`--text-secondary` garante contraste >= 4.5:1 em `--bg-subtle` e `--bg-table-row-zebra`; **proibido `--text-muted` sobre bege**) e texto em tags escuras |
+| **Marca** | `--brand-primary` (`#1D4528`), `--brand-primary-hover`, `--brand-primary-active`, `--brand-primary-subtle` (`#E5EFE7`), `--brand-secondary-subtle` (`#F9EFE5`) | Ações primárias, card destaque de Lucro Bruto, badges SKU, avisos `role="note"` |
+| **Feedback Sólido** | `--feedback-positive-bg`, `--feedback-warning-bg`, `--feedback-critical-bg`, `--feedback-info-bg`, `--feedback-neutral-bg` | Tags `.tag-positive`, `.tag-warning`, `.tag-critical`, `.tag-info`, `.tag-neutral` (sempre com `--text-on-brand`) e deltas positivos/negativos com ícones SVG |
+| **Bordas & Raios** | `--border-subtle`, `--border-default`, `--border-strong`, `--border-focus`, `--radius-xs`, `--radius-sm`, `--radius-full` | Divisórias `1px solid`, anel de foco `2px solid var(--border-focus)`, barras de estoque |
+| **Mixins / Placeholders** | `@include ui.panel`, `@extend %button-primary`, `@extend %button-secondary`, `@include ui.hover`, `@include ui.reduced-motion`, `@include ui.sr-only` | Botões de atalho, botão "Restaurar custo do catálogo", skeleton acessível e hover seguro em touch |
 
 ---
 
-## 5. Os 8 Estados Interativos Mandatórios
+## 4. Anatomia dos Componentes e Layout v3
 
-| Estado | Experiência Implementada |
+### 4.1 Página Principal (`elasticity-page.component.html`)
+1. **Painel de Busca (`section.search-panel`):**
+   - **Eyebrow:** `Decisão de Preço & Lucro`
+   - **Título (`h2`):** `Simulador de Preço e Reação de Vendas` + `<app-info-help>` (`elasticityOverview`)
+   - **Subtítulo:** `Teste aumentos ou descontos para ver na hora o impacto na margem unitária, no lucro bruto e na cobertura de estoque para 60 dias.`
+   - **`<app-code-search-form>`:** `label="Escolha o produto"`, `hint="Digite o código ou nome do produto e selecione na lista."`, `submitLabel="Analisar produto"`.
+2. **Área de Conteúdo (`@switch (loadState())`):**
+   - `initial`: `<app-result-state>` (`buildElasticityInitialState`) focado no fluxo em 3 passos (1. Buscar produto → 2. Conferir ou ajustar custo → 3. Simular preço, margem e estoque 60 dias).
+   - `loading`: `<app-elasticity-skeleton>` (geometria enxuta de 1 painel único de calculadora).
+   - `insufficient-data`: `<app-result-state>` (`buildElasticityInsufficientDataState`) para `ELA-003`.
+   - `error`: `<app-error-banner>` com código e botão `"Tentar novamente"`.
+   - `loaded`: exibe **diretamente `<app-elasticity-simulator-panel>`** recebendo `product`, `elasticity`, `priceChangePct`, `costPriceInput`, `simulationResult`, `isSimulating`, `simulationError`.
+
+### 4.2 Calculadora Unificada (`elasticity-simulator-panel.component.html`)
+
+Organizada em **5 faixas verticais claras** dentro de `section.simulator-card`:
+
+#### Faixa A — Cabeçalho Compacto do Produto (Topo da Calculadora)
+- **Esquerda (`.product-compact-identity`):**
+  - `.product-sku-badge`: `SKU #{{ product().code }}`
+  - `h3.product-description`: `{{ product().description }}`
+  - `.product-compact-meta`: `Fornecedor: {{ product().supplier }}` · `Estoque atual: {{ formattedStock() }} un.` · `Vendas líquidas 60d: {{ formattedRecentVolume60d() }} un.`
+- **Direita (`.product-compact-badges`):**
+  - Tag de Sensibilidade (`getClassificationMeta(elasticity().classification)`): `Muito sensível a preço` / `Pouco sensível a preço` + `<app-info-help>` (`classificationBadge`).
+  - Tag de Confiança (`getConfidenceMeta(elasticity().confidenceLevel)`): `Confiança alta` / `Confiança média` / `Confiança baixa (usar com cautela)` + `<app-info-help>` (`technicalDiagnostics` — exibe em texto limpo os detalhes técnicos: **Beta (`coefficient`), IC 95% (`confidenceInterval`), $R^2$ (`rSquared`), Erro padrão (`standardError`), Meses válidos (`observationsCount`)** e tradução prática em `+10%`).
+- **Avisos Contextuais `role="note"` (logo abaixo do cabeçalho compacto):**
+  - Se `elasticity().fallbackApplied`: aviso `--brand-secondary-subtle` explicando o uso da estimativa padrão de segurança (`-1,20`).
+  - Senão se `!elasticity().isReliable`: aviso `--brand-secondary-subtle` explicando baixa precisão estatística.
+  - Se `product().recentVolume60d <= 0`: aviso neutro informativo (`--bg-table-row-zebra`, borda esquerda `--feedback-info-bg`) informando que não houve vendas líquidas nos últimos 60 dias, portanto a projeção de dias de estoque aparece como indisponível (`—`), enquanto o cálculo unitário de preço e margem permanece ativo.
+
+#### Faixa B — Controles de Preço e Custo Unitário (`.controls-panel`)
+Disposição responsiva em dois blocos coordenados dentro da área de controle (`--bg-subtle`, borda `--border-subtle`):
+1. **Controle de Variação de Preço (`%`):**
+   - Linha de atalhos rápidos (`Testar rápido:` `-10%`, `-5%`, `0% (Atual)`, `+5%`, `+10%`, `+20%`) com `aria-pressed`.
+   - Slider contínuo (`-50%` a `+100%`, marcações `-50%`, `0%`, `+50%`, `+100%`, legenda `Desconto · Preço atual · Aumento`) + input numérico (`%`).
+2. **Controle de Custo Unitário Editável (`R$`):**
+   - Header do bloco: `<label for="cost-price-input">Custo unitário (R$)</label>` + `<app-info-help>` (`unitCostControl`) + **badge/pill discreto de origem**:
+     - `Catálogo ERP` (`!isCostEstimated && !isCostOverride`)
+     - `Estimado (60% do preço)` (`isCostEstimated && !isCostOverride`, quando `[Pc.Ultimo Custo]` está zerado no ERP)
+     - `Editado manualmente` (`isCostOverride`)
+   - Campo numérico com prefixo `R$` (`min="0"`, `step="0.01"`, `font-family: var(--font-family-mono)`, `min-height: 40px`), validando valores `>= 0` (se `< 0` ou inválido: `aria-invalid="true"` e alerta inline sem chamar a API).
+   - **Ação de Restauração:** quando `isCostOverride` estiver ativo (ou valor editado diferente do catálogo), exibe botão secundário `"Restaurar custo do catálogo ({{ catalogCost | brl }})"` (`@extend %button-secondary`, `min-height: 40px`) que limpa o override e dispara nova simulação com o custo original do catálogo.
+
+#### Faixa C — Faixa Resumo da Simulação (`.simulation-summary-strip`)
+- Chips horizontais com wrap fluido:
+  - `Preço atual: {{ sim.currentPrice | brl }}` → `Preço projetado: {{ sim.projectedPrice | brl }} ({{ formatSignedPct(sim.priceChangePct) }})`
+  - `Custo aplicado: {{ effectiveCost | brl }}` *(com indicação curta `(ERP)` / `(60% est.)` / `(Manual)`)*
+  - `Sensibilidade aplicada: {{ sim.appliedElasticity | ptDecimal:2 }}` + `<app-info-help>` (`appliedElasticity`)
+- Indicador discreto `Atualizando projeção…` quando `isSimulating()` está ativo (`aria-busy="true"`).
+
+#### Faixa D — Grid de Impacto e Decisão (4 Cards em Grid 2×2 Desktop / 1 Coluna Mobile)
+`grid-template-columns: repeat(2, minmax(0, 1fr))` acima de `640px` (1 coluna abaixo de `640px`):
+
+1. **Card 1 — Margem Unitária (`R$/un.` e `%`):**
+   - Subtítulo: `Ganho por unidade vendida` + `<app-info-help>` (`unitMarginImpact`)
+   - Valor principal: `{{ projectedUnitMargin | brl }}` `<span class="unit-label">/ un. ({{ projectedUnitMarginPct | ptPercent }})</span>`
+   - Delta com ícone direcional (`tone-positive` / `tone-negative` / `tone-neutral`): `{{ formatSignedBrl(unitMarginDiff) }}/un. ({{ formatSignedPp(unitMarginPctChangePp) }})`
+   - Baseline: `Atual: {{ currentUnitMargin | brl }}/un. ({{ currentUnitMarginPct }})` — se `projectedUnitMargin <= 0`, exibe alerta semântico `"Atenção: preço igual ou abaixo do custo"`.
+
+2. **Card 2 — Lucro Bruto Estimado (60 dias)** *(Destaque `.sim-card-highlight`)*:
+   - Subtítulo: `Margem de Contribuição no ciclo` + `<app-info-help>` (`projectedMargin`)
+   - Valor principal: `{{ sim.projectedMargin | brl }}`
+   - Delta com ícone direcional: `{{ formatSignedBrl(sim.marginChangeAbs) }} ({{ formatSignedPct(sim.marginChangePct) }})`
+   - Baseline: `Atual (60d): {{ sim.currentMargin | brl }}`
+
+3. **Card 3 — Vendas & Faturamento (60 dias):**
+   - Subtítulo: `Volume e receita bruta no ciclo` + `<app-info-help>` (`projectedVolumeAndRevenue`)
+   - Valor principal: `{{ formatQty(sim.projectedVolume) }} <span class="unit-label">un.</span>`
+   - Delta de volume com ícone direcional: `{{ formatSignedUnits(volumeChangeUnits) }} ({{ formatSignedPct(sim.volumeChangePct) }}) · Atual: {{ formatQty(sim.currentVolume) }} un.`
+   - Sub-bloco de Faturamento (`.sim-submetric`): `Faturamento previsto: {{ sim.projectedRevenue | brl }}` · `{{ formatSignedBrl(sim.revenueChangeAbs) }} ({{ formatSignedPct(sim.revenueChangePct) }})` · `Atual: {{ sim.currentRevenue | brl }}`
+
+4. **Card 4 — Cobertura de Estoque (Meta: 60 dias):**
+   - Subtítulo: `Comparativo hoje (0%) vs após mudança` + `<app-info-help>` (`stockCoverage60d`)
+   - Valor principal:
+     - Se `projectedStockDays !== null`: `{{ formatDays(projectedStockDays) }} <span class="unit-label">dias</span>`
+     - Se `stock <= 0` e há vendas: `0 <span class="unit-label">dias (Sem estoque)</span>`
+     - Se `recentVolume60d <= 0` (sem vendas nos 60d): `— <span class="unit-label">Sem vendas 60d</span>`
+   - **Comparativo Direto Hoje vs Proposto + Meta 60d:**
+     - Linha comparativa: `Hoje (0%): {{ currentStockDaysText }} → Proposto: {{ projectedStockDaysText }}` + delta em dias (`stockDaysDelta`, ex.: `+5,5 dias` / `-8,2 dias`).
+     - Barra visual comparativa (`0d` a `90d+`, com marcador vertical tracejado/sólido exatamente em `60d` = `Meta 60d`), usando cor sólida da faixa (sem gradientes).
+     - Badge semântico colorblind-safe (`.tag` com ícone + texto):
+       - `giro-rapido` (`<= 15d`): `.tag-warning` — `Giro muito rápido (≤ 15d)`
+       - `dentro-meta` (`15d < d <= 60d`): `.tag-positive` — `Dentro da meta (≤ 60d)`
+       - `excesso` (`> 60d`): `.tag-info` — `Excesso (> 60d)`
+       - `sem-estoque` (`stock <= 0`): `.tag-critical` — `Estoque zerado`
+       - `sem-vendas` (`vendas 60d == 0`): `.tag-neutral` — `Sem giro nos últimos 60d`
+   - Baseline: `Estoque: {{ formatQty(stock) }} un. · Ritmo: {{ currentDailyText }} → {{ projectedDailyText }} un./dia`
+
+#### Faixa E — Barra de Recomendação (`.simulation-recommendation-bar`)
+- Mantém o feedback contextual da simulação com ícone e borda lateral (`rec-tone-positive`, `rec-tone-negative`, `rec-tone-neutral`).
+
+---
+
+## 5. Matriz dos 8 Estados Interativos Mandatórios
+
+| Estado | Experiência na Calculadora Unificada v3 |
 | :--- | :--- |
-| **1. Initial / Idle** | `<app-result-state>` (`buildElasticityInitialState`) sem chamada automática de API até que o usuário busque ou abra URL com `?sku=`. Botão foca o input de busca. |
-| **2. Loading** | `<app-elasticity-skeleton>` fiel à geometria do diagnóstico, simulador e tabela com `aria-busy="true"` e `@include ui.reduced-motion`. |
-| **3. Success** | Dados renderizados em `pt-BR` com traduções práticas, margens unitárias e região `p.sr-only[role="status"][aria-live="polite"]`. |
-| **4. Empty** | Produto sem clientes individuais exibe `<app-result-state>` na tabela sem ocultar diagnóstico/simulador; filtro local vazio exibe botão `"Limpar filtro"`. |
-| **5. Error** | `<app-error-banner>` amigável via `analytics-error.ts` (`ELA-001`..`ANL-002`) + retry; `ELA-003` renderiza estado de histórico insuficiente. |
-| **6. Busy / Disabled** | Durante simulação em voo, slider permanece manipulável; atalhos e ações de linha ficam desabilitados e a grade recebe `aria-busy="true"`. `<app-info-help>` permanece legível sem bloquear o fluxo. |
-| **7. Invalid** | Percentual fora de `[-50, 100]` ou SKU inválido marcam `aria-invalid="true"`, exibem alerta inline e bloqueiam chamadas HTTP inválidas. |
-| **8. Partial / Low-Confidence** | Bloco `role="note"` contrastante explicando em linguagem cotidiana o fallback `-1,20` (`fallbackApplied`) ou baixa confiabilidade amostral (`!isReliable`). |
+| **1. Initial / Idle** | `<app-result-state>` (`buildElasticityInitialState`) sem chamada automática de API até busca ou `?sku=` na URL. CTA foca o campo de busca. |
+| **2. Loading** | `<app-elasticity-skeleton>` espelhando 1 único painel unificado (cabeçalho compacto + barra de controles + grade 2×2 de cards skeleton) com `aria-busy="true"` e `@include ui.reduced-motion`. |
+| **3. Success** | Dados em `pt-BR`, custo com origem e restauração, margem unitária/total e estoque 60 dias renderizados + `p.sr-only[role="status"][aria-live="polite"]`. |
+| **4. Empty / Sem Vendas 60d** | Quando `recentVolume60d === 0`, exibe aviso `role="note"` honesto de zero vendas nos últimos 60 dias e cobertura `—` (`Sem giro nos últimos 60d`), mantendo preço e margem unitária funcionais. |
+| **5. Error** | `<app-error-banner>` amigável (`ELA-001`..`ANL-002`) com retry; erro na chamada de simulação aparece inline sem destruir os controles. |
+| **6. Busy / Disabled** | Durante simulação em voo (`isSimulating()`), slider e input de custo permanecem editáveis; presets rápidos e botão `"Restaurar custo do catálogo"` ficam desabilitados e a grade recebe `aria-busy="true"`. |
+| **7. Invalid** | Percentual fora de `[-50, 100]`, custo unitário `< 0` ou SKU inválido marcam `aria-invalid="true"`, exibem mensagem inline e bloqueiam chamadas HTTP inválidas. |
+| **8. Partial / Low-Confidence** | Bloco `role="note"` contrastante no topo da calculadora explicando fallback `-1,20` (`fallbackApplied`) ou baixa confiabilidade (`!isReliable`). |
 
 ---
 
-## 6. Tokens, Contraste WCAG AA e Acessibilidade
+## 6. Especificação de `<app-info-help>` (Tópicos v3)
 
-- **Tokens obrigatórios (`frontend/src/styles.scss`):**
-  - `--bg-canvas`, `--bg-surface`, `--bg-subtle`, `--bg-muted`, `--bg-table-header`, `--bg-table-row-hover`, `--bg-table-row-zebra`.
-  - `--brand-primary`, `--brand-primary-hover`, `--brand-primary-subtle`, `--brand-secondary-subtle`.
-  - `--text-primary`, `--text-secondary`, `--text-on-brand`, `--border-subtle`, `--border-default`, `--border-strong`, `--border-focus`.
-  - `--shadow-xs`, `--shadow-lg`, `--radius-xs`, `--radius-md`, `--radius-full`, `--transition-fast`.
-- **Regras de contraste verificadas (>= 4.5:1):**
-  - `--text-primary` (`#181D19`) sobre `--bg-surface` (`#FFFFFF`) e `--brand-primary-subtle` (`#E5EFE7`).
-  - `--text-secondary` (`#434B44`) sobre `--bg-table-row-zebra` (`#FAF8F4`) e `--bg-subtle` (`#ECE7DC`) — **proibido `--text-muted` sobre fundos bege**.
-  - `--text-on-brand` (`#FFFFFF`) sobre `--brand-primary` (`#1D4528`) e classes `.tag-*`.
-- **Regras CSS / Sonar:** manter `&` sempre no arquivo do componente (nunca dentro de mixins em `_analytics-ui.scss`) e respeitar `@include ui.hover` e `@include ui.reduced-motion`.
+- Mantém `InfoHelpCoordinatorService`, zero `[innerHTML]`, `position: fixed` no desktop e bottom sheet em `< 640px`.
+- Tópicos removidos por não existirem mais na tela: chaves exclusivas da antiga tabela de clientes (`customerLookup`, `tableShrinkageWeight`, `tableEmpiricalElasticity`, `tableAdjustedElasticity`, `tableProfile`, `productBaselineElasticity`, `customerEmpiricalElasticity`, `shrinkageElasticity`, `shrinkageWeight`).
+- Novos tópicos adicionados em `elasticity-help-copy.ts`:
+  - `technicalDiagnostics`: consolida **Beta, IC 95%, R², Erro padrão e Meses válidos** em linguagem acessível + nota técnica.
+  - `unitCostControl`: explica `[Pc.Ultimo Custo]` do ERP vs fallback 60% vs simulação com custo editado manualmente.
+  - `unitMarginImpact`: explica margem unitária em `R$/un.`, `%` e variação em pontos percentuais (`p.p.`).
+  - `projectedVolumeAndRevenue`: combina leitura de volume nos 60 dias e receita bruta.
+  - `stockCoverage60d`: explica cálculo `Estoque / (Vendas 60d / 60)`, meta corporativa de 60 dias e alertas (`<= 15d` giro muito rápido vs `> 60d` excesso).
+
+---
+
+## 7. Responsividade e Critérios de Aceite WCAG AA
+
+| Breakpoint | Comportamento do Layout |
+| :--- | :--- |
+| **Mobile (`320px / 375px / 414px`, `< 640px`)** | Coluna única vertical, padding `--space-4`, controles de preço e custo empilhados, 4 cards de decisão em 1 coluna, botões `min-height: 40px`, popover `<app-info-help>` em bottom sheet, zero scroll horizontal (`min-width: 0; overflow-wrap: anywhere`). |
+| **Tablet (`640px – 1024px`)** | Cabeçalho compacto em wrap fluido, controles lado a lado ou empilhados conforme largura, cards em grade 2×2. |
+| **Desktop (`> 1024px`)** | Busca compacta no topo + Calculadora Unificada em largura integral do workspace, grade 2×2 equilibrada, `15–20%` de respiro visual. |
+
+**Critérios de Aceite (DoD Visual):**
+- [ ] Zero referências a `<app-elasticity-diagnostic-card>` e `<app-elasticity-customers-table>` em `ElasticityPageComponent`.
+- [ ] Todos os elementos consomem exclusivamente tokens de `styles.scss` e mixins de `_analytics-ui.scss` (Papel & Tinta).
+- [ ] Contraste >= 4.5:1 em todos os textos (`--text-secondary` sobre fundos bege, `--text-on-brand` em tags escuras).
+- [ ] Todos os 8 estados interativos e alvos de toque `>= 40px` validados em `320 / 375 / 414 / 768 px`.
+- [ ] Nenhuma violação de `.agents/rules/frontend-ui-anti-patterns.md` nem regressão de `css:S8776` (`&` sempre no componente).
