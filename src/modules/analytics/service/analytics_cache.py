@@ -21,7 +21,9 @@ import threading
 import time
 from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta, timezone
-from typing import Dict, FrozenSet, Mapping, NamedTuple, Optional, Tuple
+from typing import Dict, FrozenSet, List, Mapping, NamedTuple, Optional, Tuple
+
+import pandas as pd
 
 from src.modules.analytics.domain.cross_sell import (
     MIN_VALID_BASKETS,
@@ -130,7 +132,8 @@ def business_date(moment: datetime) -> date:
 
 def reset_cache() -> None:
     """Volta ao estado frio: limpa snapshot, catálogo, flag de carga e duração (apoio a teste)."""
-    global _SNAPSHOT, _CATALOG, _MONTHLY_SALES_DF, _MONTHLY_SALES_LOADED_AT, _is_loading, _load_duration_ms
+    global _SNAPSHOT, _CATALOG, _CHURN_SNAPSHOT, _MONTHLY_SALES_DF, _MONTHLY_SALES_LOADED_AT, _is_loading, _load_duration_ms
+    _CHURN_SNAPSHOT = None
     _SNAPSHOT = None
     _CATALOG = None
     _MONTHLY_SALES_DF = None
@@ -290,6 +293,182 @@ def get_snapshot(force_reload: bool = False) -> AnalyticsSnapshot:
         if current is not None and _is_fresh(current.loaded_at):
             return current
         return _load_and_publish()
+
+
+# ---------------------------------------------------------------------------
+# F3: Churn de Clientes — Cache por Snapshot (P-117 a P-127; ADR-006 DA-04)
+# ---------------------------------------------------------------------------
+from src.modules.analytics.domain.churn import (
+    ChurnCustomerSummary,
+    MonthlyRevenuePoint,
+    calculate_churn_metrics,
+    evaluate_lost_products,
+    rank_churn_customers,
+)
+
+@dataclass(frozen=True)
+class ChurnCacheSnapshot:
+    reference_date: date
+    loaded_at: datetime
+    customers_by_code: Mapping[int, ChurnCustomerSummary]
+    ranked_active_customers: Tuple[ChurnCustomerSummary, ...]
+    ranked_inactive_customers: Tuple[ChurnCustomerSummary, ...]
+    summary_kpi: Mapping[str, object]
+
+_CHURN_SNAPSHOT: Optional[ChurnCacheSnapshot] = None
+_CHURN_LOCK = threading.Lock()
+
+
+def _build_churn_snapshot() -> ChurnCacheSnapshot:
+    now = _utc_now()
+    ref_date = business_date(now)
+    cutoff = ref_date + timedelta(days=CUTOFF_DAYS_AFTER_REFERENCE)
+
+    orders_df = sales_repository.fetch_customer_orders(cutoff)
+    revenue_df = sales_repository.fetch_customer_monthly_revenue(cutoff)
+    top_prod_df = sales_repository.fetch_customer_top_products(cutoff)
+    meta_df = sales_repository.fetch_customer_metadata(cutoff)
+    catalog = get_catalog().entries
+
+    meta_by_cust: Dict[int, Tuple[str, str, str]] = {}
+    for row in meta_df.itertuples(index=False):
+        c_code = int(row.customer_code)
+        c_name = str(row.customer_name or "").strip()
+        s_name = str(row.seller_name or "").strip()
+        raw_city = str(row.city or "").strip()
+        raw_uf = str(row.uf or "").strip()
+        c_city = f"{raw_city}/{raw_uf}" if raw_city and raw_uf else (raw_city or raw_uf)
+        meta_by_cust[c_code] = (c_name, s_name, c_city)
+
+    # Mapear pedidos por cliente
+    orders_by_cust: Dict[int, List[date]] = {}
+    for row in orders_df.itertuples(index=False):
+        c_code = int(row.customer_code)
+        orders_by_cust.setdefault(c_code, []).append(row.order_date)
+
+    # Mapear faturamento mensal por cliente
+    rev_by_cust: Dict[int, List[MonthlyRevenuePoint]] = {}
+    for row in revenue_df.itertuples(index=False):
+        c_code = int(row.customer_code)
+        rev_by_cust.setdefault(c_code, []).append(
+            MonthlyRevenuePoint(year=int(row.year), month=int(row.month), net_revenue=float(row.net_revenue), order_count=int(row.order_count))
+        )
+
+    # Mapear produtos comprados por cliente
+    prod_by_cust: Dict[int, List[dict]] = {}
+    for row in top_prod_df.itertuples(index=False):
+        c_code = int(row.customer_code)
+        sku = int(row.sku)
+        cat_item = catalog.get(sku)
+        desc = cat_item.description if cat_item else ""
+        forn = cat_item.supplier if cat_item else ""
+        prod_by_cust.setdefault(c_code, []).append({
+            "sku": sku,
+            "descricao": desc,
+            "fornecedor": forn,
+            "revenue": float(row.revenue),
+            "last_date": row.last_date,
+        })
+
+    all_cust_codes = set(orders_by_cust.keys()) | set(rev_by_cust.keys())
+    active_summaries: List[ChurnCustomerSummary] = []
+    inactive_summaries: List[ChurnCustomerSummary] = []
+    summaries_map: Dict[int, ChurnCustomerSummary] = {}
+
+    for c_code in all_cust_codes:
+        c_orders = orders_by_cust.get(c_code, [])
+        c_rev = rev_by_cust.get(c_code, [])
+        c_name, s_name, c_city = meta_by_cust.get(c_code, ("", "", ""))
+        summary = calculate_churn_metrics(
+            c_code,
+            c_orders,
+            c_rev,
+            ref_date,
+            customer_name=c_name,
+            seller_name=s_name,
+            city=c_city,
+        )
+
+        # Enriquecer com produtos perdidos se tiver compras passadas
+        if c_code in prod_by_cust:
+            lost = tuple(evaluate_lost_products(prod_by_cust[c_code], ref_date))
+            summary = replace(summary, produtos_perdidos=lost)
+
+        summaries_map[c_code] = summary
+        if summary.status == "INATIVO_RECUPERACAO":
+            inactive_summaries.append(summary)
+        else:
+            active_summaries.append(summary)
+
+    ranked_active = tuple(rank_churn_customers(active_summaries))
+    ranked_inactive = tuple(sorted(inactive_summaries, key=lambda c: c.faturamento_medio_mensal, reverse=True))
+
+    total_risco = sum(1 for c in active_summaries if c.status == "EM_RISCO")
+    total_alerta = sum(1 for c in active_summaries if c.status == "ALERTA")
+    total_saudavel = sum(1 for c in active_summaries if c.status == "SAUDAVEL")
+    receita_risco = sum(c.faturamento_medio_mensal for c in active_summaries if c.status == "EM_RISCO")
+
+    summary_kpi = {
+        "totalEmRisco": total_risco,
+        "totalAlerta": total_alerta,
+        "totalSaudavel": total_saudavel,
+        "totalInativos": len(ranked_inactive),
+        "receitaMensalEmRisco": round(receita_risco, 2),
+    }
+
+    return ChurnCacheSnapshot(
+        reference_date=ref_date,
+        loaded_at=now,
+        customers_by_code=summaries_map,
+        ranked_active_customers=ranked_active,
+        ranked_inactive_customers=ranked_inactive,
+        summary_kpi=summary_kpi,
+    )
+
+
+def get_churn_snapshot(force_reload: bool = False) -> ChurnCacheSnapshot:
+    global _CHURN_SNAPSHOT
+    seen = _CHURN_SNAPSHOT
+    if not force_reload and seen is not None and _is_fresh(seen.loaded_at):
+        return seen
+    with _CHURN_LOCK:
+        if not force_reload and _CHURN_SNAPSHOT is not None and _is_fresh(_CHURN_SNAPSHOT.loaded_at):
+            return _CHURN_SNAPSHOT
+        snapshot = _build_churn_snapshot()
+        _CHURN_SNAPSHOT = snapshot
+        return snapshot
+
+
+def get_churn_customers_list(status: Optional[str] = None) -> List[ChurnCustomerSummary]:
+    snap = get_churn_snapshot()
+    if status == "TODOS_GERAL":
+        return list(snap.ranked_active_customers) + list(snap.ranked_inactive_customers)
+    if status is None or status == "TODOS":
+        return list(snap.ranked_active_customers)
+    return [c for c in snap.ranked_active_customers if c.status == status]
+
+
+def get_customer_churn_detail(customer_code: int) -> Optional[ChurnCustomerSummary]:
+    snap = get_churn_snapshot()
+    return snap.customers_by_code.get(customer_code)
+
+
+def get_inactive_churn_list() -> List[ChurnCustomerSummary]:
+    snap = get_churn_snapshot()
+    return list(snap.ranked_inactive_customers)
+
+
+def get_churn_summary_stats() -> dict:
+    snap = get_churn_snapshot()
+    return dict(snap.summary_kpi)
+
+
+def get_churn_filter_options() -> Tuple[List[str], List[str]]:
+    snap = get_churn_snapshot()
+    all_items = list(snap.customers_by_code.values())
+    sellers = sorted({c.seller_name for c in all_items if c.seller_name})
+    cities = sorted({c.city for c in all_items if c.city})
+    return sellers, cities
 
 
 # ------------------------------------------------------------------ cache de vendas mensais (P-106, ADR-005 DA-07)

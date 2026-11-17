@@ -169,6 +169,86 @@ def search_products(q: SearchQuery, limit: SearchLimitQuery = DEFAULT_SEARCH_LIM
     return analytics_service.search_products(q, PageRequest(limit=limit, offset=offset))
 
 
+# ---------------------------------------------------------------------------
+# F3: Churn de Clientes (P-117 a P-127; ADR-006 DA-05)
+# ---------------------------------------------------------------------------
+from src.modules.analytics.api.schemas import (
+    ChurnCustomersResponse,
+    ChurnFilterOptionsResponse,
+    CustomerChurnDetailResponse,
+    InactiveChurnResponse,
+)
+
+_CHURN_ERRORS = {
+    400: {**_ERROR, "description": "CHU-003: parâmetros de churn inválidos."},
+    404: {**_ERROR, "description": "CHU-001: cliente não encontrado ou sem compras de venda."},
+    422: {**_ERROR, "description": "CHU-002: base insuficiente para apuração de churn."},
+    503: {**_ERROR, "description": "ANL-001: base de vendas indisponível."},
+}
+
+
+@analytics_router.get("/churn/filters", response_model=ChurnFilterOptionsResponse,
+                      summary="Opções de filtro (vendedores e cidades) do módulo de churn",
+                      responses=_CHURN_ERRORS)
+def get_churn_filters() -> ChurnFilterOptionsResponse:
+    return analytics_service.get_churn_filters()
+
+
+@analytics_router.get("/churn/customers", response_model=ChurnCustomersResponse,
+                      summary="Listagem priorizada de clientes por score de churn",
+                      description="Clientes em risco ou alerta ordenados por scorePrioridade decrescente (P-123).",
+                      responses=_CHURN_ERRORS)
+def get_churn_customers(status: Optional[str] = Query(default="EM_RISCO", description="Filtro de status (EM_RISCO, ALERTA, SAUDAVEL, TODOS, TODOS_GERAL)."),
+                        q: Optional[str] = Query(default=None, description="Busca por código, cliente, vendedor ou cidade."),
+                        seller: Optional[str] = Query(default=None, description="Filtro exato por vendedor."),
+                        city: Optional[str] = Query(default=None, description="Filtro exato por cidade/UF."),
+                        sort_by: Optional[str] = Query(default=None, alias="sortBy", description="Campo de ordenação."),
+                        sort_dir: Literal["asc", "desc"] = Query(default="desc", alias="sortDir", description="Direção da ordenação."),
+                        limit: LimitQuery = DEFAULT_PAGE_LIMIT,
+                        offset: OffsetQuery = MIN_OFFSET) -> ChurnCustomersResponse:
+    if status is not None and status not in ("EM_RISCO", "ALERTA", "SAUDAVEL", "TODOS", "TODOS_GERAL"):
+        from src.modules.analytics.domain.exceptions import ChurnInvalidParametersError
+        raise ChurnInvalidParametersError(fields=["status"])
+    return analytics_service.get_churn_customers(
+        status,
+        PageRequest(limit=limit, offset=offset),
+        q=q,
+        seller=seller,
+        city=city,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+    )
+
+
+@analytics_router.get("/churn/customers/{customerCode}", response_model=CustomerChurnDetailResponse,
+                      summary="Detalhamento explicativo do cliente em churn",
+                      description="Decomposição do score, tendência trimestral e produtos perdidos (P-126).",
+                      responses=_CHURN_ERRORS)
+def get_customer_churn_detail(customer_code: CustomerCodePath) -> CustomerChurnDetailResponse:
+    return analytics_service.get_customer_churn_detail(customer_code)
+
+
+@analytics_router.get("/churn/inactive", response_model=InactiveChurnResponse,
+                      summary="Fila especializada de clientes inativos antigos (> 180 dias)",
+                      description="Inativos antigos ordenados por faturamento histórico para reativação (P-125).",
+                      responses=_CHURN_ERRORS)
+def get_inactive_churn(q: Optional[str] = Query(default=None, description="Busca por código, cliente, vendedor ou cidade."),
+                       seller: Optional[str] = Query(default=None, description="Filtro exato por vendedor."),
+                       city: Optional[str] = Query(default=None, description="Filtro exato por cidade/UF."),
+                       sort_by: Optional[str] = Query(default=None, alias="sortBy", description="Campo de ordenação."),
+                       sort_dir: Literal["asc", "desc"] = Query(default="desc", alias="sortDir", description="Direção da ordenação."),
+                       limit: LimitQuery = DEFAULT_PAGE_LIMIT,
+                       offset: OffsetQuery = MIN_OFFSET) -> InactiveChurnResponse:
+    return analytics_service.get_inactive_churn(
+        PageRequest(limit=limit, offset=offset),
+        q=q,
+        seller=seller,
+        city=city,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+    )
+
+
 # ------------------------------------------------------------------ sazonalidade por produto (P-106..P-116; ADR-005)
 # NOTA: /seasonality/ranking DEVE vir antes de /seasonality/{sku} para evitar conflito de path matching
 
