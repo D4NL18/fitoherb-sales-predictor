@@ -132,12 +132,18 @@ def business_date(moment: datetime) -> date:
 
 def reset_cache() -> None:
     """Volta ao estado frio: limpa snapshot, catálogo, flag de carga e duração (apoio a teste)."""
-    global _SNAPSHOT, _CATALOG, _CHURN_SNAPSHOT, _MONTHLY_SALES_DF, _MONTHLY_SALES_LOADED_AT, _is_loading, _load_duration_ms
+    global _SNAPSHOT, _CATALOG, _CHURN_SNAPSHOT, _MONTHLY_SALES_DF, _MONTHLY_SALES_LOADED_AT
+    global _NEW_PRODUCT_OPTIONS, _NEW_PRODUCT_OPTIONS_LOADED_AT
+    global _is_loading, _load_duration_ms
     _CHURN_SNAPSHOT = None
     _SNAPSHOT = None
     _CATALOG = None
     _MONTHLY_SALES_DF = None
     _MONTHLY_SALES_LOADED_AT = None
+    _NEW_PRODUCT_OPTIONS = None
+    _NEW_PRODUCT_OPTIONS_LOADED_AT = None
+    _NEW_PRODUCT_CANDIDATES_BY_TYPE.clear()
+    _NEW_PRODUCT_MATURE_BY_TYPE.clear()
     _is_loading = False
     _load_duration_ms = None
 
@@ -499,4 +505,80 @@ def get_monthly_sales(force_reload: bool = False) -> pd.DataFrame:
         _MONTHLY_SALES_DF = df
         _MONTHLY_SALES_LOADED_AT = now
         logger.info("Carga de vendas mensais concluida: %d registros agregados.", len(df))
+        return df
+
+
+# ------------------------------------------------------------------ cache de Produto Novo (F2 / P-141, P-149)
+
+_NEW_PRODUCT_OPTIONS: Optional[dict] = None
+_NEW_PRODUCT_OPTIONS_LOADED_AT: Optional[datetime] = None
+_NEW_PRODUCT_OPTIONS_LOCK = threading.Lock()
+
+_NEW_PRODUCT_CANDIDATES_BY_TYPE: Dict[str, Tuple[datetime, pd.DataFrame]] = {}
+_NEW_PRODUCT_MATURE_BY_TYPE: Dict[str, Tuple[datetime, pd.DataFrame]] = {}
+_NEW_PRODUCT_TYPE_LOCK = threading.Lock()
+
+
+def get_new_product_options(force_reload: bool = False) -> dict:
+    """Retorna opções de tipos e fornecedores ativos com cache de 6h e lock (P-141.3)."""
+    global _NEW_PRODUCT_OPTIONS, _NEW_PRODUCT_OPTIONS_LOADED_AT
+    if (
+        not force_reload
+        and _NEW_PRODUCT_OPTIONS is not None
+        and _NEW_PRODUCT_OPTIONS_LOADED_AT is not None
+        and _is_fresh(_NEW_PRODUCT_OPTIONS_LOADED_AT)
+    ):
+        return _NEW_PRODUCT_OPTIONS
+
+    with _NEW_PRODUCT_OPTIONS_LOCK:
+        if (
+            not force_reload
+            and _NEW_PRODUCT_OPTIONS is not None
+            and _NEW_PRODUCT_OPTIONS_LOADED_AT is not None
+            and _is_fresh(_NEW_PRODUCT_OPTIONS_LOADED_AT)
+        ):
+            return _NEW_PRODUCT_OPTIONS
+
+        now = _utc_now()
+        options = sales_repository.fetch_new_product_options()
+        _NEW_PRODUCT_OPTIONS = options
+        _NEW_PRODUCT_OPTIONS_LOADED_AT = now
+        return options
+
+
+def get_new_product_candidates(tipo: str, force_reload: bool = False) -> pd.DataFrame:
+    """Retorna lançamentos reais agregados do `tipo` com cache de 6h e lock (P-149)."""
+    key = tipo.strip().casefold()
+    cached = _NEW_PRODUCT_CANDIDATES_BY_TYPE.get(key)
+    if not force_reload and cached is not None and _is_fresh(cached[0]):
+        return cached[1]
+
+    with _NEW_PRODUCT_TYPE_LOCK:
+        cached = _NEW_PRODUCT_CANDIDATES_BY_TYPE.get(key)
+        if not force_reload and cached is not None and _is_fresh(cached[0]):
+            return cached[1]
+
+        now = _utc_now()
+        first_of_month = business_date(now).replace(day=1)
+        df = sales_repository.fetch_new_product_candidates(tipo=tipo.strip(), cutoff=first_of_month)
+        _NEW_PRODUCT_CANDIDATES_BY_TYPE[key] = (now, df)
+        return df
+
+
+def get_mature_product_distribution(tipo: str, force_reload: bool = False) -> pd.DataFrame:
+    """Retorna distribuição mensal de produtos maduros do `tipo` com cache de 6h e lock (P-147, P-149)."""
+    key = tipo.strip().casefold()
+    cached = _NEW_PRODUCT_MATURE_BY_TYPE.get(key)
+    if not force_reload and cached is not None and _is_fresh(cached[0]):
+        return cached[1]
+
+    with _NEW_PRODUCT_TYPE_LOCK:
+        cached = _NEW_PRODUCT_MATURE_BY_TYPE.get(key)
+        if not force_reload and cached is not None and _is_fresh(cached[0]):
+            return cached[1]
+
+        now = _utc_now()
+        first_of_month = business_date(now).replace(day=1)
+        df = sales_repository.fetch_mature_product_distribution(tipo=tipo.strip(), cutoff=first_of_month)
+        _NEW_PRODUCT_MATURE_BY_TYPE[key] = (now, df)
         return df

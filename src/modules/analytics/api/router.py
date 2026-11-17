@@ -26,6 +26,9 @@ from src.modules.analytics.api.schemas import (
     CustomerElasticityResponse,
     ElasticitySimulationRequest,
     ElasticitySimulationResponse,
+    NewProductForecastRequest,
+    NewProductForecastResponse,
+    NewProductOptionsResponse,
     ProductElasticityResponse,
 )
 from src.modules.analytics.domain.pagination import DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT, PageRequest
@@ -317,3 +320,36 @@ def simulate_price_impact(
     request: ElasticitySimulationRequest,
 ) -> ElasticitySimulationResponse:
     return analytics_service.simulate_price_change(request)
+
+
+# ------------------------------------------------------------------ Viabilidade de Produto Novo (F2 / P-139..P-149)
+
+_NEW_PRODUCT_ERRORS = {
+    400: {**_ERROR, "description": "NEW-002 / NEW-003 / NEW-004: tipo, fornecedor ou parâmetros inválidos."},
+    422: {**_ERROR, "description": "NEW-001: base de lançamentos similares insuficiente (< 3)."},
+    503: {**_ERROR, "description": "NEW-005: base de dados indisponível."},
+}
+
+
+@analytics_router.get(
+    "/new-product/options",
+    response_model=NewProductOptionsResponse,
+    summary="Opções de tipo e fornecedor para produto novo",
+    responses=_NEW_PRODUCT_ERRORS,
+    description="Retorna listas deduplicadas e ordenadas de tipos e fornecedores ativos (P-141).",
+)
+def get_new_product_options() -> NewProductOptionsResponse:
+    return analytics_service.get_new_product_options()
+
+
+@analytics_router.post(
+    "/new-product/forecast",
+    response_model=NewProductForecastResponse,
+    summary="Simulação de viabilidade de produto novo",
+    responses=_NEW_PRODUCT_ERRORS,
+    description="Projeta demanda conservadora (P25 * 0,70), similares, teto maduro P75 e viabilidade de margem (P-139..P-149).",
+)
+def forecast_new_product(
+    request: NewProductForecastRequest,
+) -> NewProductForecastResponse:
+    return analytics_service.forecast_new_product(request)

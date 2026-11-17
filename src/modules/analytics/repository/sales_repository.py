@@ -17,7 +17,7 @@ import logging
 import math
 from contextlib import contextmanager
 from datetime import date, timedelta
-from typing import Iterator, List, Sequence
+from typing import Iterator, List, Optional, Sequence
 
 import numpy as np
 import pandas as pd
@@ -367,3 +367,152 @@ def fetch_product_recent_volume_60d(sku: int, cutoff: date, window_days: int = 6
     if math.isnan(net_volume):
         return 0.0
     return max(0.0, net_volume)
+
+
+# ------------------------------------------------------------------ Viabilidade de Produto Novo (F2 / P-139..P-149)
+
+_NEW_PRODUCT_OPTIONS_SQL = """
+SELECT DISTINCT
+    LTRIM(RTRIM(p.[Tipo]))       AS tipo,
+    LTRIM(RTRIM(p.[Fornecedor])) AS fornecedor
+FROM Externo01.Produto AS p
+WHERE p.[Pc.Venda] > 0
+  AND p.[Tipo] IS NOT NULL
+  AND p.[Fornecedor] IS NOT NULL
+""".strip()
+
+_NEW_PRODUCT_CANDIDATES_SQL = f"""
+SELECT
+    v.[Cod Produto]                                  AS sku,
+    LTRIM(RTRIM(p.[Tipo]))                           AS tipo,
+    LTRIM(RTRIM(p.[Fornecedor]))                     AS fornecedor,
+    LTRIM(RTRIM(p.[Descricao]))                      AS descricao,
+    CAST(p.[Pc.Venda] AS float)                      AS preco,
+    fs.first_sale_date                               AS first_sale_date,
+    YEAR(v.[Data])                                   AS sale_year,
+    MONTH(v.[Data])                                  AS sale_month,
+    SUM(v.[Qtd Venda])                               AS net_quantity
+FROM Externo01.Vendas AS v
+INNER JOIN Externo01.Produto AS p
+    ON p.[Codigo] = v.[Cod Produto]
+INNER JOIN (
+    SELECT
+        [Cod Produto] AS sku,
+        CAST(MIN([Data]) AS date) AS first_sale_date
+    FROM Externo01.Vendas
+    WHERE [Operação] = '{SALE_OPERATION}'
+    GROUP BY [Cod Produto]
+    HAVING CAST(MIN([Data]) AS date) >= '2025-04-01'
+) AS fs
+    ON fs.sku = v.[Cod Produto]
+WHERE LTRIM(RTRIM(p.[Tipo])) = ?
+  AND v.[Data] < ?
+  AND (v.[Operação] = '{SALE_OPERATION}' OR v.[Operação] LIKE '{RETURN_OPERATION_PATTERN}')
+GROUP BY
+    v.[Cod Produto],
+    LTRIM(RTRIM(p.[Tipo])),
+    LTRIM(RTRIM(p.[Fornecedor])),
+    LTRIM(RTRIM(p.[Descricao])),
+    p.[Pc.Venda],
+    fs.first_sale_date,
+    YEAR(v.[Data]),
+    MONTH(v.[Data])
+""".strip()
+
+_MATURE_PRODUCT_DISTRIBUTION_SQL = f"""
+SELECT
+    v.[Cod Produto]                                  AS sku,
+    LTRIM(RTRIM(p.[Tipo]))                           AS tipo,
+    fs.first_sale_date                               AS first_sale_date,
+    SUM(v.[Qtd Venda])                               AS net_quantity
+FROM Externo01.Vendas AS v
+INNER JOIN Externo01.Produto AS p
+    ON p.[Codigo] = v.[Cod Produto]
+INNER JOIN (
+    SELECT
+        [Cod Produto] AS sku,
+        CAST(MIN([Data]) AS date) AS first_sale_date
+    FROM Externo01.Vendas
+    WHERE [Operação] = '{SALE_OPERATION}'
+    GROUP BY [Cod Produto]
+    HAVING CAST(MIN([Data]) AS date) < '2025-04-01'
+) AS fs
+    ON fs.sku = v.[Cod Produto]
+WHERE LTRIM(RTRIM(p.[Tipo])) = ?
+  AND v.[Data] < ?
+  AND (v.[Operação] = '{SALE_OPERATION}' OR v.[Operação] LIKE '{RETURN_OPERATION_PATTERN}')
+GROUP BY
+    v.[Cod Produto],
+    LTRIM(RTRIM(p.[Tipo])),
+    fs.first_sale_date,
+    YEAR(v.[Data]),
+    MONTH(v.[Data])
+""".strip()
+
+NEW_PRODUCT_CANDIDATE_COLUMNS = [
+    "sku",
+    "tipo",
+    "fornecedor",
+    "descricao",
+    "preco",
+    "first_sale_date",
+    "sale_year",
+    "sale_month",
+    "net_quantity",
+]
+
+MATURE_PRODUCT_COLUMNS = ["sku", "tipo", "first_sale_date", "net_quantity"]
+
+
+def fetch_new_product_options() -> dict:
+    """
+    Consulta tipos e fornecedores ativos do catálogo (`Pc.Venda > 0`), deduplicados e ordenados (P-141).
+    """
+    with _execute_readonly(_NEW_PRODUCT_OPTIONS_SQL) as cursor:
+        rows = [tuple(row) for row in cursor.fetchall()]
+
+    tipos_set: set[str] = set()
+    fornecedores_set: set[str] = set()
+    for row in rows:
+        tipo_val = str(row[0]).strip() if row[0] is not None else ""
+        forn_val = str(row[1]).strip() if row[1] is not None else ""
+        if not tipo_val or not forn_val:
+            continue
+        tipos_set.add(tipo_val)
+        fornecedores_set.add(forn_val)
+
+    tipos = sorted(tipos_set, key=lambda s: s.casefold())
+    fornecedores = sorted(fornecedores_set, key=lambda s: s.casefold())
+    return {"tipos": tipos, "fornecedores": fornecedores}
+
+
+def fetch_new_product_candidates(tipo: str, cutoff: date) -> pd.DataFrame:
+    """
+    Agregado mensal líquido de lançamentos reais (>= 2025-04-01) por `tipo` no grão SKU x Ano x Mês (P-139, P-144).
+    """
+    with _execute_readonly(_NEW_PRODUCT_CANDIDATES_SQL, (tipo.strip(), cutoff)) as cursor:
+        rows = [tuple(row) for row in cursor.fetchall()]
+    if not rows:
+        return pd.DataFrame(columns=NEW_PRODUCT_CANDIDATE_COLUMNS)
+    df = pd.DataFrame(rows, columns=NEW_PRODUCT_CANDIDATE_COLUMNS)
+    df["sku"] = df["sku"].astype(np.int64)
+    df["preco"] = df["preco"].astype(float)
+    df["sale_year"] = df["sale_year"].astype(np.int32)
+    df["sale_month"] = df["sale_month"].astype(np.int32)
+    df["net_quantity"] = df["net_quantity"].astype(float).clip(lower=0).round().astype(np.int64)
+    return df
+
+
+def fetch_mature_product_distribution(tipo: str, cutoff: Optional[date] = None) -> pd.DataFrame:
+    """
+    Agregado mensal líquido de produtos maduros (< 2025-04-01) por `tipo` para cálculo do teto P75 (P-147).
+    """
+    effective_cutoff = cutoff or date.today()
+    with _execute_readonly(_MATURE_PRODUCT_DISTRIBUTION_SQL, (tipo.strip(), effective_cutoff)) as cursor:
+        rows = [tuple(row) for row in cursor.fetchall()]
+    if not rows:
+        return pd.DataFrame(columns=MATURE_PRODUCT_COLUMNS)
+    df = pd.DataFrame(rows, columns=MATURE_PRODUCT_COLUMNS)
+    df["sku"] = df["sku"].astype(np.int64)
+    df["net_quantity"] = df["net_quantity"].astype(float).clip(lower=0).round().astype(np.int64)
+    return df
