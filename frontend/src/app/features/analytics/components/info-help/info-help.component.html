@@ -1,0 +1,94 @@
+<span class="info-help-root">
+  <button
+    #triggerBtn
+    type="button"
+    class="info-help-trigger"
+    [class.size-md]="size() === 'md'"
+    [class.is-open]="isOpen()"
+    [attr.aria-label]="'Ajuda sobre ' + topicLabel()"
+    [attr.aria-expanded]="isOpen() ? 'true' : 'false'"
+    [attr.aria-controls]="dialogId"
+    (click)="onToggle($event)"
+  >
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2.4"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="10"></circle>
+      <line x1="12" y1="16" x2="12" y2="12"></line>
+      <line x1="12" y1="8" x2="12.01" y2="8"></line>
+    </svg>
+  </button>
+
+  @if (isOpen()) {
+    @if (isMobileViewport()) {
+      <div class="info-help-backdrop" aria-hidden="true" (click)="closeFromBackdrop()"></div>
+    }
+
+    <div
+      #popoverDialog
+      role="dialog"
+      aria-modal="false"
+      class="info-help-popover"
+      [id]="dialogId"
+      [attr.aria-labelledby]="titleId"
+      [style.top.px]="isMobileViewport() ? null : popoverTopPx()"
+      [style.left.px]="isMobileViewport() ? null : popoverLeftPx()"
+    >
+      <header class="info-help-header">
+        <h4 [id]="titleId" class="info-help-title">{{ content().title }}</h4>
+        <button
+          type="button"
+          class="info-help-close"
+          aria-label="Fechar guia contextual"
+          (click)="closeAndRestoreFocus()"
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.4"
+            stroke-linecap="round"
+            aria-hidden="true"
+          >
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </header>
+
+      <div class="info-help-body">
+        <section class="info-help-section">
+          <span class="info-help-heading">O que é</span>
+          <p class="info-help-text">{{ content().whatIs }}</p>
+        </section>
+
+        <section class="info-help-section">
+          <span class="info-help-heading">Como analisar</span>
+          <p class="info-help-text">{{ content().howToAnalyze }}</p>
+        </section>
+
+        <section class="info-help-insight">
+          <span class="info-help-heading info-help-heading-insight">Qual insight tirar</span>
+          <p class="info-help-text">{{ content().insight }}</p>
+        </section>
+
+        @if (content().technicalNote; as techNote) {
+          <section class="info-help-tech">
+            <span class="info-help-heading">Detalhe técnico</span>
+            <p class="info-help-tech-text">{{ techNote }}</p>
+          </section>
+        }
+      </div>
+    </div>
+  }
+</span>

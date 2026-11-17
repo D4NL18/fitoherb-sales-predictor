@@ -70,6 +70,12 @@ export class CrossSellPageComponent implements OnInit {
     this.syncUrl();
   }
 
+  protected onProductCleared(): void {
+    this.lastSku = null;
+    this.initialSku.set('');
+    this.syncUrl();
+  }
+
   private applyUrlState(params: Params): void {
     if (params['modo'] === MODE_PARAM.customer) {
       this.store.setMode('customer');

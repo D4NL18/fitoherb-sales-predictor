@@ -14,7 +14,8 @@ import { PricingParams, PricingSummary, ProductPreview, CachedPredictionState } 
 export class PricingPageComponent implements OnInit, OnDestroy {
   private readonly pricingService = inject(PricingService);
   private progressTimer: any = null;
-  private readonly CACHE_KEY = 'fitoherb_pricing_cache_v1';
+  private readonly CACHE_KEY = 'fitoherb_pricing_cache_v2';
+  private readonly LEGACY_CACHE_KEYS = ['fitoherb_pricing_cache_v1'];
 
   // Modal de Parâmetros e Cache Persistente (Regras P-025 a P-027)
   readonly isSettingsModalOpen = signal<boolean>(false);
@@ -637,6 +638,9 @@ export class PricingPageComponent implements OnInit, OnDestroy {
 
   private loadPredictionFromCache(): boolean {
     try {
+      for (const legacyKey of this.LEGACY_CACHE_KEYS) {
+        localStorage.removeItem(legacyKey);
+      }
       const raw = localStorage.getItem(this.CACHE_KEY);
       if (!raw) return false;
       const state = JSON.parse(raw);

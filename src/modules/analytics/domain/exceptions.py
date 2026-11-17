@@ -64,3 +64,123 @@ class InvalidParametersError(AnalyticsDomainException):
             message=msg,
             fields=field_list,
         )
+
+
+# ---------------------------------------------------------------------------
+# F3: Churn de Clientes (P-127; ADR-006 DA-06)
+# ---------------------------------------------------------------------------
+
+class CustomerChurnNotFoundError(AnalyticsDomainException):
+    """CHU-001: Cliente não encontrado ou sem pedidos válidos de venda."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code="CHU-001",
+            message="Cliente não encontrado ou sem histórico de compras válidas.",
+            fields=(),
+        )
+
+
+class ChurnBaseInsufficientError(AnalyticsDomainException):
+    """CHU-002: Base de clientes/pedidos insuficiente para o cálculo de churn."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code="CHU-002",
+            message="Base de vendas insuficiente para cálculo de churn de clientes.",
+            fields=(),
+        )
+
+
+class ChurnInvalidParametersError(AnalyticsDomainException):
+    """CHU-003: Parâmetros inválidos informados para a rota de churn."""
+
+    def __init__(self, fields: Sequence[str] = ()) -> None:
+        field_list = tuple(fields)
+        msg = f"Parâmetros de churn inválidos: {', '.join(field_list)}." if field_list else "Parâmetros de churn inválidos."
+        super().__init__(
+            code="CHU-003",
+            message=msg,
+            fields=field_list,
+        )
+
+
+class SeasonalityProductNotFoundError(AnalyticsDomainException):
+    """SEA-001: Produto não encontrado ou sem histórico de vendas para sazonalidade (P-116)."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code="SEA-001",
+            message="Produto não encontrado ou sem histórico de vendas.",
+            fields=(),
+        )
+
+
+class SeasonalityInvalidParametersError(AnalyticsDomainException):
+    """SEA-002: Parâmetros inválidos na consulta de sazonalidade (P-116)."""
+
+    def __init__(self, fields: Sequence[str] = ()) -> None:
+        field_list = tuple(fields)
+        msg = f"Parâmetros inválidos: {', '.join(field_list)}." if field_list else "Parâmetros inválidos."
+        super().__init__(
+            code="SEA-002",
+            message=msg,
+            fields=field_list,
+        )
+
+
+class SeasonalityInsufficientBaseError(AnalyticsDomainException):
+    """SEA-003: Base de dados agregada insuficiente para análise de sazonalidade (P-116)."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code="SEA-003",
+            message="Base de vendas insuficiente para calcular sazonalidade dos produtos.",
+            fields=(),
+        )
+
+
+class ElasticityProductNotFoundError(AnalyticsDomainException):
+    """ELA-001: Produto não encontrado ou sem histórico de vendas para cálculo de elasticidade."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code="ELA-001",
+            message="Produto não encontrado ou sem histórico de vendas para cálculo de elasticidade.",
+            fields=(),
+        )
+
+
+class ElasticityCustomerWithoutHistoryError(AnalyticsDomainException):
+    """ELA-002: Cliente sem compras registradas para este produto."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code="ELA-002",
+            message="Cliente sem compras registradas para este produto.",
+            fields=(),
+        )
+
+
+class ElasticityInsufficientBaseError(AnalyticsDomainException):
+    """ELA-003: Histórico de vendas insuficiente para estimar elasticidade do produto."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code="ELA-003",
+            message="Histórico de vendas insuficiente para estimar elasticidade do produto.",
+            fields=(),
+        )
+
+
+class ElasticityInvalidParametersError(AnalyticsDomainException):
+    """ELA-004: Parâmetros inválidos fornecidos para consulta ou simulação de elasticidade."""
+
+    def __init__(self, fields: Sequence[str] = ()) -> None:
+        field_list = tuple(fields)
+        msg = f"Parâmetros inválidos: {', '.join(field_list)}." if field_list else "Parâmetros inválidos."
+        super().__init__(
+            code="ELA-004",
+            message=msg,
+            fields=field_list,
+        )

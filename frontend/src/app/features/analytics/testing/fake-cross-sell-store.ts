@@ -18,12 +18,21 @@ function modeState<TResponse>() {
 }
 
 export function createFakeCrossSellStore() {
+  const product = modeState<ProductCrossSellResponse>();
+  const customer = modeState<CustomerCrossSellResponse>();
+
   return {
     mode: signal<'product' | 'customer'>('product'),
-    product: modeState<ProductCrossSellResponse>(),
-    customer: modeState<CustomerCrossSellResponse>(),
+    product,
+    customer,
     setMode: jasmine.createSpy('setMode'),
     searchProduct: jasmine.createSpy('searchProduct'),
+    clearProduct: jasmine.createSpy('clearProduct').and.callFake(() => {
+      product.status.set('idle');
+      product.response.set(null);
+      product.error.set(null);
+      product.pageRequest.set({ limit: 50, offset: 0 });
+    }),
     searchCustomer: jasmine.createSpy('searchCustomer'),
     goToPage: jasmine.createSpy('goToPage'),
   };

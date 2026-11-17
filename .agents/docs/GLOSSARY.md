@@ -126,3 +126,24 @@ A Tendência de Vendas é uma feature **independente**: seus termos estão todos
 | **Contribuição (do produto)** | Quanto um SKU puxou a alta ou a queda do fornecedor: em **pontos percentuais** (`(atual − anterior) ÷ anterior do fornecedor × 100`) e em **valor** (`atual − anterior`, em un ou R$; por dia quando Base Parcial). Soma dos filhos = variação do fornecedor. | P-090 | `contribuicaoPp`, `contribuicaoValor` | "participação" (é outra coisa: fatia do total), "impacto" |
 | **Ponto Percentual (p.p.)** | Unidade da contribuição; 1 p.p. = 1% da base (anterior) do fornecedor. | P-090.1 | `contribuicaoPp` | "%" na contribuição |
 | **Detalhe do Fornecedor** | Consulta paginada, sob demanda (ao expandir a linha), dos SKUs de um fornecedor com variação própria e contribuição. | P-092 | `supplierKey`, `sortBy` (`contribution`\|`variation`) | "filhos no payload" |
+
+---
+
+## 5. Analytics Comercial — Churn de Clientes (módulo `analytics`, P-117 a P-127)
+
+Esta seção define os termos ubíquos da feature de Churn de Clientes com Score de Prioridade de Retenção.
+
+| Termo | Definição | Fórmula / Regra | Identificador no código | Não usar |
+| :--- | :--- | :--- | :--- | :--- |
+| **Código do Cliente** | Identificador numérico exclusivo do cliente no ERP (`Cod Cliente`). Um cliente = um código (D3). | P-117.2 | `customerCode` | "CNPJ", "Razão Social", "Nome do Cliente" |
+| **Dias sem Comprar (Recência)** | Quantidade de dias corridos entre a data de referência analítica e o último pedido de `VENDA` do cliente. | `dataReferencia - dataUltimoPedido` (P-118) | `diasSemComprar` | "inatividade", "tempo parado" |
+| **Gap Típico (Cadência Habitual)** | Mediana dos intervalos em dias entre pedidos consecutivos de `VENDA` de um cliente com $\ge 3$ pedidos. | Mediana das diferenças de datas de pedidos (P-119.1) | `gapTipico` | "média de compras", "frequência" |
+| **Dias de Referência** | Régua temporal de expectativa de compra do cliente. Ajusta os 60 dias ao ritmo habitual de quem compra espaçado. | `max(60, 1.5 * gapTipico)` (P-119.2) | `diasReferencia` | "prazo limite fixo", "tolerância" |
+| **Fator de Urgência Temporal** | Razão entre os dias sem comprar e os dias de referência, saturada no teto 2.0. Adimensional. | `min(diasSemComprar / diasReferencia, 2.0)` (P-120) | `fatorTempo` | "risco percentual", "coeficiente" |
+| **Faturamento Médio Mensal** | Média do faturamento líquido de devoluções nos últimos 12 meses completos, dividido pelos meses ativos (mínimo 3). | `somaFaturamentoLiquido12m / divisorMeses` (P-121) | `faturamentoMedioMensal` | "receita total", "ticket médio" |
+| **Score de Prioridade de Retenção** | Métrica monetária única que combina faturamento médio e urgência de contato para ordenar clientes em risco. | `faturamentoMedioMensal * fatorTempo` (em R$) (P-123) | `scorePrioridade` | "churn score", "probabilidade de churn" |
+| **Status de Churn** | Classificação operacional do cliente: `SAUDAVEL` (< 0.5), `ALERTA` (0.5 a < 1.0) ou `EM_RISCO` ($\ge 1.0$). | P-124 | `status` | "fase do lead", "categoria" |
+| **Inativo Antigo (Recuperação)** | Cliente sem compras há mais de 180 dias. Segregado da fila diária de risco e alocado em reativação. | `diasSemComprar > 180` (P-125) | `INATIVO_RECUPERACAO` | "churn definitivo", "perdido" |
+| **Histórico Curto** | Identificador de clientes com menos de 3 pedidos no histórico, ativando amortecimento para 3 meses no divisor. | `pedidos < 3` (P-122) | `historicoCurto` | "cliente novo", "incompleto" |
+| **Produtos Perdidos** | Os até 5 SKUs mais relevantes adquiridos pelo cliente nos últimos 12 meses que não foram comprados nos últimos 60 dias. | P-126.3 | `produtosPerdidos` | "itens cancelados", "devoluções" |
+| **CHU-NNN** | Prefixo dos códigos de erro da feature (`CHU-001` 404 cliente não encontrado; `CHU-002` 422 base insuficiente; `CHU-003` 400 parâmetros inválidos). | P-127 | `CHU-001` a `CHU-003` | — |

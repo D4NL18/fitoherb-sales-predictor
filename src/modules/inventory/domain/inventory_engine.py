@@ -640,7 +640,6 @@ def calculate_inventory_replenishment(
         evaluate_product(row, sales_lookup, active_policy)
         for row in normalized_catalog.itertuples(index=False)
     ]
-    evaluations = [evaluation for evaluation in evaluations if not is_inactive_sku(evaluation)]
     evaluations.sort(key=product_sort_key)
     return {
         "kpis": build_kpis(evaluations),

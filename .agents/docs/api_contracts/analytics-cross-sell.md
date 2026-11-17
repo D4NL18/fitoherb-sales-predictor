@@ -36,7 +36,8 @@
 | `POST` | `/api/v1/analytics/cache/reload` | Recarga manual da base (respeita o lock) | P-068.3 |
 | `GET` | `/api/v1/analytics/cross-sell/product/{sku}` | Recomendação por produto | P-058 a P-061, P-065 a P-067 |
 | `GET` | `/api/v1/analytics/cross-sell/customer/{customerCode}` | Recomendação por cliente | P-062 a P-067, P-070 |
-| `GET` | `/api/v1/analytics/products/search?q=` | **Opcional, a decidir no checkpoint (DC-5).** Busca de produto por código ou descrição | Q-1 do Designer |
+| `GET` | `/api/v1/analytics/products/search?q=` | **Opcional, a decidir no checkpoint (DC-5).** Busca inteligente de produto por código, descrição ou fornecedor | Q-1 do Designer, P-115 |
+| `GET` | `/api/v1/analytics/products` | Listagem paginada do catálogo ativo em cache, com filtros e ordenação | P-117 |
 
 > A rota por cliente depende da decisão DC-1 do checkpoint (A-11). A proposta é manter GET com `customerCode` no path, como recomenda o parecer de privacidade (§4). A variante com `POST` está no Apêndice A.
 
@@ -382,7 +383,16 @@ Nenhuma frase contém "lift", "suporte" ou "confiança" (CA-14). As chaves do ob
 | `limit` | integer | Não | `20` | 1 a 20 | Máximo de resultados |
 | `offset` | integer | Não | `0` | ≥ 0 | Mantém o padrão de paginação do módulo |
 
-**Regra de busca (domínio puro, `domain/product_search.py`):** normaliza `q` e `descricao` (NFKD sem acentos, minúsculas, espaços colapsados; a descrição normalizada é pré-calculada na carga). Só dígitos: código exato, depois códigos que começam com `q`. Demais: descrição que começa com `q`, depois descrição que contém `q`. Empate por `descricao` ↑ e `codigo` ↑.
+**Regra de busca inteligente (domínio puro, `domain/product_search.py`):** normaliza `q`, `descricao` e `fornecedor` (NFKD sem acentos, minúsculas, espaços colapsados; além da versão relaxada separando `/`, `-`, `+`, `_`, `.`, `,`, `(`, `)` por espaço e preservando `%`, pré-calculada na carga do catálogo).
+- **Só dígitos:** prioridade `0` para código exato, `1` para códigos que começam com `q`.
+- **Demais consultas (faixas de prioridade, menor = mais relevante):**
+  - `0`: `normalized_description.startswith(q)`
+  - `1`: `q in normalized_description`
+  - `2`: todos os tokens da query aparecem **em ordem** em `normalized_description` ou `relaxed_description` (substring ou prefixo/match de palavra)
+  - `3`: todos os tokens da query aparecem em **qualquer ordem** em `relaxed_description`
+  - `4`: todos os tokens aparecem em `relaxed_combined` (`descricao + fornecedor + codigo`)
+  - `5`: match aproximado (Damerau-Levenshtein distância ≤ 1) apenas para tokens com `len >= 5` contra tokens `>= 5` de descrição/fornecedor; os demais tokens da query precisam casar nos níveis anteriores ou fuzzy (consultas curtas como `"xyzw"` nunca acionam match aproximado).
+- Empate em qualquer faixa: `normalized_description` ↑ e `codigo` ↑.
 
 **Resposta `200` (`ProductSearchResponse`):** `data = ProductSearchItem[]` (`codigo`, `descricao`, `fornecedor`), `meta = PagedMeta` (sem `parametros`).
 
@@ -405,6 +415,62 @@ Nenhum resultado → `200` com `data: []`. **Erros:** `400 XSL-004` (`fields: ["
 
 ---
 
+### 3.7 `GET /api/v1/analytics/products`
+
+- **Objetivo:** listar o catálogo ativo em cache com filtros combináveis, ordenação configurável e paginação (P-117), sem disparar a carga das cestas (`_build_snapshot`).
+- **Fonte:** `analytics_cache.get_catalog()` (mesmas colunas de catálogo de LGPD-01, zero dado de cliente).
+
+**Query Parameters:**
+
+| Parâmetro | Tipo | Obrigatório? | Default | Validação | Descrição |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `q` | string \| null | Não | `null` | Máx. `60` caracteres; se nulo ou só espaços após `trim`, não filtra; se não vazio após `trim`, aplica a busca inteligente (§3.6) aceitando 1+ caracteres | Busca inteligente por código, descrição ou fornecedor |
+| `supplier` | string \| null | Não | `null` | Máx. `120` caracteres; comparação normalizada (`normalize_text`) exata quando não vazio | Filtro por fornecedor |
+| `stockFilter` | `"all"` \| `"in_stock"` \| `"out_of_stock"` | Não | `"all"` | Valores permitidos: `all`, `in_stock` (`estoque > 0`), `out_of_stock` (`estoque <= 0`) | Filtro de disponibilidade |
+| `sortBy` | `"supplier_product"` \| `"product"` \| `"sku"` \| `"stock"` \| `"price"` \| `"relevance"` | Não | `"supplier_product"` | Valores permitidos; padrão ordena por `fornecedor` A→Z, `descricao` A→Z e `codigo` ↑ | Critério de ordenação |
+| `sortDir` | `"asc"` \| `"desc"` | Não | `"asc"` | `asc` ou `desc` | Direção da ordenação |
+| `limit` | integer | Não | `5000` | `1` a `5000` | Tamanho da página |
+| `offset` | integer | Não | `0` | `>= 0` | Deslocamento |
+| `includeSeasonality` | boolean | Não | `false` | `true` ou `false` | Quando `true`, carrega o agregado mensal em cache (`get_monthly_sales()`) e preenche o resumo sazonal por SKU (`forca`, `amplitude`, `mesPico`, `mesVale`, `faturamentoTotal`, `motivoInsuficiencia`), sem disparar `_build_snapshot`. Quando `false` (padrão), esses 6 campos vêm `null` e `fetch_monthly_sales` não é chamado. |
+
+**Resposta `200` (`CatalogListResponse`):** `data = CatalogProductItem[]` (`codigo`, `descricao`, `fornecedor`, `estoque`, `precoVenda`, além dos campos opcionais `forca`, `amplitude`, `mesPico`, `mesVale`, `faturamentoTotal`, `motivoInsuficiencia`), `meta = PagedMeta` (sem `parametros`).
+
+```json
+{
+  "data": [
+    {
+      "codigo": 1001,
+      "descricao": "CHA VERDE 100G",
+      "fornecedor": "CATARINENSE",
+      "estoque": 10.0,
+      "precoVenda": 24.9,
+      "forca": null,
+      "amplitude": null,
+      "mesPico": null,
+      "mesVale": null,
+      "faturamentoTotal": null,
+      "motivoInsuficiencia": null
+    }
+  ],
+  "meta": {
+    "timestamp": "2026-11-05T15:10:00.000Z",
+    "version": "1.1.0",
+    "dataReferencia": "2026-11-05",
+    "page": 1,
+    "limit": 5000,
+    "offset": 0,
+    "totalItems": 1,
+    "totalPages": 1
+  }
+}
+```
+
+Quando `includeSeasonality=true`, produtos elegíveis (`FORTE`, `MODERADA` ou `FRACA`) preenchem `forca`, `amplitude`, `mesPico`, `mesVale` e `faturamentoTotal` (`motivoInsuficiencia: null`), e produtos inelegíveis (`INSUFICIENTE`, inclusive sem histórico de vendas) retornam `forca: "INSUFICIENTE"`, `mesPico: null`, `mesVale: null`, `faturamentoTotal` (0.0 se sem vendas) e `motivoInsuficiencia` (`"HISTORICO_CURTO"` ou `"VENDA_ESPORADICA"`).
+
+Nenhum resultado → `200` com `data: []` e `totalItems: 0`, `totalPages: 0`. **Erros:** `400 XSL-004` (`fields`: `q`, `supplier`, `stockFilter`, `sortBy`, `sortDir`, `limit`, `offset`, `includeSeasonality`), `503 ANL-001`.
+
+---
+
 ## 4. Matriz de Erros HTTP Mapeados
 
 Corpo único de erro (`AnalyticsErrorResponse`), sem stacktrace, SQL, mensagem do driver nem valor recebido (LGPD-05):
@@ -422,7 +488,7 @@ Corpo único de erro (`AnalyticsErrorResponse`), sem stacktrace, SQL, mensagem d
 
 | HTTP | `code` | Quando | `message` (fixa) | `fields` | Regra |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `400` | `XSL-004` | `sku`/`customerCode` não inteiro positivo; `limit` fora da faixa da rota (1–200; 1–20 na busca); `offset` < 0; qualquer valor não inteiro; `q` fora de 3.6 | `"Parâmetros inválidos: {campos}."` | nomes dos campos inválidos (`sku`, `customerCode`, `limit`, `offset`, `q`), sem duplicatas, na ordem do path/query | P-066.2, P-067 |
+| `400` | `XSL-004` | `sku`/`customerCode` não inteiro positivo; `limit` fora da faixa da rota (1–200; 1–20 na busca; 1–5000 em `/products`); `offset` < 0; qualquer valor não inteiro; `q` fora de 3.6/3.7; `stockFilter`/`sortBy`/`sortDir`/`supplier` inválidos | `"Parâmetros inválidos: {campos}."` | nomes dos campos inválidos (`sku`, `customerCode`, `limit`, `offset`, `q`, `supplier`, `stockFilter`, `sortBy`, `sortDir`), sem duplicatas, na ordem do path/query | P-066.2, P-067, P-117 |
 | `404` | `XSL-001` | SKU fora do catálogo ativo ou sem Cesta Válida | `"Produto não encontrado ou sem histórico de vendas em pedidos com mais de um item."` | `[]` | P-061.6 |
 | `404` | `XSL-002` | Cliente sem pedido de VENDA no histórico | `"Cliente sem histórico de compras."` | `[]` | P-062.7 |
 | `422` | `XSL-003` | < 1.000 Cestas Válidas ou zero Regras Úteis | `"Não há pedidos suficientes para gerar recomendações confiáveis."` | `[]` | P-067 |
@@ -445,7 +511,7 @@ Corpo único de erro (`AnalyticsErrorResponse`), sem stacktrace, SQL, mensagem d
 | `pedidosEmComum` (modo cliente) | Métrica global da regra, igual ao modo produto | Não (não é contagem de pedidos do cliente) | **Acréscimo à allowlist do modo cliente**: a confirmar pelo Privacy Officer no checkpoint |
 | `meta.parametros` | Constantes do domínio | Não | Sem impacto |
 | Health: `estadoCache`, `duracaoUltimaCargaMs` | Estado técnico agregado | Não | Dentro de §3.2 (status do cache) |
-| `/products/search` | Catálogo (colunas de LGPD-01) | Não | Sem impacto |
+| `/products/search` e `/products` | Catálogo (colunas de LGPD-01) | Não | Sem impacto |
 
 Continuam **fora** de qualquer resposta: `customerCode` (não ecoado), `suporte` no modo cliente, perfil completo, datas absolutas de compra, `Pedido`, valores ou quantidades do cliente, `UF`, nome e documento.
 
@@ -542,6 +608,19 @@ export interface ProductCrossSellResponse {
 /** Opcional (DC-5). */
 export interface ProductSearchResponse {
   data: ConsultedProduct[];
+  meta: PagedMeta;
+}
+
+export interface CatalogProductItem {
+  codigo: number;
+  descricao: string;
+  fornecedor: string;
+  estoque: number;
+  precoVenda: number;
+}
+
+export interface CatalogListResponse {
+  data: CatalogProductItem[];
   meta: PagedMeta;
 }
 

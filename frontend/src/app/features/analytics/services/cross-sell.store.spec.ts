@@ -148,6 +148,17 @@ describe('CrossSellStore', () => {
     expect(store.product.status()).toBe('idle');
   });
 
+  it('clearProduct volta o modo produto para idle e limpa resposta e erro', () => {
+    store.searchProduct(1001);
+    http.expectOne((req) => req.url === PRODUCT_URL).flush(productResponse());
+    expect(store.product.status()).toBe('success');
+
+    store.clearProduct();
+    expect(store.product.status()).toBe('idle');
+    expect(store.product.response()).toBeNull();
+    expect(store.product.error()).toBeNull();
+  });
+
   it('nada vai para localStorage/sessionStorage (LGPD-09)', () => {
     const setItem = spyOn(Storage.prototype, 'setItem');
 

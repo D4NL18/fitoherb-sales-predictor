@@ -48,3 +48,31 @@ def test_force_reload_always_reloads(monkeypatch):
     pricing_service.get_cached_base_data(force_reload=True)
 
     assert load_calls == [1]
+
+
+def test_save_shared_prediction_ignores_template_fallback(monkeypatch, tmp_path):
+    """Fallback sintético (templates / <50 SKUs) não deve sobrescrever a previsão compartilhada."""
+    prediction_file = tmp_path / "latest_shared_prediction.json"
+    monkeypatch.setattr(pricing_service, "_PREDICTION_FILE", prediction_file)
+    monkeypatch.setattr(pricing_service, "_DATA_CACHE", {"data_source": "templates", "raw_products_count": 8})
+
+    fake_payload = {"summary": {"totalProducts": 8}, "previewProducts": [{"codigo": i} for i in range(8)]}
+    pricing_service.save_shared_prediction(fake_payload)
+
+    assert not prediction_file.exists()
+    assert pricing_service.get_shared_prediction() is None
+
+
+def test_get_shared_prediction_ignores_small_legacy_template_file(monkeypatch, tmp_path):
+    """Arquivo legado gravado a partir de templates (<50 SKUs) é descartado na leitura."""
+    import json
+
+    prediction_file = tmp_path / "latest_shared_prediction.json"
+    prediction_file.write_text(
+        json.dumps({"summary": {"totalProducts": 8}, "previewProducts": [{"codigo": i} for i in range(8)]}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(pricing_service, "_PREDICTION_FILE", prediction_file)
+    monkeypatch.setattr(pricing_service, "_DATA_CACHE", {})
+
+    assert pricing_service.get_shared_prediction() is None
