@@ -35,6 +35,11 @@ export const ANALYTICS_SECTIONS: readonly AnalyticsSection[] = [
     path: '/analytics/elasticity',
     description: 'Sensibilidade de preço por produto com simulador de reajustes',
   },
+  {
+    label: 'Produto Novo',
+    path: '/analytics/produto-novo',
+    description: 'Viabilidade conservadora e demanda inicial para produtos sem SKU',
+  },
 ];
 
 @Component({

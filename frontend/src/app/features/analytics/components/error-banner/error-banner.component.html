@@ -6,6 +6,9 @@
     <line x1="12" y1="17" x2="12.01" y2="17"></line>
   </svg>
   <div class="banner-body">
+    @if (title(); as bannerTitle) {
+      <strong class="banner-title">{{ bannerTitle }}</strong>
+    }
     <p class="banner-text">{{ message() }}</p>
     @if (code(); as errorCode) {
       <span class="banner-code">Código: {{ errorCode }}</span>

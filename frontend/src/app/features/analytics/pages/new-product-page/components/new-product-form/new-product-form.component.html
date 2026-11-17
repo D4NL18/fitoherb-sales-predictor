@@ -1,0 +1,296 @@
+<section class="form-panel" aria-labelledby="np-form-heading">
+  <div class="form-header">
+    <h3 id="np-form-heading" class="form-heading">Parâmetros do Produto Simulado</h3>
+    <p class="form-subtitle">Simule sem SKU usando os atributos comerciais planejados.</p>
+  </div>
+
+  @if (optionsErrorBannerMessage(); as optErrorMsg) {
+    <app-error-banner
+      [title]="'Não foi possível carregar o catálogo'"
+      [message]="optErrorMsg"
+      [code]="optionsError()?.code ?? null"
+      [retryLabel]="'Tentar novamente'"
+      (retry)="retryOptions.emit()"
+    />
+  }
+
+  <form
+    class="np-form"
+    novalidate
+    [attr.aria-busy]="optionsLoading() || submitting()"
+    (submit)="onSubmit($event)"
+  >
+    <!-- 1. Tipo do Produto -->
+    <div class="field-group">
+      <label class="field-label" for="np-tipo">
+        Tipo do Produto <span class="required-mark" aria-hidden="true">*</span>
+      </label>
+
+      @if (optionsLoading()) {
+        <div class="skeleton-line field-skeleton" aria-hidden="true"></div>
+      } @else {
+        <select
+          #tipoSelect
+          id="np-tipo"
+          name="tipo"
+          class="field-control"
+          [class.field-invalid]="tipoError() !== null"
+          [value]="tipo()"
+          [disabled]="hasEmptyCatalog() || optionsErrorBannerMessage() !== null"
+          [attr.aria-invalid]="tipoError() !== null ? 'true' : null"
+          [attr.aria-describedby]="tipoError() ? 'np-tipo-error' : null"
+          (change)="onTipoChange($any($event.target).value)"
+          (blur)="markTouched('tipo')"
+        >
+          <option value="">Selecione o tipo...</option>
+          @for (item of tiposList(); track item) {
+            <option [value]="item">{{ item }}</option>
+          }
+        </select>
+      }
+
+      @if (tipoError(); as err) {
+        <p id="np-tipo-error" class="field-error" role="alert">{{ err }}</p>
+      }
+    </div>
+
+    <!-- 2. Fornecedor (Combobox ARIA) -->
+    <div class="field-group">
+      <label class="field-label" for="np-fornecedor">
+        Fornecedor <span class="required-mark" aria-hidden="true">*</span>
+      </label>
+
+      @if (optionsLoading()) {
+        <div class="skeleton-line field-skeleton" aria-hidden="true"></div>
+      } @else {
+        <div class="combobox-wrapper">
+          <input
+            #fornecedorInput
+            id="np-fornecedor"
+            name="fornecedor"
+            type="text"
+            class="field-control combobox-input"
+            [class.field-invalid]="fornecedorError() !== null"
+            placeholder="Digite para filtrar o fornecedor..."
+            autocomplete="off"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-haspopup="listbox"
+            aria-controls="np-fornecedor-listbox"
+            [attr.aria-expanded]="fornecedorDropdownOpen()"
+            [attr.aria-activedescendant]="activeDescendantId()"
+            [attr.aria-invalid]="fornecedorError() !== null ? 'true' : null"
+            [attr.aria-describedby]="fornecedorError() ? 'np-fornecedor-error' : null"
+            [value]="fornecedorQuery()"
+            [disabled]="hasEmptyCatalog() || optionsErrorBannerMessage() !== null"
+            (focus)="onFornecedorFocus()"
+            (blur)="onFornecedorBlur()"
+            (input)="onFornecedorInput($any($event.target).value)"
+            (keydown)="onFornecedorKeydown($event)"
+          />
+
+          @if (fornecedorQuery().length > 0) {
+            <button
+              type="button"
+              class="combobox-clear"
+              aria-label="Limpar fornecedor selecionado"
+              (mousedown)="$event.preventDefault()"
+              (click)="clearFornecedor()"
+            >
+              ×
+            </button>
+          }
+
+          @if (fornecedorDropdownOpen()) {
+            <ul id="np-fornecedor-listbox" class="combobox-listbox" role="listbox" aria-label="Fornecedores ativos">
+              @for (item of filteredFornecedores(); track item; let idx = $index) {
+                <li
+                  [id]="'np-fornecedor-opt-' + idx"
+                  role="option"
+                  class="combobox-option"
+                  [class.is-active]="idx === activeFornecedorIndex()"
+                  [class.is-selected]="matchedFornecedor() === item"
+                  [attr.aria-selected]="matchedFornecedor() === item"
+                  (mousedown)="$event.preventDefault(); selectFornecedor(item)"
+                >
+                  {{ item }}
+                </li>
+              } @empty {
+                <li class="combobox-empty" role="presentation">Nenhum fornecedor ativo encontrado</li>
+              }
+            </ul>
+          }
+        </div>
+      }
+
+      @if (fornecedorError(); as err) {
+        <p id="np-fornecedor-error" class="field-error" role="alert">{{ err }}</p>
+      }
+    </div>
+
+    <!-- 3. Descrição -->
+    <div class="field-group">
+      <div class="label-row">
+        <label class="field-label" for="np-descricao">
+          Descrição do Produto <span class="required-mark" aria-hidden="true">*</span>
+        </label>
+        <span class="char-counter" aria-live="off">{{ descricaoLength() }}/{{ maxDescLen }}</span>
+      </div>
+      <input
+        #descricaoInput
+        id="np-descricao"
+        name="descricao"
+        type="text"
+        class="field-control"
+        [class.field-invalid]="descricaoError() !== null"
+        [attr.maxlength]="maxDescLen"
+        placeholder="Ex.: Tintura de Melissa 50ml"
+        [value]="descricao()"
+        [attr.aria-invalid]="descricaoError() !== null ? 'true' : null"
+        [attr.aria-describedby]="descricaoError() ? 'np-descricao-error np-descricao-hint' : 'np-descricao-hint'"
+        (input)="onDescricaoChange($any($event.target).value)"
+        (blur)="markTouched('descricao')"
+      />
+      <p id="np-descricao-hint" class="field-hint">
+        Sem SKU — informe nome, princípio ativo, volume ou linha (ex.: Tintura de Melissa 50ml).
+      </p>
+      @if (descricaoError(); as err) {
+        <p id="np-descricao-error" class="field-error" role="alert">{{ err }}</p>
+      }
+    </div>
+
+    <!-- 4. Preço de Venda Previsto -->
+    <div class="field-group">
+      <label class="field-label" for="np-preco">
+        Preço de Venda Previsto <span class="required-mark" aria-hidden="true">*</span>
+      </label>
+      <div class="affix-group" [class.field-invalid]="precoError() !== null">
+        <span class="affix-prefix" aria-hidden="true">R$</span>
+        <input
+          #precoInput
+          id="np-preco"
+          name="precoVendaPrevisto"
+          type="text"
+          inputmode="decimal"
+          class="affix-input mono-input"
+          placeholder="0,00"
+          [value]="precoRaw()"
+          [attr.aria-invalid]="precoError() !== null ? 'true' : null"
+          [attr.aria-describedby]="precoError() ? 'np-preco-error' : null"
+          (input)="onPrecoChange($any($event.target).value)"
+          (blur)="onPrecoBlur()"
+        />
+      </div>
+      @if (precoError(); as err) {
+        <p id="np-preco-error" class="field-error" role="alert">{{ err }}</p>
+      }
+    </div>
+
+    <!-- 5. Custo Unitário (opcional) -->
+    <div class="field-group">
+      <label class="field-label" for="np-custo">
+        Custo Unitário <span class="optional-tag">(opcional)</span>
+      </label>
+      <div class="affix-group" [class.field-invalid]="custoError() !== null">
+        <span class="affix-prefix" aria-hidden="true">R$</span>
+        <input
+          #custoInput
+          id="np-custo"
+          name="custoUnitario"
+          type="text"
+          inputmode="decimal"
+          class="affix-input mono-input"
+          placeholder="0,00"
+          [value]="custoRaw()"
+          [attr.aria-invalid]="custoError() !== null ? 'true' : null"
+          [attr.aria-describedby]="
+            custoError() ? 'np-custo-error' : custoZeroMarginHint() ? 'np-custo-hint' : null
+          "
+          (input)="onCustoChange($any($event.target).value)"
+          (blur)="onCustoBlur()"
+        />
+      </div>
+      @if (custoError(); as err) {
+        <p id="np-custo-error" class="field-error" role="alert">{{ err }}</p>
+      } @else {
+        @if (custoZeroMarginHint(); as hint) {
+          <p id="np-custo-hint" class="field-notice notice-warning">{{ hint }}</p>
+        }
+      }
+    </div>
+
+    <!-- 6. Margem Mínima Desejada (opcional) -->
+    <div class="field-group">
+      <label class="field-label" for="np-margem">
+        Margem Mínima Desejada <span class="optional-tag">(opcional)</span>
+      </label>
+      <div class="affix-group" [class.field-invalid]="margemError() !== null">
+        <input
+          #margemInput
+          id="np-margem"
+          name="margemMinimaDesejada"
+          type="text"
+          inputmode="decimal"
+          class="affix-input mono-input"
+          placeholder="Ex.: 35,0"
+          [value]="margemRaw()"
+          [attr.aria-invalid]="margemError() !== null ? 'true' : null"
+          [attr.aria-describedby]="
+            margemError() ? 'np-margem-error' : margemWithoutCostHint() ? 'np-margem-hint' : null
+          "
+          (input)="onMargemChange($any($event.target).value)"
+          (blur)="onMargemBlur()"
+        />
+        <span class="affix-suffix" aria-hidden="true">%</span>
+      </div>
+      @if (margemError(); as err) {
+        <p id="np-margem-error" class="field-error" role="alert">{{ err }}</p>
+      } @else {
+        @if (margemWithoutCostHint(); as hint) {
+          <p id="np-margem-hint" class="field-notice notice-info">{{ hint }}</p>
+        }
+      }
+    </div>
+
+    <!-- 7. Horizonte de Projeção -->
+    <fieldset class="field-group horizon-fieldset" [disabled]="submitting()">
+      <legend class="field-label">Horizonte de Projeção</legend>
+      <div class="horizon-group" role="radiogroup" aria-label="Horizonte de projeção em meses">
+        @for (opt of horizonOptions; track opt.value) {
+          <label class="horizon-option" [class.is-selected]="horizonMonths() === opt.value">
+            <input
+              type="radio"
+              name="horizonMonths"
+              class="horizon-radio"
+              [value]="opt.value"
+              [checked]="horizonMonths() === opt.value"
+              (change)="onHorizonChange(opt.value)"
+            />
+            <span>{{ opt.label }}</span>
+          </label>
+        }
+      </div>
+    </fieldset>
+
+    <!-- Ações -->
+    <div class="form-actions">
+      <button
+        type="submit"
+        class="btn-submit"
+        [disabled]="!canSubmit()"
+        [attr.aria-busy]="submitting()"
+      >
+        @if (submitting()) {
+          <span class="btn-spinner" aria-hidden="true"></span>
+          <span>Calculando projeção...</span>
+        } @else {
+          <span>Simular Viabilidade</span>
+        }
+      </button>
+
+      <button type="button" class="btn-reset" [disabled]="submitting()" (click)="onReset()">
+        Limpar simulação
+      </button>
+    </div>
+  </form>
+</section>

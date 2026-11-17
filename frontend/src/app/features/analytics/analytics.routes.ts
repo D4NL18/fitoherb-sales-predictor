@@ -31,6 +31,11 @@ export const ANALYTICS_ROUTES: Routes = [
         loadComponent: () =>
           import('./pages/elasticity-page/elasticity-page.component').then((m) => m.ElasticityPageComponent),
       },
+      {
+        path: 'produto-novo',
+        loadComponent: () =>
+          import('./pages/new-product-page/new-product-page.component').then((m) => m.NewProductPageComponent),
+      },
     ],
   },
 ];

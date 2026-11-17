@@ -1,0 +1,308 @@
+<div class="results-stack">
+  @if (isDirty()) {
+    <div class="stale-banner" role="status">
+      Parâmetros alterados — clique em 'Simular Viabilidade' para atualizar as projeções.
+    </div>
+  }
+
+  <!-- 1. Selo Obrigatório de Estimativa Conservadora -->
+  <section class="conservative-seal" aria-label="Premissa conservadora da projeção">
+    <svg
+      class="seal-icon"
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+      <polyline points="9 12 11 14 15 10"></polyline>
+    </svg>
+    <div class="seal-body">
+      <h3 class="seal-title">Estimativa Conservadora: calculada para proteger seu estoque</h3>
+      <p class="seal-subtitle">
+        {{
+          data().methodologyNotice ||
+            'Projeção calibrada abaixo do 1º quartil histórico (P25 × 0,70), nunca superando o piso inferior dos lançamentos similares.'
+        }}
+      </p>
+    </div>
+  </section>
+
+  <!-- 2. Degradação Graciosa de Sazonalidade F1 -->
+  @if (isSeasonalityNeutral()) {
+    <div class="seasonality-callout" role="note">
+      Sazonalidade aplicada em fator neutro (1,00×): histórico sazonal da categoria indisponível ou com confiança baixa.
+      Projeção baseada integralmente nos similares de lançamento.
+    </div>
+  }
+
+  <!-- 3. Cartão de Viabilidade & 4 KPIs -->
+  <section
+    class="viability-card"
+    [class]="viabilityBadge().accentClass"
+    aria-labelledby="np-viability-heading"
+  >
+    <div class="viability-header">
+      <div class="viability-title-group">
+        <h3 id="np-viability-heading" class="section-heading">Veredito de Viabilidade</h3>
+        @if (data().financialViability.parecer; as parecer) {
+          <p class="viability-parecer">{{ parecer }}</p>
+        }
+      </div>
+      <span class="tag" [class]="viabilityBadge().tagClass">
+        <span class="tag-dot" aria-hidden="true"></span>
+        <span>{{ viabilityBadge().label }}</span>
+      </span>
+    </div>
+
+    <div class="kpi-grid">
+      <div class="kpi-item">
+        <span class="kpi-label">Demanda Conservadora (M1–M{{ horizonMonths() }})</span>
+        <strong class="kpi-value">{{ data().aggregatedTotals.totalQuantity | ptDecimal: 0 }} un</strong>
+        <span class="kpi-sub">
+          Média {{ data().aggregatedTotals.averageMonthlyQuantity | ptDecimal: 0 }} un/mês
+        </span>
+      </div>
+
+      <div class="kpi-item">
+        <span class="kpi-label">Receita Bruta Conservadora</span>
+        <strong class="kpi-value">{{ data().aggregatedTotals.totalRevenue | brl }}</strong>
+        <span class="kpi-sub">
+          Média {{ data().aggregatedTotals.averageMonthlyRevenue | brl }}/mês
+        </span>
+      </div>
+
+      <div class="kpi-item">
+        <span class="kpi-label">Margem Bruta Prevista</span>
+        @if (data().financialViability.margemBrutaPercentual !== null) {
+          <strong class="kpi-value">
+            {{ data().financialViability.margemBrutaPercentual! | ptPercent: 1 }}
+          </strong>
+          @if (data().financialViability.margemMinimaDesejada !== null) {
+            <span class="kpi-sub">
+              Meta: {{ data().financialViability.margemMinimaDesejada! | ptPercent: 1 }}
+            </span>
+          } @else {
+            <span class="kpi-sub">
+              {{ data().financialViability.margemBrutaUnitaria! | brl }} / un
+            </span>
+          }
+        } @else {
+          <strong class="kpi-value">—</strong>
+          <span class="kpi-sub">Informe o custo unitário</span>
+        }
+      </div>
+
+      <div class="kpi-item">
+        <span class="kpi-label">Base de Similares</span>
+        <strong class="kpi-value">{{ data().similarsUsed.length }} lançamentos</strong>
+        <button
+          type="button"
+          class="kpi-link-btn"
+          [disabled]="data().similarsUsed.length === 0"
+          (click)="onOpenFirstSimilar($event)"
+        >
+          Ver detalhes dos similares
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4. Projeção Mensal (Gráfico SVG + Tabela Ledger + Bloco Segregado P75) -->
+  <section class="projection-panel" aria-labelledby="np-projection-heading">
+    <div class="section-header-row">
+      <div>
+        <h3 id="np-projection-heading" class="section-heading">Projeção Mensal e Faixas de Incerteza</h3>
+        @if (!isSeasonalityNeutral()) {
+          <p class="section-note">
+            Fatores sazonais amortecidos entre 0,90× e 1,10× aplicados à curva de lançamento.
+          </p>
+        }
+      </div>
+    </div>
+
+    <app-new-product-band-chart [items]="data().monthlyForecast" />
+
+    <!-- Tabela Ledger Desktop / Tablet -->
+    <div class="table-scroll desktop-only-table">
+      <table class="forecast-ledger">
+        <caption class="sr-only">
+          Projeção mensal detalhada com piso P10, previsão conservadora oficial, mediana P50 e receita estimada.
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">Mês</th>
+            <th scope="col" class="num-col">Sazonal.</th>
+            <th scope="col" class="num-col">P10 (▽)</th>
+            <th scope="col" class="num-col official-col">Conservador (● Oficial)</th>
+            <th scope="col" class="num-col">Mediana P50 (□)</th>
+            <th scope="col" class="num-col">Receita Conservadora</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (item of data().monthlyForecast; track item.month) {
+            <tr>
+              <th scope="row">{{ formatMonthLabel(item.month, item.calendarMonth) }}</th>
+              <td class="num-col mono-cell">{{ item.seasonalityFactor | ptDecimal: 2 }}×</td>
+              <td class="num-col mono-cell">{{ item.p10Quantity | ptDecimal: 0 }} un</td>
+              <td class="num-col mono-cell official-cell">
+                {{ item.conservativeQuantity | ptDecimal: 0 }} un
+              </td>
+              <td class="num-col mono-cell">{{ item.p50Quantity | ptDecimal: 0 }} un</td>
+              <td class="num-col mono-cell">{{ item.revenue | brl }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Cards Mobile (< 640px) para projeção mensal -->
+    <div class="mobile-only-cards" aria-label="Projeção mensal em cartões">
+      @for (item of data().monthlyForecast; track item.month) {
+        <article class="mobile-card">
+          <div class="mobile-card-head">
+            <strong>{{ formatMonthLabel(item.month, item.calendarMonth) }}</strong>
+            <span class="mono-cell">{{ item.seasonalityFactor | ptDecimal: 2 }}×</span>
+          </div>
+          <dl class="mobile-dl">
+            <div>
+              <dt>Conservador (Oficial)</dt>
+              <dd class="mono-cell official-text">{{ item.conservativeQuantity | ptDecimal: 0 }} un</dd>
+            </div>
+            <div>
+              <dt>Receita Conservadora</dt>
+              <dd class="mono-cell">{{ item.revenue | brl }}</dd>
+            </div>
+            <div>
+              <dt>P10 (▽)</dt>
+              <dd class="mono-cell">{{ item.p10Quantity | ptDecimal: 0 }} un</dd>
+            </div>
+            <div>
+              <dt>Mediana P50 (□)</dt>
+              <dd class="mono-cell">{{ item.p50Quantity | ptDecimal: 0 }} un</dd>
+            </div>
+          </dl>
+        </article>
+      }
+    </div>
+
+    <!-- Bloco Segregado Não-Meta: Teto Maduro (P75) -->
+    <aside class="mature-ceiling-box" aria-labelledby="np-p75-heading">
+      <div class="ceiling-header">
+        <h4 id="np-p75-heading" class="ceiling-title">
+          Referência Histórica de Maturidade (P75) — Não utilizar como meta inicial
+        </h4>
+        <strong class="ceiling-value">
+          {{ data().marketCeiling.tetoMaduroP75 | ptDecimal: 0 }} un/mês
+        </strong>
+      </div>
+      <p class="ceiling-desc">{{ data().marketCeiling.descricao }}</p>
+    </aside>
+  </section>
+
+  <!-- 5. Lista Top-10 Lançamentos Similares -->
+  <section class="similars-panel" aria-labelledby="np-similars-heading">
+    <div class="similars-header">
+      <h3 id="np-similars-heading" class="section-heading">Lançamentos Similares Utilizados</h3>
+      <p class="section-note">
+        Top {{ data().similarsUsed.length }} lançamentos similares do mesmo Tipo (Fornecedor 25%, Log-Preço 35% e
+        Descrição TF-IDF 40%; devoluções já abatidas).
+      </p>
+    </div>
+
+    <div class="table-scroll desktop-only-table">
+      <table class="similars-ledger">
+        <caption class="sr-only">
+          Produtos similares usados como referência, com preço histórico, quantidades líquidas M1 a M3 e score de similaridade.
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">Produto</th>
+            <th scope="col">Fornecedor</th>
+            <th scope="col" class="num-col">Preço</th>
+            <th scope="col" class="num-col">Líquido M1 / M2 / M3</th>
+            <th scope="col">Similaridade</th>
+            <th scope="col" class="action-col">Ação</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (sim of data().similarsUsed; track sim.sku) {
+            <tr [class.is-active-row]="selectedSimilarSku() === sim.sku">
+              <td>
+                <div class="product-cell">
+                  <span class="product-desc">{{ sim.descricao }}</span>
+                  <span class="product-sku">SKU {{ sim.sku }}</span>
+                </div>
+              </td>
+              <td>{{ sim.fornecedor }}</td>
+              <td class="num-col mono-cell">{{ sim.precoHistorico | brl }}</td>
+              <td class="num-col mono-cell">
+                {{ formatLaunchMonthQty(sim.quantidadesPrimeirosMeses, 0) }} /
+                {{ formatLaunchMonthQty(sim.quantidadesPrimeirosMeses, 1) }} /
+                {{ formatLaunchMonthQty(sim.quantidadesPrimeirosMeses, 2) }}
+              </td>
+              <td>
+                <div class="score-cell">
+                  <span class="mono-cell">{{ sim.scoreFinal | ptPercent: 1 }}</span>
+                  <div class="score-bar-track" aria-hidden="true">
+                    <div class="score-bar-fill" [style.width.%]="sim.scoreFinal * 100"></div>
+                  </div>
+                </div>
+              </td>
+              <td class="action-col">
+                <button
+                  type="button"
+                  class="btn-explain"
+                  [attr.aria-label]="'Explicar similaridade de ' + sim.descricao"
+                  (click)="onExplain(sim, $event)"
+                >
+                  Explicar
+                </button>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Cards Mobile (< 640px) para Similares -->
+    <div class="mobile-only-cards" aria-label="Lançamentos similares em cartões">
+      @for (sim of data().similarsUsed; track sim.sku) {
+        <article class="mobile-card" [class.is-active-row]="selectedSimilarSku() === sim.sku">
+          <div class="mobile-card-head">
+            <div class="product-cell">
+              <strong class="product-desc">{{ sim.descricao }}</strong>
+              <span class="product-sku">SKU {{ sim.sku }}</span>
+            </div>
+            <span class="mono-cell">{{ sim.precoHistorico | brl }}</span>
+          </div>
+          <p class="mobile-supplier">{{ sim.fornecedor }}</p>
+          <div class="mobile-metrics-row">
+            <span class="mono-cell">
+              M1/M2/M3: {{ formatLaunchMonthQty(sim.quantidadesPrimeirosMeses, 0) }} /
+              {{ formatLaunchMonthQty(sim.quantidadesPrimeirosMeses, 1) }} /
+              {{ formatLaunchMonthQty(sim.quantidadesPrimeirosMeses, 2) }}
+            </span>
+            <span class="mono-cell">{{ sim.scoreFinal | ptPercent: 1 }}</span>
+          </div>
+          <div class="score-bar-track" aria-hidden="true">
+            <div class="score-bar-fill" [style.width.%]="sim.scoreFinal * 100"></div>
+          </div>
+          <button
+            type="button"
+            class="btn-explain mobile-explain-btn"
+            [attr.aria-label]="'Explicar similaridade de ' + sim.descricao"
+            (click)="onExplain(sim, $event)"
+          >
+            Explicar
+          </button>
+        </article>
+      }
+    </div>
+  </section>
+</div>
