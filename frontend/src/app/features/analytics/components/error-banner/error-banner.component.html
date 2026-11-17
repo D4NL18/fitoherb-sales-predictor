@@ -5,6 +5,11 @@
     <line x1="12" y1="9" x2="12" y2="13"></line>
     <line x1="12" y1="17" x2="12.01" y2="17"></line>
   </svg>
-  <p class="banner-text">Não foi possível buscar as sugestões agora. Tente de novo em instantes.</p>
-  <button type="button" class="banner-action" (click)="retry.emit()">Tentar de novo</button>
+  <div class="banner-body">
+    <p class="banner-text">{{ message() }}</p>
+    @if (code(); as errorCode) {
+      <span class="banner-code">Código: {{ errorCode }}</span>
+    }
+  </div>
+  <button type="button" class="banner-action" (click)="retry.emit()">{{ retryLabel() }}</button>
 </div>

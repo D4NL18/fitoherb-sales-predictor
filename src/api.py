@@ -26,6 +26,7 @@ from src.modules.analytics.api.error_handlers import register_analytics_error_ha
 from src.modules.analytics.api.router import analytics_router
 from src.modules.inventory.api.router import inventory_router
 from src.modules.pricing.api.router import pricing_router
+from src.modules.sales_trend.api.router import sales_trend_router
 from src.modules.pricing.api.schemas import (
     AutoTuneData,
     AutoTuneRequest,
@@ -85,13 +86,15 @@ app.include_router(inventory_router, prefix="/api/v1")
 # Analytics Comercial (ADR-002): carga preguiçosa na primeira requisição, sem pré-aquecimento no lifespan.
 app.include_router(analytics_router, prefix="/api/v1")
 register_analytics_error_handlers(app)
+# Tendência de Vendas (ADR-003)
+app.include_router(sales_trend_router, prefix="/api/v1")
 
 
 # Montagem do Frontend Angular compilado para Produção (P-033)
 _dist_dir = Path(__file__).resolve().parent.parent / "frontend" / "dist" / "frontend" / "browser"
 if _dist_dir.exists():
     from starlette.exceptions import HTTPException as StarletteHTTPException
-    from fastapi.responses import FileResponse
+    from fastapi.responses import FileResponse, Response
 
     # Monta arquivos estáticos mantendo suporte a SPA
     app.mount("/static", StaticFiles(directory=str(_dist_dir)), name="static_assets")
@@ -123,6 +126,4 @@ __all__ = [
     "PricingSummary",
     "AutoTuneRequest",
     "OptimalParams",
-    "AutoTuneData",
-    "AutoTuneResponse",
 ]

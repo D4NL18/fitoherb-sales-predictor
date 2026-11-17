@@ -35,7 +35,8 @@
 ## Módulo `sales_trend` — Tendência de Vendas por Item (Fevereiro 2026)
 
 ### Regras de Negócio Ativas (`P-072` a `P-093`, Erros `TND-001` a `TND-005`)
-- **`P-072` (Catálogo Ativo & Inativos Fora):** Somente produtos ativos do catálogo atual com `Pc.Venda > 0` são considerados. Não há filtro, busca nem listagem para produtos inativos. Nas somas por fornecedor, entram exclusivamente produtos ativos.
+- **`P-057` (Catálogo Ativo Padronizado entre Módulos — atualizado):** O catálogo oficial em todos os módulos (`pricing`, `inventory`, `analytics` e `sales_trend`) aplica o filtro SQL canônico `ACTIVE_CATALOG_FILTER_SQL` (`p.[Pc.Venda] > 0`, `dp.[inativo_pro] = 0` e pelo menos 1 venda `VENDA` com `Qtd Venda > 0` nos últimos 90 dias), sem descarte divergente em memória no `inventory` para garantir o mesmo total em todas as telas.
+- **`P-072` (Catálogo Ativo & Inativos Fora):** Somente produtos ativos do catálogo atual (`dp.inativo_pro = 0`, `Pc.Venda > 0`) e com venda registrada nos últimos 90 dias são considerados. Não há filtro, busca nem listagem para produtos inativos ou parados há mais de 90 dias. Nas somas por fornecedor, entram exclusivamente produtos ativos.
 - **`P-073` a `P-079` (Janelas de 1, 3, 6 e 12 meses):** Variação percentual entre a janela atual terminada no mês-base e a imediatamente anterior de mesmo tamanho.
   - Devoluções abatidas. Se volume líquido resultante for < 0, arredonda-se para 0 com flag `NEGATIVE_FLOORED_TO_ZERO`.
   - Estados de célula: `SEM_BASE` (< 50% de cobertura de histórico na janela anterior), `BASE_BAIXA` (volume anterior < 10 un ou R$ 500,00), `BASE_PARCIAL` (mês-base é mês corrente parcial ou primeiro mês de venda inicia na janela atual), `NORMAL`.
