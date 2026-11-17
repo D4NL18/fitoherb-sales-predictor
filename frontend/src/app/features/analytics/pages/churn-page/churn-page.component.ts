@@ -14,12 +14,16 @@ import {
   signal,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { EMPTY, Subject, catchError, map, of, switchMap, tap } from 'rxjs';
+import { EMPTY, Subject, catchError, debounceTime, distinctUntilChanged, map, of, switchMap, tap } from 'rxjs';
 import { CustomerChurnDrawerComponent } from '../../components/customer-churn-drawer/customer-churn-drawer.component';
 import { ListPagerComponent } from '../../components/list-pager/list-pager.component';
+import { SearchableSelectComponent } from '../../components/searchable-select/searchable-select.component';
 import { DEFAULT_PAGE_LIMIT, PageRequest } from '../../models/analytics.model';
 import {
   ChurnCustomersResponse,
+  ChurnQueryOptions,
+  ChurnSortDirection,
+  ChurnSortField,
   ChurnStatusFilter,
   ChurnSummaryKpi,
   ChurnTableRow,
@@ -51,6 +55,7 @@ type ChurnListPayload =
   imports: [
     CustomerChurnDrawerComponent,
     ListPagerComponent,
+    SearchableSelectComponent,
     BrlPipe,
     PtDecimalPipe,
     PtDatePipe,
@@ -66,10 +71,18 @@ export class ChurnPageComponent implements OnInit {
 
   private readonly listTrigger$ = new Subject<ChurnListQuery>();
   private readonly detailTrigger$ = new Subject<number | null>();
+  private readonly searchInput$ = new Subject<string>();
 
   readonly limit = DEFAULT_PAGE_LIMIT;
 
   readonly statusFilter = signal<ChurnStatusFilter>('EM_RISCO');
+  readonly searchQuery = signal<string>('');
+  readonly sellerFilter = signal<string>('');
+  readonly cityFilter = signal<string>('');
+  readonly sortBy = signal<ChurnSortField | null>(null);
+  readonly sortDir = signal<ChurnSortDirection>('desc');
+  readonly sellerOptions = signal<string[]>([]);
+  readonly cityOptions = signal<string[]>([]);
   readonly customers = signal<ChurnTableRow[]>([]);
   readonly resumo = signal<ChurnSummaryKpi | null>(null);
   readonly inactiveTotalCount = signal<number | null>(null);
@@ -102,12 +115,22 @@ export class ChurnPageComponent implements OnInit {
     return kpi.totalEmRisco + kpi.totalAlerta + kpi.totalSaudavel;
   });
 
+  protected readonly totalAllCount = computed(() => {
+    const kpi = this.resumo();
+    if (!kpi) return null;
+    return kpi.totalEmRisco + kpi.totalAlerta + kpi.totalSaudavel + kpi.totalInativos;
+  });
+
   protected readonly badgeInativosCount = computed(
     () => this.resumo()?.totalInativos ?? this.inactiveTotalCount(),
   );
 
   protected readonly canExportCsv = computed(
     () => !this.isExporting() && !this.loading() && !this.error() && this.customers().length > 0,
+  );
+
+  protected readonly hasActiveFilters = computed(
+    () => Boolean(this.searchQuery().trim() || this.sellerFilter() || this.cityFilter()),
   );
 
   protected readonly liveAnnouncement = computed(() => {
@@ -136,8 +159,15 @@ export class ChurnPageComponent implements OnInit {
         }),
         switchMap(({ status, offset }) => {
           const pageRequest: PageRequest = { limit: this.limit, offset };
+          const queryOptions: ChurnQueryOptions = {
+            q: this.searchQuery(),
+            seller: this.sellerFilter(),
+            city: this.cityFilter(),
+            sortBy: this.sortBy(),
+            sortDir: this.sortDir(),
+          };
           if (status === 'INATIVO_RECUPERACAO') {
-            return this.analyticsService.getInactiveChurn(pageRequest).pipe(
+            return this.analyticsService.getInactiveChurn(pageRequest, queryOptions).pipe(
               map((res): ChurnListPayload => ({ kind: 'inactive', res })),
               catchError((err: unknown) => {
                 this.handleListError(
@@ -148,7 +178,7 @@ export class ChurnPageComponent implements OnInit {
               }),
             );
           }
-          return this.analyticsService.getChurnCustomers(status, pageRequest).pipe(
+          return this.analyticsService.getChurnCustomers(status, pageRequest, queryOptions).pipe(
             map((res): ChurnListPayload => ({ kind: 'active', res })),
             catchError((err: unknown) => {
               this.handleListError(
@@ -179,6 +209,17 @@ export class ChurnPageComponent implements OnInit {
           this.dataReferencia.set(payload.res.meta.dataReferencia);
         }
         this.loading.set(false);
+      });
+
+    this.searchInput$
+      .pipe(
+        debounceTime(300),
+        distinctUntilChanged(),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe((term) => {
+        this.searchQuery.set(term);
+        this.listTrigger$.next({ status: this.statusFilter(), offset: 0 });
       });
 
     this.detailTrigger$
@@ -215,6 +256,62 @@ export class ChurnPageComponent implements OnInit {
 
   ngOnInit(): void {
     this.fetchData();
+    if (typeof this.analyticsService.getChurnFilters === 'function') {
+      this.analyticsService
+        .getChurnFilters()
+        .pipe(
+          catchError(() => EMPTY),
+          takeUntilDestroyed(this.destroyRef),
+        )
+        .subscribe((res) => {
+          this.sellerOptions.set(res.data.sellers ?? []);
+          this.cityOptions.set(res.data.cities ?? []);
+        });
+    }
+  }
+
+  onSearchInput(value: string): void {
+    this.searchQuery.set(value);
+    this.searchInput$.next(value);
+  }
+
+  onSellerChange(seller: string): void {
+    this.sellerFilter.set(seller);
+    this.listTrigger$.next({ status: this.statusFilter(), offset: 0 });
+  }
+
+  onCityChange(city: string): void {
+    this.cityFilter.set(city);
+    this.listTrigger$.next({ status: this.statusFilter(), offset: 0 });
+  }
+
+  clearFilters(): void {
+    this.searchQuery.set('');
+    this.sellerFilter.set('');
+    this.cityFilter.set('');
+    this.listTrigger$.next({ status: this.statusFilter(), offset: 0 });
+  }
+
+  toggleSort(field: ChurnSortField): void {
+    const currentField = this.sortBy();
+    const isTextField =
+      field === 'customerName' ||
+      field === 'sellerName' ||
+      field === 'city' ||
+      field === 'status';
+
+    if (currentField === field) {
+      this.sortDir.set(this.sortDir() === 'asc' ? 'desc' : 'asc');
+    } else {
+      this.sortBy.set(field);
+      this.sortDir.set(isTextField ? 'asc' : 'desc');
+    }
+    this.listTrigger$.next({ status: this.statusFilter(), offset: 0 });
+  }
+
+  protected getAriaSort(field: ChurnSortField): 'ascending' | 'descending' | 'none' {
+    if (this.sortBy() !== field) return 'none';
+    return this.sortDir() === 'asc' ? 'ascending' : 'descending';
   }
 
   fetchData(): void {
@@ -261,6 +358,17 @@ export class ChurnPageComponent implements OnInit {
     this.drawerError.set(null);
     this.drawerLoading.set(true);
     this.isDrawerOpen.set(true);
+    this.searchInput$
+      .pipe(
+        debounceTime(300),
+        distinctUntilChanged(),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe((term) => {
+        this.searchQuery.set(term);
+        this.listTrigger$.next({ status: this.statusFilter(), offset: 0 });
+      });
+
     this.detailTrigger$.next(customer.customerCode);
   }
 
@@ -269,10 +377,32 @@ export class ChurnPageComponent implements OnInit {
     if (code === null) return;
     this.drawerError.set(null);
     this.drawerLoading.set(true);
+    this.searchInput$
+      .pipe(
+        debounceTime(300),
+        distinctUntilChanged(),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe((term) => {
+        this.searchQuery.set(term);
+        this.listTrigger$.next({ status: this.statusFilter(), offset: 0 });
+      });
+
     this.detailTrigger$.next(code);
   }
 
   closeDrawer(): void {
+    this.searchInput$
+      .pipe(
+        debounceTime(300),
+        distinctUntilChanged(),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe((term) => {
+        this.searchQuery.set(term);
+        this.listTrigger$.next({ status: this.statusFilter(), offset: 0 });
+      });
+
     this.detailTrigger$.next(null);
     this.isDrawerOpen.set(false);
     this.drawerLoading.set(false);

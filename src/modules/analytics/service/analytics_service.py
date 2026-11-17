@@ -127,15 +127,82 @@ def search_products(query: str, page_request: PageRequest) -> ProductSearchRespo
 # ---------------------------------------------------------------------------
 from src.modules.analytics.api.schemas import (
     ChurnCustomersResponse,
+    ChurnFilterOptionsData,
+    ChurnFilterOptionsResponse,
     CustomerChurnDetailResponse,
     InactiveChurnResponse,
 )
-from src.modules.analytics.domain.exceptions import CustomerChurnNotFoundError
+from src.modules.analytics.domain.exceptions import ChurnInvalidParametersError, CustomerChurnNotFoundError
+
+_CHURN_SORT_KEYS = {
+    "customerCode": lambda c: c.customer_code,
+    "customerName": lambda c: c.customer_name.casefold(),
+    "sellerName": lambda c: c.seller_name.casefold(),
+    "city": lambda c: c.city.casefold(),
+    "status": lambda c: c.status,
+    "diasSemComprar": lambda c: c.dias_sem_comprar,
+    "gapTipico": lambda c: c.gap_tipico,
+    "faturamentoMedioMensal": lambda c: c.faturamento_medio_mensal,
+    "scorePrioridade": lambda c: c.score_prioridade,
+    "dataUltimoPedido": lambda c: c.data_ultimo_pedido.isoformat() if c.data_ultimo_pedido else None,
+}
 
 
-def get_churn_customers(status: Optional[str], page_request: PageRequest) -> ChurnCustomersResponse:
+def _filter_and_sort_churn(
+    items: list,
+    q: Optional[str] = None,
+    seller: Optional[str] = None,
+    city: Optional[str] = None,
+    sort_by: Optional[str] = None,
+    sort_dir: str = "desc",
+) -> list:
+    filtered = items
+    if q and q.strip():
+        needle = q.strip().casefold()
+        filtered = [
+            c
+            for c in filtered
+            if needle in str(c.customer_code)
+            or needle in c.customer_name.casefold()
+            or needle in c.seller_name.casefold()
+            or needle in c.city.casefold()
+        ]
+    if seller and seller.strip():
+        s_needle = seller.strip().casefold()
+        filtered = [c for c in filtered if c.seller_name.casefold() == s_needle]
+    if city and city.strip():
+        c_needle = city.strip().casefold()
+        filtered = [c for c in filtered if c.city.casefold() == c_needle]
+
+    if sort_by:
+        key_fn = _CHURN_SORT_KEYS.get(sort_by)
+        if key_fn is None:
+            raise ChurnInvalidParametersError(fields=["sortBy"])
+        non_null = [c for c in filtered if key_fn(c) is not None]
+        nulls = [c for c in filtered if key_fn(c) is None]
+        non_null.sort(key=key_fn, reverse=(sort_dir == "desc"))
+        return non_null + nulls
+    return filtered
+
+
+def get_churn_customers(
+    status: Optional[str],
+    page_request: PageRequest,
+    q: Optional[str] = None,
+    seller: Optional[str] = None,
+    city: Optional[str] = None,
+    sort_by: Optional[str] = None,
+    sort_dir: str = "desc",
+) -> ChurnCustomersResponse:
     """Listagem paginada de clientes classificados por churn (P-123, P-124)."""
-    customers = analytics_cache.get_churn_customers_list(status)
+    customers = _filter_and_sort_churn(
+        analytics_cache.get_churn_customers_list(status),
+        q=q,
+        seller=seller,
+        city=city,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+    )
     summary_kpi = analytics_cache.get_churn_summary_stats()
     page = paginate(customers, page_request)
     now = analytics_cache._utc_now()
@@ -154,14 +221,43 @@ def get_customer_churn_detail(customer_code: int) -> CustomerChurnDetailResponse
     return mappers.to_customer_churn_detail_response(summary, ref_date.isoformat())
 
 
-def get_inactive_churn(page_request: PageRequest) -> InactiveChurnResponse:
+def get_inactive_churn(
+    page_request: PageRequest,
+    q: Optional[str] = None,
+    seller: Optional[str] = None,
+    city: Optional[str] = None,
+    sort_by: Optional[str] = None,
+    sort_dir: str = "desc",
+) -> InactiveChurnResponse:
     """Fila especializada de reativação de clientes inativos antigos (P-125)."""
-    inactives = analytics_cache.get_inactive_churn_list()
+    inactives = _filter_and_sort_churn(
+        analytics_cache.get_inactive_churn_list(),
+        q=q,
+        seller=seller,
+        city=city,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+    )
     page = paginate(inactives, page_request)
     now = analytics_cache._utc_now()
     ref_date = analytics_cache.business_date(now)
     context = mappers.PageContext(page_request, ref_date.isoformat())
     return mappers.to_inactive_churn_response(page, context)
+
+
+def get_churn_filters() -> ChurnFilterOptionsResponse:
+    """Opções distintas de vendedores e cidades para filtros da tela de churn."""
+    sellers, cities = analytics_cache.get_churn_filter_options()
+    now = analytics_cache._utc_now()
+    ref_date = analytics_cache.business_date(now)
+    return ChurnFilterOptionsResponse(
+        data=ChurnFilterOptionsData(sellers=sellers, cities=cities),
+        meta=mappers.AnalyticsMeta(
+            timestamp=mappers.utc_timestamp(),
+            version="1.0.0",
+            data_referencia=ref_date.isoformat(),
+        ),
+    )
 
 
 def list_catalog_products(

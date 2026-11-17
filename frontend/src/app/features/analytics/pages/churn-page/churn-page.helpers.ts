@@ -50,6 +50,9 @@ export function getChurnStatusDisplay(status: ChurnStatus): ChurnStatusDisplay {
 export function mapActiveChurnRow(item: ChurnCustomerItem): ChurnTableRow {
   return {
     customerCode: item.customerCode,
+    customerName: item.customerName ?? '',
+    sellerName: item.sellerName ?? '',
+    city: item.city ?? '',
     status: item.status,
     diasSemComprar: item.diasSemComprar,
     gapTipico: item.gapTipico,
@@ -58,13 +61,16 @@ export function mapActiveChurnRow(item: ChurnCustomerItem): ChurnTableRow {
     faturamentoMedioMensal: item.faturamentoMedioMensal,
     scorePrioridade: item.scorePrioridade,
     historicoCurto: item.historicoCurto,
-    dataUltimoPedido: null,
+    dataUltimoPedido: item.dataUltimoPedido ?? null,
   };
 }
 
 export function mapInactiveChurnRow(item: InactiveCustomerItem): ChurnTableRow {
   return {
     customerCode: item.customerCode,
+    customerName: item.customerName ?? '',
+    sellerName: item.sellerName ?? '',
+    city: item.city ?? '',
     status: 'INATIVO_RECUPERACAO',
     diasSemComprar: item.diasSemComprar,
     gapTipico: null,
@@ -122,9 +128,13 @@ export function sanitizeCsvCell(value: string | number | boolean | null | undefi
  */
 export function buildChurnCsvContent(items: readonly ChurnTableRow[], statusFilter: ChurnStatusFilter): string {
   const isInactive = statusFilter === 'INATIVO_RECUPERACAO';
+  const isAll = statusFilter === 'TODOS_GERAL';
   const headers = isInactive
     ? [
         'Codigo Cliente',
+        'Cliente',
+        'Vendedor',
+        'Cidade',
         'Status',
         'Dias Sem Comprar',
         'Ultimo Pedido',
@@ -133,8 +143,12 @@ export function buildChurnCsvContent(items: readonly ChurnTableRow[], statusFilt
       ]
     : [
         'Codigo Cliente',
+        'Cliente',
+        'Vendedor',
+        'Cidade',
         'Status',
         'Dias Sem Comprar',
+        ...(isAll ? ['Ultimo Pedido'] : []),
         'Cadencia Tipica (dias)',
         'Regua Referencia (dias)',
         'Historico Curto',
@@ -151,6 +165,9 @@ export function buildChurnCsvContent(items: readonly ChurnTableRow[], statusFilt
       const lastOrder = c.dataUltimoPedido ? formatIsoDate(c.dataUltimoPedido) : '—';
       return [
         c.customerCode,
+        c.customerName || '—',
+        c.sellerName || '—',
+        c.city || '—',
         statusLabel,
         c.diasSemComprar,
         lastOrder,
@@ -159,14 +176,19 @@ export function buildChurnCsvContent(items: readonly ChurnTableRow[], statusFilt
       ].map(sanitizeCsvCell);
     }
 
+    const lastOrder = c.dataUltimoPedido ? formatIsoDate(c.dataUltimoPedido) : '—';
     const gap = c.gapTipico !== null ? formatCsvDecimal(c.gapTipico, GAP_DECIMALS) : '—';
     const regua = c.diasReferencia !== null ? c.diasReferencia : '—';
     const score = c.scorePrioridade !== null ? formatCsvDecimal(c.scorePrioridade, MONEY_DECIMALS) : '—';
 
     return [
       c.customerCode,
+      c.customerName || '—',
+      c.sellerName || '—',
+      c.city || '—',
       statusLabel,
       c.diasSemComprar,
+      ...(isAll ? [lastOrder] : []),
       gap,
       regua,
       historicoLabel,

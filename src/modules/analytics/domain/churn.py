@@ -57,6 +57,9 @@ class ChurnCustomerSummary:
     faturamento_medio_mensal: float
     score_prioridade: float
     historico_curto: bool
+    customer_name: str = ""
+    seller_name: str = ""
+    city: str = ""
     data_ultimo_pedido: Optional[date] = None
     variacao_trimestral_pct: Optional[float] = None
     historico_mensal: Tuple[MonthlyRevenuePoint, ...] = ()
@@ -106,6 +109,9 @@ def calculate_churn_metrics(
     order_dates: Sequence[date],
     revenue_history: Sequence[MonthlyRevenuePoint],
     reference_date: date,
+    customer_name: str = "",
+    seller_name: str = "",
+    city: str = "",
 ) -> ChurnCustomerSummary:
     """
     P-117 a P-125: Calcula todas as métricas determinísticas de churn para um cliente.
@@ -122,6 +128,9 @@ def calculate_churn_metrics(
             faturamento_medio_mensal=0.0,
             score_prioridade=0.0,
             historico_curto=True,
+            customer_name=customer_name,
+            seller_name=seller_name,
+            city=city,
             data_ultimo_pedido=None,
         )
 
@@ -170,6 +179,9 @@ def calculate_churn_metrics(
         faturamento_medio_mensal=faturamento_medio_mensal,
         score_prioridade=score_prioridade,
         historico_curto=historico_curto,
+        customer_name=customer_name,
+        seller_name=seller_name,
+        city=city,
         data_ultimo_pedido=last_order_date,
         variacao_trimestral_pct=variacao_trimestral_pct,
         historico_mensal=tuple(revenue_history),

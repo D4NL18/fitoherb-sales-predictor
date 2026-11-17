@@ -558,3 +558,116 @@
     grid-template-columns: 1fr 1fr;
   }
 }
+
+.search-filter-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.search-field {
+  position: relative;
+  flex: 1 1 280px;
+  min-width: 220px;
+
+  .search-icon {
+    position: absolute;
+    left: var(--space-3);
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-muted);
+    pointer-events: none;
+  }
+
+  .search-input {
+    width: 100%;
+    min-height: ui.$touch-target;
+    padding: var(--space-2) var(--space-3) var(--space-2) calc(var(--space-3) + 24px);
+    font-family: var(--font-family-body);
+    font-size: 0.9rem;
+    color: var(--text-primary);
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-xs);
+
+    &:focus {
+      outline: 2px solid var(--brand-primary);
+      outline-offset: 1px;
+    }
+  }
+}
+
+.select-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.filter-select {
+  min-height: ui.$touch-target;
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-family-body);
+  font-size: 0.88rem;
+  color: var(--text-primary);
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xs);
+  max-width: 240px;
+
+  &:focus {
+    outline: 2px solid var(--brand-primary);
+    outline-offset: 1px;
+  }
+}
+
+.btn-clear-filters {
+  min-height: ui.$touch-target;
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-family-body);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--brand-primary);
+  background: transparent;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+
+  &:hover {
+    background-color: var(--bg-subtle);
+  }
+}
+
+.sort-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0;
+  font: inherit;
+  font-weight: inherit;
+  color: inherit;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+
+  &.sort-btn-num {
+    justify-content: flex-end;
+    width: 100%;
+  }
+
+  .sort-indicator {
+    font-size: 0.78rem;
+    opacity: 0.65;
+  }
+
+  &:hover .sort-indicator,
+  th[aria-sort='ascending'] & .sort-indicator,
+  th[aria-sort='descending'] & .sort-indicator {
+    opacity: 1;
+    color: var(--brand-primary);
+  }
+}

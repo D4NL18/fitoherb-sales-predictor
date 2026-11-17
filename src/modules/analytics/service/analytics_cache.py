@@ -327,7 +327,18 @@ def _build_churn_snapshot() -> ChurnCacheSnapshot:
     orders_df = sales_repository.fetch_customer_orders(cutoff)
     revenue_df = sales_repository.fetch_customer_monthly_revenue(cutoff)
     top_prod_df = sales_repository.fetch_customer_top_products(cutoff)
+    meta_df = sales_repository.fetch_customer_metadata(cutoff)
     catalog = get_catalog().entries
+
+    meta_by_cust: Dict[int, Tuple[str, str, str]] = {}
+    for row in meta_df.itertuples(index=False):
+        c_code = int(row.customer_code)
+        c_name = str(row.customer_name or "").strip()
+        s_name = str(row.seller_name or "").strip()
+        raw_city = str(row.city or "").strip()
+        raw_uf = str(row.uf or "").strip()
+        c_city = f"{raw_city}/{raw_uf}" if raw_city and raw_uf else (raw_city or raw_uf)
+        meta_by_cust[c_code] = (c_name, s_name, c_city)
 
     # Mapear pedidos por cliente
     orders_by_cust: Dict[int, List[date]] = {}
@@ -367,7 +378,16 @@ def _build_churn_snapshot() -> ChurnCacheSnapshot:
     for c_code in all_cust_codes:
         c_orders = orders_by_cust.get(c_code, [])
         c_rev = rev_by_cust.get(c_code, [])
-        summary = calculate_churn_metrics(c_code, c_orders, c_rev, ref_date)
+        c_name, s_name, c_city = meta_by_cust.get(c_code, ("", "", ""))
+        summary = calculate_churn_metrics(
+            c_code,
+            c_orders,
+            c_rev,
+            ref_date,
+            customer_name=c_name,
+            seller_name=s_name,
+            city=c_city,
+        )
 
         # Enriquecer com produtos perdidos se tiver compras passadas
         if c_code in prod_by_cust:
@@ -421,6 +441,8 @@ def get_churn_snapshot(force_reload: bool = False) -> ChurnCacheSnapshot:
 
 def get_churn_customers_list(status: Optional[str] = None) -> List[ChurnCustomerSummary]:
     snap = get_churn_snapshot()
+    if status == "TODOS_GERAL":
+        return list(snap.ranked_active_customers) + list(snap.ranked_inactive_customers)
     if status is None or status == "TODOS":
         return list(snap.ranked_active_customers)
     return [c for c in snap.ranked_active_customers if c.status == status]
@@ -439,6 +461,14 @@ def get_inactive_churn_list() -> List[ChurnCustomerSummary]:
 def get_churn_summary_stats() -> dict:
     snap = get_churn_snapshot()
     return dict(snap.summary_kpi)
+
+
+def get_churn_filter_options() -> Tuple[List[str], List[str]]:
+    snap = get_churn_snapshot()
+    all_items = list(snap.customers_by_code.values())
+    sellers = sorted({c.seller_name for c in all_items if c.seller_name})
+    cities = sorted({c.city for c in all_items if c.city})
+    return sellers, cities
 
 
 # ------------------------------------------------------------------ cache de vendas mensais (P-106, ADR-005 DA-07)

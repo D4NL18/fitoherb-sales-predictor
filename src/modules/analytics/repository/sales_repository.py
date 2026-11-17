@@ -187,7 +187,7 @@ def fetch_customer_orders(cutoff: date) -> pd.DataFrame:
     Agregado customer_orders: datas de pedidos de VENDA por cliente (P-117, P-118).
     """
     with _execute_readonly(_CUSTOMER_ORDERS_SQL, (cutoff,)) as cursor:
-        rows = cursor.fetchall()
+        rows = [tuple(row) for row in cursor.fetchall()]
     return pd.DataFrame(rows, columns=["customer_code", "order_date"])
 
 
@@ -196,8 +196,35 @@ def fetch_customer_monthly_revenue(cutoff: date) -> pd.DataFrame:
     Agregado customer_monthly_revenue: faturamento líquido de devoluções agrupado por mês (P-121).
     """
     with _execute_readonly(_CUSTOMER_MONTHLY_REVENUE_SQL, (cutoff,)) as cursor:
-        rows = cursor.fetchall()
+        rows = [tuple(row) for row in cursor.fetchall()]
     return pd.DataFrame(rows, columns=["customer_code", "year", "month", "net_revenue", "order_count"])
+
+
+_CUSTOMER_METADATA_SQL = f"""
+SELECT customer_code, customer_name, seller_name, city, uf
+FROM (
+    SELECT
+        [Cod Cliente] AS customer_code,
+        [Cliente] AS customer_name,
+        [Vendedor] AS seller_name,
+        [Cidade] AS city,
+        [UF] AS uf,
+        ROW_NUMBER() OVER (PARTITION BY [Cod Cliente] ORDER BY [Data] DESC, [Pedido] DESC) AS rn
+    FROM Externo01.Vendas
+    WHERE [Operação] = '{SALE_OPERATION}'
+      AND [Data] < ?
+) AS LatestOrder
+WHERE rn = 1
+""".strip()
+
+
+def fetch_customer_metadata(cutoff: date) -> pd.DataFrame:
+    """
+    Nome do cliente, vendedor e cidade/UF do pedido mais recente de VENDA por cliente.
+    """
+    with _execute_readonly(_CUSTOMER_METADATA_SQL, (cutoff,)) as cursor:
+        rows = [tuple(row) for row in cursor.fetchall()]
+    return pd.DataFrame(rows, columns=["customer_code", "customer_name", "seller_name", "city", "uf"])
 
 
 def fetch_customer_top_products(cutoff: date) -> pd.DataFrame:
@@ -205,7 +232,7 @@ def fetch_customer_top_products(cutoff: date) -> pd.DataFrame:
     Agregado de produtos comprados por cliente para identificação de produtos perdidos (P-126.3).
     """
     with _execute_readonly(_CUSTOMER_TOP_PRODUCTS_SQL, (cutoff,)) as cursor:
-        rows = cursor.fetchall()
+        rows = [tuple(row) for row in cursor.fetchall()]
     return pd.DataFrame(rows, columns=["customer_code", "sku", "last_date", "revenue"])
 
 

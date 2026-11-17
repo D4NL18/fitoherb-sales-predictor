@@ -212,6 +212,9 @@ def to_churn_customers_response(page: PageResult, summary_kpi: dict, context: Pa
     items = [
         ChurnCustomerItem(
             customer_code=c.customer_code,
+            customer_name=c.customer_name,
+            seller_name=c.seller_name,
+            city=c.city,
             status=c.status,
             dias_sem_comprar=c.dias_sem_comprar,
             gap_tipico=c.gap_tipico,
@@ -220,6 +223,7 @@ def to_churn_customers_response(page: PageResult, summary_kpi: dict, context: Pa
             faturamento_medio_mensal=c.faturamento_medio_mensal,
             score_prioridade=c.score_prioridade,
             historico_curto=c.historico_curto,
+            data_ultimo_pedido=c.data_ultimo_pedido.isoformat() if c.data_ultimo_pedido else None,
         )
         for c in page.items
     ]
@@ -258,6 +262,9 @@ def to_customer_churn_detail_response(summary: ChurnCustomerSummary, reference_d
     ]
     data = CustomerChurnDetailData(
         customer_code=summary.customer_code,
+        customer_name=summary.customer_name,
+        seller_name=summary.seller_name,
+        city=summary.city,
         status=summary.status,
         dias_sem_comprar=summary.dias_sem_comprar,
         data_ultimo_pedido=summary.data_ultimo_pedido.isoformat() if summary.data_ultimo_pedido else None,
@@ -285,6 +292,9 @@ def to_inactive_churn_response(page: PageResult, context: PageContext) -> Inacti
     items = [
         InactiveCustomerItem(
             customer_code=c.customer_code,
+            customer_name=c.customer_name,
+            seller_name=c.seller_name,
+            city=c.city,
             status=c.status,
             dias_sem_comprar=c.dias_sem_comprar,
             data_ultimo_pedido=c.data_ultimo_pedido.isoformat() if c.data_ultimo_pedido else None,

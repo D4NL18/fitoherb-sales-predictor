@@ -309,6 +309,9 @@ class ChurnSummaryKpi(CamelModel):
 class ChurnCustomerItem(CamelModel):
     """Item resumido do cliente na tabela priorizada de churn."""
     customer_code: int = Field(description="Código do cliente no ERP.")
+    customer_name: str = Field(default="", description="Nome do cliente no ERP.")
+    seller_name: str = Field(default="", description="Nome do vendedor do último pedido.")
+    city: str = Field(default="", description="Cidade/UF do cliente.")
     status: str = Field(description="Status operacional: EM_RISCO, ALERTA, SAUDAVEL.")
     dias_sem_comprar: int = Field(description="Dias corridos desde o último pedido de VENDA.")
     gap_tipico: Optional[float] = Field(default=None, description="Mediana dos intervalos entre compras (dias).")
@@ -317,6 +320,7 @@ class ChurnCustomerItem(CamelModel):
     faturamento_medio_mensal: float = Field(description="Faturamento médio mensal líquido de devoluções (R$).")
     score_prioridade: float = Field(description="Score ponderado em R$: faturamentoMedioMensal x fatorTempo.")
     historico_curto: bool = Field(description="True se o cliente possui menos de 3 pedidos no histórico.")
+    data_ultimo_pedido: Optional[str] = Field(default=None, description="Data do último pedido (AAAA-MM-DD).")
 
 
 class ChurnCustomersData(CamelModel):
@@ -350,6 +354,9 @@ class LostProductItem(CamelModel):
 class CustomerChurnDetailData(CamelModel):
     """Corpo 'data' do detalhamento do cliente."""
     customer_code: int = Field(description="Código do cliente.")
+    customer_name: str = Field(default="", description="Nome do cliente no ERP.")
+    seller_name: str = Field(default="", description="Nome do vendedor do último pedido.")
+    city: str = Field(default="", description="Cidade/UF do cliente.")
     status: str = Field(description="Status: EM_RISCO, ALERTA, SAUDAVEL, INATIVO_RECUPERACAO.")
     dias_sem_comprar: int = Field(description="Dias desde a última compra.")
     data_ultimo_pedido: Optional[str] = Field(default=None, description="Data do último pedido (AAAA-MM-DD).")
@@ -373,6 +380,9 @@ class CustomerChurnDetailResponse(CamelModel):
 class InactiveCustomerItem(CamelModel):
     """Item resumido de cliente inativo de longa data (> 180 dias)."""
     customer_code: int = Field(description="Código do cliente.")
+    customer_name: str = Field(default="", description="Nome do cliente no ERP.")
+    seller_name: str = Field(default="", description="Nome do vendedor do último pedido.")
+    city: str = Field(default="", description="Cidade/UF do cliente.")
     status: str = Field(default="INATIVO_RECUPERACAO", description="Status fixo.")
     dias_sem_comprar: int = Field(description="Dias sem comprar (> 180).")
     data_ultimo_pedido: Optional[str] = Field(default=None, description="Data da última compra.")
@@ -390,6 +400,18 @@ class InactiveChurnResponse(CamelModel):
     """Resposta de GET /analytics/churn/inactive."""
     data: InactiveChurnData = Field(description="Fila de inativos antigos.")
     meta: PagedMeta = Field(description="Metadados de paginação.")
+
+
+class ChurnFilterOptionsData(CamelModel):
+    """Opções disponíveis de filtros para a tabela de churn."""
+    sellers: List[str] = Field(default_factory=list, description="Vendedores disponíveis.")
+    cities: List[str] = Field(default_factory=list, description="Cidades/UF disponíveis.")
+
+
+class ChurnFilterOptionsResponse(CamelModel):
+    """Resposta de GET /analytics/churn/filters."""
+    data: ChurnFilterOptionsData = Field(description="Listas de vendedores e cidades.")
+    meta: AnalyticsMeta = Field(description="Metadados da resposta.")
 
 
 class CatalogProductItem(CamelModel):

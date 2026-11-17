@@ -74,6 +74,19 @@
     <button
       type="button"
       class="filter-chip"
+      [class.active]="statusFilter() === 'TODOS_GERAL'"
+      [attr.aria-pressed]="statusFilter() === 'TODOS_GERAL'"
+      (click)="setFilter('TODOS_GERAL')"
+    >
+      <span>Todos</span>
+      @if (totalAllCount() !== null) {
+        <span class="chip-count tabular">{{ totalAllCount()! | ptDecimal }}</span>
+      }
+    </button>
+
+    <button
+      type="button"
+      class="filter-chip"
       [class.active]="statusFilter() === 'EM_RISCO'"
       [attr.aria-pressed]="statusFilter() === 'EM_RISCO'"
       (click)="setFilter('EM_RISCO')"
@@ -112,30 +125,60 @@
 
     <button
       type="button"
-      class="filter-chip"
-      [class.active]="statusFilter() === 'TODOS'"
-      [attr.aria-pressed]="statusFilter() === 'TODOS'"
-      (click)="setFilter('TODOS')"
-    >
-      <span>Todos os ativos</span>
-      @if (totalActiveCount() !== null) {
-        <span class="chip-count tabular">{{ totalActiveCount()! | ptDecimal }}</span>
-      }
-    </button>
-
-    <button
-      type="button"
       class="filter-chip filter-chip-secondary"
       [class.active]="statusFilter() === 'INATIVO_RECUPERACAO'"
       [attr.aria-pressed]="statusFilter() === 'INATIVO_RECUPERACAO'"
       (click)="setFilter('INATIVO_RECUPERACAO')"
     >
-      <span>Inativos antigos (&gt; 180d)</span>
+      <span>Inativos (&gt; 180d)</span>
       @if (badgeInativosCount() !== null) {
         <span class="chip-count tabular">{{ badgeInativosCount()! | ptDecimal }}</span>
       }
     </button>
   </nav>
+
+  <section class="search-filter-toolbar" aria-label="Busca e filtros da tabela">
+    <div class="search-field">
+      <svg class="search-icon" viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+        <circle cx="9" cy="9" r="6" />
+        <path stroke-linecap="round" d="m13.5 13.5 3.5 3.5" />
+      </svg>
+      <input
+        type="search"
+        class="search-input"
+        placeholder="Buscar por código, cliente, vendedor ou cidade..."
+        aria-label="Buscar por código, cliente, vendedor ou cidade"
+        [value]="searchQuery()"
+        (input)="onSearchInput($any($event.target).value)"
+      />
+    </div>
+
+    <div class="select-filters">
+      <app-searchable-select
+        [options]="sellerOptions()"
+        [value]="sellerFilter()"
+        allLabel="Todos os vendedores"
+        searchPlaceholder="Buscar vendedor..."
+        ariaLabel="Filtrar por vendedor"
+        (valueChange)="onSellerChange($event)"
+      />
+
+      <app-searchable-select
+        [options]="cityOptions()"
+        [value]="cityFilter()"
+        allLabel="Todas as cidades"
+        searchPlaceholder="Buscar cidade..."
+        ariaLabel="Filtrar por cidade"
+        (valueChange)="onCityChange($event)"
+      />
+
+      @if (hasActiveFilters()) {
+        <button type="button" class="btn-clear-filters" (click)="clearFilters()">
+          Limpar filtros
+        </button>
+      }
+    </div>
+  </section>
 
   <p class="sr-only" aria-live="polite" aria-atomic="true">
     {{ liveAnnouncement() }}
@@ -181,17 +224,75 @@
           </caption>
           <thead>
             <tr>
-              <th scope="col">Cód. Cliente</th>
-              <th scope="col">Status</th>
-              <th scope="col" class="num-col">Dias s/ comprar</th>
+              <th scope="col" [attr.aria-sort]="getAriaSort('customerCode')">
+                <button type="button" class="sort-btn" (click)="toggleSort('customerCode')">
+                  <span>Cód. Cliente</span>
+                  <span class="sort-indicator" aria-hidden="true">{{ sortBy() === 'customerCode' ? (sortDir() === 'asc' ? '↑' : '↓') : '↕' }}</span>
+                </button>
+              </th>
+              <th scope="col" [attr.aria-sort]="getAriaSort('customerName')">
+                <button type="button" class="sort-btn" (click)="toggleSort('customerName')">
+                  <span>Cliente</span>
+                  <span class="sort-indicator" aria-hidden="true">{{ sortBy() === 'customerName' ? (sortDir() === 'asc' ? '↑' : '↓') : '↕' }}</span>
+                </button>
+              </th>
+              <th scope="col" [attr.aria-sort]="getAriaSort('sellerName')">
+                <button type="button" class="sort-btn" (click)="toggleSort('sellerName')">
+                  <span>Vendedor</span>
+                  <span class="sort-indicator" aria-hidden="true">{{ sortBy() === 'sellerName' ? (sortDir() === 'asc' ? '↑' : '↓') : '↕' }}</span>
+                </button>
+              </th>
+              <th scope="col" [attr.aria-sort]="getAriaSort('city')">
+                <button type="button" class="sort-btn" (click)="toggleSort('city')">
+                  <span>Cidade</span>
+                  <span class="sort-indicator" aria-hidden="true">{{ sortBy() === 'city' ? (sortDir() === 'asc' ? '↑' : '↓') : '↕' }}</span>
+                </button>
+              </th>
+              <th scope="col" [attr.aria-sort]="getAriaSort('status')">
+                <button type="button" class="sort-btn" (click)="toggleSort('status')">
+                  <span>Status</span>
+                  <span class="sort-indicator" aria-hidden="true">{{ sortBy() === 'status' ? (sortDir() === 'asc' ? '↑' : '↓') : '↕' }}</span>
+                </button>
+              </th>
+              <th scope="col" class="num-col" [attr.aria-sort]="getAriaSort('diasSemComprar')">
+                <button type="button" class="sort-btn sort-btn-num" (click)="toggleSort('diasSemComprar')">
+                  <span>Dias s/ comprar</span>
+                  <span class="sort-indicator" aria-hidden="true">{{ sortBy() === 'diasSemComprar' ? (sortDir() === 'asc' ? '↑' : '↓') : '↕' }}</span>
+                </button>
+              </th>
               @if (isInactiveView()) {
-                <th scope="col" class="num-col">Último pedido</th>
+                <th scope="col" class="num-col" [attr.aria-sort]="getAriaSort('dataUltimoPedido')">
+                  <button type="button" class="sort-btn sort-btn-num" (click)="toggleSort('dataUltimoPedido')">
+                    <span>Último pedido</span>
+                    <span class="sort-indicator" aria-hidden="true">{{ sortBy() === 'dataUltimoPedido' ? (sortDir() === 'asc' ? '↑' : '↓') : '↕' }}</span>
+                  </button>
+                </th>
               } @else {
-                <th scope="col" class="num-col">Cadência típica</th>
+                <th scope="col" class="num-col" [attr.aria-sort]="getAriaSort('gapTipico')">
+                  <button type="button" class="sort-btn sort-btn-num" (click)="toggleSort('gapTipico')">
+                    <span>Cadência típica</span>
+                    <span class="sort-indicator" aria-hidden="true">{{ sortBy() === 'gapTipico' ? (sortDir() === 'asc' ? '↑' : '↓') : '↕' }}</span>
+                  </button>
+                </th>
               }
-              <th scope="col" class="num-col">Fat. médio/mês</th>
+              <th scope="col" class="num-col" [attr.aria-sort]="getAriaSort('faturamentoMedioMensal')">
+                <button type="button" class="sort-btn sort-btn-num" (click)="toggleSort('faturamentoMedioMensal')">
+                  <span>Fat. médio/mês</span>
+                  <span class="sort-indicator" aria-hidden="true">{{ sortBy() === 'faturamentoMedioMensal' ? (sortDir() === 'asc' ? '↑' : '↓') : '↕' }}</span>
+                </button>
+              </th>
               @if (!isInactiveView()) {
-                <th scope="col" class="num-col">Score prioridade</th>
+                <th
+                  scope="col"
+                  class="num-col"
+                  [attr.aria-sort]="getAriaSort('scorePrioridade')"
+                  title="Receita em risco ponderada: Faturamento médio mensal × Fator de urgência (dias sem comprar ÷ régua, máx. 2,0×)"
+                >
+                  <button type="button" class="sort-btn sort-btn-num" (click)="toggleSort('scorePrioridade')">
+                    <span>Score prioridade</span>
+                    <span class="sort-indicator" aria-hidden="true">{{ sortBy() === 'scorePrioridade' ? (sortDir() === 'asc' ? '↑' : '↓') : '↕' }}</span>
+                  </button>
+                </th>
               }
               <th scope="col" class="action-col">Diagnóstico</th>
             </tr>
@@ -211,6 +312,18 @@
                       <span class="short-history-pill">Histórico curto</span>
                     }
                   </span>
+                </td>
+
+                <td class="cell-name" data-label="Cliente">
+                  {{ c.customerName || '—' }}
+                </td>
+
+                <td class="cell-seller" data-label="Vendedor">
+                  {{ c.sellerName || '—' }}
+                </td>
+
+                <td class="cell-city" data-label="Cidade">
+                  {{ c.city || '—' }}
                 </td>
 
                 <td data-label="Status">
