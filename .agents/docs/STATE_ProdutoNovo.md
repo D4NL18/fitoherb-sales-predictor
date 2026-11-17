@@ -4,7 +4,7 @@
 > **Branch:** `feature/analytics-produto-novo`  
 > **Orquestrador de Feature:** FASE F2 (Viabilidade de produto novo - conservadora)  
 > **Faixa Exclusiva de Regras:** `P-139` a `P-149` (prefixo `NEW-XXX`)  
-> **Status Geral:** ETAPA 2 CONCLUÍDA — PARADA OBRIGATÓRIA NO CHECKPOINT (Etapas 3 e 4 bloqueadas)
+> **Status Geral:** ETAPA 3 E ETAPA 4 CONCLUÍDAS — APROVADO NO QUALITY GATE 360 (`370/370` pytest · `34/34` Karma F2 · `ng build` OK)
 
 ---
 
@@ -53,7 +53,18 @@
 
 ---
 
-## 3. Ponto de Bloqueio / Checkpoint da Etapa 2
+## 3. Log de Execução — Etapas 3 e 4 (Desenvolvimento e Quality Gate 360)
 
-> [!IMPORTANT]
-> Conforme diretriz estrita da missão, o agente interrompe a execução aqui. A esteira NÃO avançará para a Etapa 3 (TDD / Implementação) nem para a Etapa 4, ficando a branch preservada no estado de planejamento e arquitetura aprovados até a liberação do índice sazonal (F1) e validação do usuário.
+### ETAPA 3 — TDD e Execução (`tester` + `developer` + `ai_specialist`)
+- **Merge prévio:** `main` mesclada em `feature/analytics-produto-novo` trazendo F1 Sazonalidade (`get_seasonality_index`), F3 Churn, F5 Elasticidade e Tendência de Vendas.
+- **TDD First (`tester`):** 29 testes criados em `tests/analytics/test_new_product_domain.py`, `test_new_product_repository.py` e `test_new_product_api.py` (fase Red validada).
+- **Backend + AI (`developer` + `ai_specialist`):** implementado domínio `src/modules/analytics/domain/new_product.py`, exceções `NEW-001`..`NEW-005` (`exceptions.py`), consultas somente-leitura (`sales_repository.py`), cache 6h com lock (`analytics_cache.py`), integração F1 com fallback neutro (`analytics_service.py`), schemas `camelCase` (`schemas.py`), error handlers e rotas (`/analytics/new-product/options` e `/forecast`).
+  - **Resultado `pytest tests/analytics/`:** `370 passed, 1 warning in 42.88s`.
+- **Frontend Angular 18 (`developer`):** implementada rota `/analytics/produto-novo` (`NewProductStore`, `NewProductFormComponent`, `NewProductBandChartComponent`, `NewProductResultsComponent`, `NewProductSimilarsDrawerComponent`), seguindo Design Plan Papel & Tinta, 8 estados e Focus Trap.
+  - **Resultado Karma F2:** `34 SUCCESS` (0 falhas).
+  - **Resultado `ng build`:** limpo (chunk lazy `83.63 kB`).
+
+### ETAPA 4 — Quality Gate 360 (`reviewer` + `ux_reviewer`)
+- **`reviewer`:** **APROVADO** — Clean Code, SOLID, LGPD-05 (sem eco de valores/stacktraces), `is_readonly_query`, invariante `Q <= P25`, `OnPush`, `switchMap` + `takeUntilDestroyed()`, zero `any`.
+- **`ux_reviewer`:** **APROVADO** — Fidelidade integral ao Design Plan Papel & Tinta, WCAG 2.1 AA, gráfico SVG colorblind-safe + tabela ledger, bloco `Teto Maduro (P75)` segregado, Drawer acessível com `[attr.inert]` e restauração de foco, responsividade `< 640px`.
+- **Status:** **CONCLUÍDO E APROVADO**
