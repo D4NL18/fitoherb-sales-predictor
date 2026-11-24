@@ -18,7 +18,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, timedelta
-from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, Union
+import re
+from typing import Dict, FrozenSet, Iterable, List, Mapping, Optional, Sequence, Set, Tuple, Union
+import unicodedata
 
 from src.modules.analytics.domain.exceptions import (
     CannibalizationInsufficientHistoryError,
@@ -459,6 +461,124 @@ def _unpack_row(row: Union[Mapping[str, object], Sequence[object]]) -> Tuple[obj
     return row[0], row[1], row[2], row[3], row[4], row[5]
 
 
+# ---------------------------------------------------------------------------
+# P-130: Extração de Família/Afinidade de Produto (Agnóstica de Fornecedor)
+# ---------------------------------------------------------------------------
+# No ERP da Fitoherb, `Externo01.Produto.Tipo` representa a linha comercial do
+# fornecedor (ex.: "LINHA MAX TITANIUM", "LINHA INTEGRALMEDICA"), o que impediria
+# qualquer comparação entre fornecedores distintos. Por isso, a compatibilidade
+# entre produtos substitutos é determinada pelos tokens nucleares da descrição
+# (removendo marca/fornecedor, peso/embalagem, sabor e adjetivos genéricos),
+# tratando todos os fornecedores com peso estritamente igual.
+
+_QUANTITY_UNIT_RE = re.compile(
+    r"\b\d+[.,]?\d*\s*(x\s*\d+[.,]?\d*)?\s*"
+    r"(g|gr|grs|kg|mg|mcg|ml|l|ui|caps|cap|comp|un|unid|saches|sache|gotas|gota)?\b"
+)
+_WORD_RE = re.compile(r"[a-z]{3,}")
+
+_PRODUCT_TOKEN_STOPWORDS: FrozenSet[str] = frozenset(
+    {
+        # preposições / conectivos
+        "de", "da", "do", "das", "dos", "com", "sem", "para", "por", "em", "na", "no", "e", "ou",
+        # embalagens / formatos / unidades
+        "caps", "capsula", "capsulas", "cap", "comp", "comprimido", "comprimidos", "softgel", "softgels",
+        "pote", "refil", "pouch", "sache", "saches", "display", "unid", "unidade", "unidades", "caixa",
+        "frasco", "bisnaga", "tubo", "lata", "vidro", "gotas", "gota", "grs", "mcg",
+        "liquido", "liquida", "spray", "gel", "creme", "oleo", "extrato", "tablete", "tabletes",
+        "goma", "gomas", "stick", "sticks", "shot", "shots", "dose", "doses", "kit",
+        "suplemento", "alimentar", "composto", "complexo",
+        # sabores / atributos sensoriais
+        "chocolate", "choco", "morango", "baunilha", "limao", "uva", "roxa", "laranja", "abacaxi", "maracuja",
+        "melancia", "frutas", "vermelhas", "amarelas", "tropicais", "tangerina", "pessego", "coco", "banana", "maca",
+        "canela", "menta", "hortela", "neutro", "neutra", "natural", "cookies", "brigadeiro", "caramelo", "cafe",
+        "cappuccino", "pacoca", "doce", "leite", "avela", "pistache", "cramberry", "cranberry", "acai", "guarana",
+        "framboesa", "cereja", "kiwi", "manga", "limonada", "suico", "belga", "branco", "preto", "amargo", "salgado",
+        "tradicional", "original", "sabor", "zero", "acucar", "lactose", "gluten", "vegano", "vegana", "integral",
+        # qualificadores de marketing / genéricos
+        "pura", "puro", "pure", "turbo", "hardcore", "ultra", "super", "plus", "max", "pro", "top", "gold", "black",
+        "premium", "master", "extreme", "forte", "extra", "nova", "novo", "formula", "kids", "senior", "fases",
+        "fem", "men", "woman", "sport", "fitness", "daily", "dia", "noite", "concentrado", "concentrada",
+        "isolado", "isolada", "hidrolisado", "hidrolisada", "monohidratada", "monohidratado", "monohid",
+        "micronizada", "micronizado", "quelato", "quelado", "complex", "blend", "mix",
+        "carbo", "low", "diet", "light", "fit", "energy", "power", "active", "life", "saude", "bem", "estar",
+        "linha", "promocao", "promo", "gratis", "leva", "pague", "edicao", "especial",
+        "tasty", "crisp", "crunch", "mini", "big", "mega", "essential", "essentials",
+        "vitamina", "vitaminas", "dado", "torta",
+    }
+)
+
+_CANONICAL_SYNONYMS: Tuple[Tuple[str, str], ...] = (
+    ("colagentek", "colageno"),
+    ("omegafor", "omega"),
+    ("omega 3", "omega"),
+    ("omega-3", "omega"),
+    ("nutriwhey", "whey"),
+    ("iso whey", "whey"),
+    ("vitamina d3", "vitaminad"),
+    ("vitamina d", "vitaminad"),
+    ("vit d3", "vitaminad"),
+    ("vit d", "vitaminad"),
+    ("vitamina b12", "vitaminab12"),
+    ("metilcobalamina", "vitaminab12"),
+    ("vitamina c", "vitaminac"),
+    ("vitamina k2", "vitaminak2"),
+    ("vitamina e", "vitaminae"),
+    ("coenzima q10", "coq10"),
+    ("coq 10", "coq10"),
+    ("pre treino", "pretreino"),
+    ("pre-treino", "pretreino"),
+    ("pasta de amendoim", "pastaamendoim"),
+    ("pasta amendoim", "pastaamendoim"),
+    ("beta alanina", "betaalanina"),
+    ("beta-alanina", "betaalanina"),
+    ("barra de proteina", "barraproteina"),
+    ("protein bar", "barraproteina"),
+    ("l-carnitina", "lcarnitina"),
+    ("l carnitina", "lcarnitina"),
+    ("acido hialuronico", "hialuronico"),
+    ("cha verde", "chaverde"),
+    ("vinagre de maca", "vinagremaca"),
+    ("oleo de coco", "oleococo"),
+    ("psilium", "psyllium"),
+)
+
+
+def _strip_accents(text: str) -> str:
+    return "".join(ch for ch in unicodedata.normalize("NFKD", text) if not unicodedata.combining(ch))
+
+
+def _collect_supplier_tokens(catalog: Mapping[str, Mapping[str, object]]) -> FrozenSet[str]:
+    tokens: Set[str] = set()
+    for entry in catalog.values():
+        supplier_raw = str(entry.get("supplier") or "").strip()
+        if not supplier_raw:
+            continue
+        norm_sup = _strip_accents(supplier_raw.lower())
+        for tok in _WORD_RE.findall(norm_sup):
+            tokens.add(tok)
+    return frozenset(tokens)
+
+
+def extract_product_family_tokens(
+    description: str,
+    supplier_tokens: FrozenSet[str] = frozenset(),
+) -> FrozenSet[str]:
+    """
+    Extrai os tokens nucleares de família de produto a partir da descrição comercial,
+    descartando marca/fornecedor, gramatura/embalagem, sabor e adjetivos genéricos.
+    """
+    text = _strip_accents(str(description or "").lower())
+    for src, dst in _CANONICAL_SYNONYMS:
+        if src in text:
+            text = text.replace(src, dst)
+    text = _QUANTITY_UNIT_RE.sub(" ", text)
+    words = _WORD_RE.findall(text)
+    return frozenset(
+        w for w in words if w not in _PRODUCT_TOKEN_STOPWORDS and w not in supplier_tokens
+    )
+
+
 def compute_directional_migration(
     customer_sku_rows: Iterable[Union[Mapping[str, object], Sequence[object]]],
     catalog: Mapping[str, Mapping[str, object]],
@@ -468,10 +588,17 @@ def compute_directional_migration(
     `(customer_code, sku, pre_qty, pre_rev, cur_qty, cur_rev)` (dict ou tupla).
 
     - P-128.2: Trunca saldos líquidos negativos de `(cliente, SKU, período)` em 0.0.
-    - P-130: Conservação de fluxo por cliente na mesma categoria (`Tipo`), sem dupla contagem.
+    - P-130: Conservação de fluxo por cliente entre produtos substitutos da mesma família
+      (agnóstico de fornecedor — mesmo peso para qualquer fornecedor, sem dupla contagem).
     - P-131: Desconto de fluxo reverso (`net_rev`, `net_clients`).
     - LGPD-CAN-04: Descarta `by_cli` explicitamente (`del by_cli`) antes de retornar.
     """
+    supplier_tokens = _collect_supplier_tokens(catalog)
+    tokens_by_sku: Dict[str, FrozenSet[str]] = {
+        sku_str: extract_product_family_tokens(str(entry.get("description") or ""), supplier_tokens)
+        for sku_str, entry in catalog.items()
+    }
+
     by_cli: Dict[int, Dict[str, Tuple[float, float]]] = {}
     sku_accum: Dict[str, List[float]] = {}
     has_any_pre = False
@@ -508,8 +635,7 @@ def compute_directional_migration(
             acc[2] += cur_qty
             acc[3] += cur_rev
 
-        category = str(cat_entry.get("category") or "").strip()
-        if not category:
+        if not tokens_by_sku.get(sku_str):
             continue
 
         cust_id = int(raw_cust)
@@ -527,39 +653,52 @@ def compute_directional_migration(
     gross_clients: Dict[Tuple[str, str], int] = {}
 
     for cli_skus in by_cli.values():
-        by_category: Dict[str, List[Tuple[str, float, float]]] = {}
+        if len(cli_skus) < 2:
+            continue
+        losses: List[Tuple[str, float]] = []
+        gains: List[Tuple[str, float]] = []
         for sku_str, (pre_rev, cur_rev) in cli_skus.items():
-            category = str(catalog[sku_str].get("category") or "").strip()
-            by_category.setdefault(category, []).append((sku_str, pre_rev, cur_rev))
+            diff = pre_rev - cur_rev
+            if diff > 0.0:
+                losses.append((sku_str, diff))
+            elif diff < 0.0:
+                gains.append((sku_str, -diff))
 
-        for items in by_category.values():
-            if len(items) < 2:
+        if not losses or not gains:
+            continue
+
+        # Alocação proporcional com conservação estrita de fluxo nos dois lados:
+        # 1) cada perda A distribui `loss_a` entre os ganhos compatíveis B (qualquer fornecedor, mesmo peso);
+        # 2) se a soma incidente em B exceder `gain_b`, escala por `gain_b / incoming[B]` (zero dupla contagem).
+        tentative: List[Tuple[str, str, float, float]] = []
+        incoming_by_gain: Dict[str, float] = {}
+        for sku_a, loss_a in losses:
+            tok_a = tokens_by_sku.get(sku_a)
+            if not tok_a:
                 continue
-            losses: List[Tuple[str, float]] = []
-            gains: List[Tuple[str, float]] = []
-            total_loss = 0.0
-            total_gain = 0.0
-            for sku_str, pre_rev, cur_rev in items:
-                loss = pre_rev - cur_rev
-                if loss > 0.0:
-                    losses.append((sku_str, loss))
-                    total_loss += loss
-                elif loss < 0.0:
-                    gain = -loss
-                    gains.append((sku_str, gain))
-                    total_gain += gain
-
-            if total_loss <= 0.0 or total_gain <= 0.0:
+            compat_gains = [
+                (sku_b, gain_b)
+                for sku_b, gain_b in gains
+                if tok_a & tokens_by_sku.get(sku_b, frozenset())
+            ]
+            if not compat_gains:
                 continue
+            total_compat_gain = sum(g for _, g in compat_gains)
+            if total_compat_gain <= 0.0:
+                continue
+            for sku_b, gain_b in compat_gains:
+                weight = loss_a * (gain_b / total_compat_gain)
+                tentative.append((sku_a, sku_b, weight, gain_b))
+                incoming_by_gain[sku_b] = incoming_by_gain.get(sku_b, 0.0) + weight
 
-            flow_ct = min(total_loss, total_gain)
-            for sku_a, loss_a in losses:
-                loss_share = loss_a / total_loss
-                for sku_b, gain_b in gains:
-                    migrated = flow_ct * loss_share * (gain_b / total_gain)
-                    pair_key = (sku_a, sku_b)
-                    gross_rev[pair_key] = gross_rev.get(pair_key, 0.0) + migrated
-                    gross_clients[pair_key] = gross_clients.get(pair_key, 0) + 1
+        for sku_a, sku_b, weight, gain_b in tentative:
+            incoming = incoming_by_gain[sku_b]
+            scale = min(1.0, gain_b / incoming) if incoming > 0.0 else 0.0
+            migrated = weight * scale
+            if migrated > 0.0:
+                pair_key = (sku_a, sku_b)
+                gross_rev[pair_key] = gross_rev.get(pair_key, 0.0) + migrated
+                gross_clients[pair_key] = gross_clients.get(pair_key, 0) + 1
 
     # LGPD-CAN-04: descarte explícito do dicionário com identificadores de clientes
     del by_cli
@@ -686,7 +825,7 @@ def _evaluate_victim(
             if p.net_clients >= min_migrated_clients
             and p.net_rev > 0.0
             and p.cannibal_sku in catalog
-            and str(catalog[p.cannibal_sku].get("category") or "").strip() == category_a
+            and catalog[p.cannibal_sku].get("active", True)
         ][:MAX_CANNIBALIZERS_PER_VICTIM]
 
     if not valid_pairs:

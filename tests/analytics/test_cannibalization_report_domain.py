@@ -521,3 +521,92 @@ def test_zero_customer_code_in_domain_snapshot_report_and_detail():
         assert "customercode" not in serialized
         for cid in secret_customer_ids:
             assert str(cid) not in serialized
+
+
+def test_cross_supplier_equal_weight_and_ignores_unrelated_same_supplier_products():
+    """
+    T-CAN-DOM-16 (P-130 Agnóstico de Fornecedor):
+    - Produtos da mesma família (ex.: CREATINA 300G / 500G) de fornecedores e `Tipo`
+      distintos (LINHA MAX TITANIUM vs LINHA INTEGRALMEDICA) competem com peso estritamente igual.
+    - Produtos de famílias distintas do MESMO fornecedor (ex.: CREATINA vs WHEY da MAX TITANIUM)
+      não geram fluxo falso de canibalização.
+    """
+    catalog = {
+        "770019": {
+            "sku": "770019",
+            "description": "CREATINA 300G",
+            "category": "LINHA MAX TITANIUM",
+            "supplier": "MAX TITANIUM",
+            "active": True,
+            "current_stock": 100,
+            "last_cost": 30.00,
+            "current_price": 55.00,
+        },
+        "770145": {
+            "sku": "770145",
+            "description": "CREATINA POTE 500G",
+            "category": "LINHA MAX TITANIUM",
+            "supplier": "MAX TITANIUM",
+            "active": True,
+            "current_stock": 80,
+            "last_cost": 40.00,
+            "current_price": 62.00,
+        },
+        "111940": {
+            "sku": "111940",
+            "description": "CREATINA 300 GRS",
+            "category": "LINHA INTEGRALMEDICA",
+            "supplier": "INTEGRALMEDICA",
+            "active": True,
+            "current_stock": 120,
+            "last_cost": 26.00,
+            "current_price": 45.00,
+        },
+        "112246": {
+            "sku": "112246",
+            "description": "CREATINA HARDCORE 500G POTE",
+            "category": "LINHA INTEGRALMEDICA",
+            "supplier": "INTEGRALMEDICA",
+            "active": True,
+            "current_stock": 90,
+            "last_cost": 35.00,
+            "current_price": 58.00,
+        },
+        "770999": {
+            "sku": "770999",
+            "description": "WHEY 100% HD 900G CHOCOLATE REFIL",
+            "category": "LINHA MAX TITANIUM",
+            "supplier": "MAX TITANIUM",
+            "active": True,
+            "current_stock": 50,
+            "last_cost": 60.00,
+            "current_price": 110.00,
+        },
+    }
+
+    rows: List[Dict[str, Any]] = []
+    # 4 clientes caem R$ 300 na CREATINA 300G (Max Titanium) e sobem R$ 100 em cada uma das 3 outras creatinas
+    # (1 da Max Titanium e 2 da Integralmedica) + R$ 500 em WHEY da Max Titanium (nao deve capturar fluxo).
+    for cid in range(1, 5):
+        rows.append(_row(cid, "770019", pre_rev=300.0, cur_rev=0.0))
+        rows.append(_row(cid, "770145", pre_rev=0.0, cur_rev=100.0))
+        rows.append(_row(cid, "111940", pre_rev=0.0, cur_rev=100.0))
+        rows.append(_row(cid, "112246", pre_rev=0.0, cur_rev=100.0))
+        rows.append(_row(cid, "770999", pre_rev=0.0, cur_rev=500.0))
+
+    snapshot = dom.compute_directional_migration(rows, catalog)
+    report = dom.build_cannibalization_report(snapshot, catalog, min_drop_pct=5.0, min_migrated_clients=3)
+
+    assert ("770019", "770999") not in snapshot.pair_flows
+    assert len(report.victims) == 1
+    victim = report.victims[0]
+    assert victim.sku == "770019"
+    assert len(victim.cannibalizers) == 3
+
+    by_sku = {c.sku: c for c in victim.cannibalizers}
+    # Mesmo peso entre fornecedores: cada um dos 3 recebe exatamente R$ 400 (1/3 de R$ 1200)
+    assert by_sku["770145"].migrated_revenue == pytest.approx(400.0, abs=1e-2)
+    assert by_sku["111940"].migrated_revenue == pytest.approx(400.0, abs=1e-2)
+    assert by_sku["112246"].migrated_revenue == pytest.approx(400.0, abs=1e-2)
+    assert by_sku["111940"].supplier == "INTEGRALMEDICA"
+    assert by_sku["112246"].supplier == "INTEGRALMEDICA"
