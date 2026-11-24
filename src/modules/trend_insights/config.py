@@ -1,0 +1,87 @@
+"""
+Configuracao da F7 a partir de variaveis de ambiente (P-177.5, P-178). Modelos so da lista permitida;
+a tabela de precos so pode conter esses modelos. Falha de configuracao e `ValueError` (SettingsError).
+"""
+from dataclasses import dataclass
+from typing import Mapping, Optional
+
+from src.modules.trend_insights.domain import constants
+from src.modules.trend_insights.domain.exceptions import SettingsError
+from src.modules.trend_insights.llm.pricing import PricingTable, parse_pricing
+
+PRIMARY_MODEL = "gemini-4-hydrogen"
+FALLBACK_MODEL = "gemini-3.8-flash"
+ALLOWED_MODELS = (PRIMARY_MODEL, FALLBACK_MODEL)
+DEFAULT_MONTHLY_BUDGET_USD = 1.80
+DEFAULT_DAILY_BUDGET_USD = 0.20
+DEFAULT_MAX_OUTPUT_TOKENS = 2500
+DEFAULT_VERTEX_LOCATION = "global"
+_FALSE_VALUES = ("false", "0", "no", "off")
+
+
+def _read_bool(env: Mapping[str, str], name: str, default: bool) -> bool:
+    raw = env.get(name)
+    if raw is None or raw.strip() == "":
+        return default
+    return raw.strip().lower() not in _FALSE_VALUES
+
+
+def _read_float(env: Mapping[str, str], name: str, default: float) -> float:
+    raw = env.get(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        raise SettingsError("Valor numerico invalido.", field=name) from None
+
+
+def _read_model(env: Mapping[str, str], name: str, default: str) -> str:
+    value = (env.get(name) or default).strip()
+    if value not in ALLOWED_MODELS:
+        raise SettingsError("Modelo fora da lista permitida.", field=name)
+    return value
+
+
+def _read_pricing(env: Mapping[str, str]) -> Optional[PricingTable]:
+    raw = env.get("TREND_AI_PRICING_JSON")
+    if not raw or not raw.strip():
+        return None
+    table = parse_pricing(raw)
+    if not set(table.model_ids()) <= set(ALLOWED_MODELS):
+        raise SettingsError("Tabela de precos com modelo nao permitido.", field="TREND_AI_PRICING_JSON")
+    return table
+
+
+@dataclass(frozen=True)
+class TrendInsightsSettings:
+    ai_enabled: bool
+    monthly_budget_usd: float
+    daily_budget_usd: float
+    model_default: str
+    model_fallback: str
+    pricing: Optional[PricingTable]
+    max_output_tokens: int
+    bucket_name: Optional[str]
+    gcp_project: Optional[str]
+    vertex_location: str
+    generate_rate_limit_per_minute: int = constants.GENERATE_RATE_LIMIT_PER_MINUTE
+    generate_max_per_day: int = constants.GENERATE_MAX_PER_USER_PER_DAY
+    force_max_per_day: int = constants.FORCE_MAX_PER_USER_PER_DAY
+    soft_ttl_days: int = constants.INSIGHT_SOFT_TTL_DAYS
+    free_queries: int = constants.GROUNDING_FREE_QUERIES_ASSUMED
+
+    @classmethod
+    def from_env(cls, env: Mapping[str, str]) -> "TrendInsightsSettings":
+        return cls(
+            ai_enabled=_read_bool(env, "TREND_AI_ENABLED", True),
+            monthly_budget_usd=_read_float(env, "TREND_AI_MONTHLY_BUDGET_USD", DEFAULT_MONTHLY_BUDGET_USD),
+            daily_budget_usd=_read_float(env, "TREND_AI_DAILY_BUDGET_USD", DEFAULT_DAILY_BUDGET_USD),
+            model_default=_read_model(env, "TREND_AI_MODEL_DEFAULT", PRIMARY_MODEL),
+            model_fallback=_read_model(env, "TREND_AI_MODEL_FALLBACK", FALLBACK_MODEL),
+            pricing=_read_pricing(env),
+            max_output_tokens=int(_read_float(env, "TREND_AI_MAX_OUTPUT_TOKENS_DEFAULT", DEFAULT_MAX_OUTPUT_TOKENS)),
+            bucket_name=env.get("TREND_INSIGHTS_BUCKET") or None,
+            gcp_project=env.get("GOOGLE_CLOUD_PROJECT") or None,
+            vertex_location=env.get("TREND_AI_LOCATION") or DEFAULT_VERTEX_LOCATION,
+        )
