@@ -204,14 +204,6 @@
     text-transform: uppercase;
     letter-spacing: 0.03em;
     color: var(--text-secondary);
-
-    &.is-sorted {
-      background: var(--bg-table-col-sorted);
-    }
-  }
-
-  tbody td.is-sorted {
-    background: var(--bg-table-col-sorted);
   }
 
   .num-col,
@@ -233,7 +225,7 @@
 .revenue-sort-group {
   display: inline-flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: center;
   gap: var(--space-1);
 }
 

@@ -124,11 +124,11 @@
             <th scope="col">Produto</th>
             <th
               scope="col"
-              class="num-col"
+              class="center-col"
               [class.is-sorted]="isColumnSorted('price')"
               [attr.aria-sort]="getAriaSort('price')"
             >
-              <button type="button" class="sort-header-btn is-numeric" (click)="onColumnSort('price')">
+              <button type="button" class="sort-header-btn is-centered" (click)="onColumnSort('price')">
                 <span>Preço atual</span>
                 @if (getAriaSort('price') !== 'none') {
                   <span class="sort-indicator" aria-hidden="true">
@@ -139,7 +139,7 @@
             </th>
             <th
               scope="col"
-              class="num-col"
+              class="center-col"
               [class.is-sorted]="isRevenueSorted()"
               [attr.aria-sort]="
                 getAriaSort('cur-rev') !== 'none'
@@ -150,7 +150,7 @@
               <div class="revenue-sort-group">
                 <button
                   type="button"
-                  class="sort-header-btn is-numeric"
+                  class="sort-header-btn is-centered"
                   (click)="onColumnSort('pre-rev')"
                   title="Ordenar por faturamento anterior"
                 >
@@ -164,7 +164,7 @@
                 <span class="sort-sep" aria-hidden="true">→</span>
                 <button
                   type="button"
-                  class="sort-header-btn is-numeric"
+                  class="sort-header-btn is-centered"
                   (click)="onColumnSort('cur-rev')"
                   title="Ordenar por faturamento atual"
                 >
@@ -198,11 +198,11 @@
             </th>
             <th
               scope="col"
-              class="num-col"
+              class="center-col"
               [class.is-sorted]="isColumnSorted('lost')"
               [attr.aria-sort]="getAriaSort('lost')"
             >
-              <button type="button" class="sort-header-btn is-numeric" (click)="onColumnSort('lost')">
+              <button type="button" class="sort-header-btn is-centered" (click)="onColumnSort('lost')">
                 <span>R$ Perdido</span>
                 @if (getAriaSort('lost') !== 'none') {
                   <span class="sort-indicator" aria-hidden="true">
@@ -257,7 +257,7 @@
               </td>
 
               <td
-                class="num-cell price-cell tabular-nums"
+                class="center-cell price-cell tabular-nums"
                 [class.is-sorted]="isColumnSorted('price')"
               >
                 <div>{{ item.currentPrice | brl }}</div>
@@ -265,7 +265,7 @@
               </td>
 
               <td
-                class="num-cell revenue-cell tabular-nums"
+                class="center-cell revenue-cell tabular-nums"
                 [class.is-sorted]="isRevenueSorted()"
               >
                 <div class="revenue-pre">{{ item.preRevenue | brl }}</div>
@@ -283,7 +283,7 @@
               </td>
 
               <td
-                class="num-cell lost-cell tabular-nums"
+                class="center-cell lost-cell tabular-nums"
                 [class.is-sorted]="isColumnSorted('lost')"
               >
                 {{ -item.cannibalizedRevenue | signedBrl }}
