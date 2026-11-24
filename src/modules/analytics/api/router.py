@@ -9,6 +9,7 @@ Autenticação: middleware HTTP Basic global em produção (P-033, LGPD-10).
 """
 from __future__ import annotations
 
+from datetime import date
 from typing import Annotated, Literal, Optional
 
 from fastapi import APIRouter, Path, Query
@@ -27,6 +28,29 @@ from src.modules.analytics.api.schemas import (
     ElasticitySimulationRequest,
     ElasticitySimulationResponse,
     ProductElasticityResponse,
+    CannibalizationResponse,
+    SubstitutionResponse,
+    CannibalizationMechanismLiteral,
+    CannibalizationReportResponse,
+    CannibalizationVictimDetailResponse,
+)
+from src.modules.analytics.domain.cannibalization import (
+    DEFAULT_ANALYSIS_WINDOW_WEEKS,
+    MAX_ANALYSIS_WINDOW_WEEKS,
+    MAX_CANDIDATE_SUBSTITUTES,
+    MIN_ANALYSIS_WINDOW_WEEKS,
+    MIN_JACCARD_SIMILARITY,
+)
+from src.modules.analytics.domain.cannibalization_report import (
+    ALLOWED_WINDOW_DAYS,
+    DEFAULT_MIN_DROP_PCT,
+    DEFAULT_MIN_MIGRATED_CLIENTS,
+    DEFAULT_WINDOW_DAYS,
+    MAX_SEARCH_LENGTH,
+    MIN_DROP_PCT_LOWER,
+    MIN_DROP_PCT_UPPER,
+    MIN_MIGRATED_CLIENTS_LOWER,
+    MIN_MIGRATED_CLIENTS_UPPER,
 )
 from src.modules.analytics.domain.pagination import DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT, PageRequest
 from src.modules.analytics.domain.product_search import (
@@ -317,3 +341,189 @@ def simulate_price_impact(
     request: ElasticitySimulationRequest,
 ) -> ElasticitySimulationResponse:
     return analytics_service.simulate_price_change(request)
+
+
+# ------------------------------------------------------------------ Canibalização e Substituição (F6 / P-128..P-138)
+
+_CANNIBALIZATION_ERRORS = {
+    400: {**_ERROR, "description": "CAN-004: parâmetros inválidos."},
+    404: {**_ERROR, "description": "CAN-001: produto não encontrado no catálogo ativo."},
+    422: {**_ERROR, "description": "CAN-002 (evento não encontrado) ou CAN-003 (histórico/controle insuficiente)."},
+    500: {**_ERROR, "description": "CAN-005: erro interno no processamento estatístico."},
+    503: {**_ERROR, "description": "ANL-001: base de vendas indisponível."},
+}
+
+
+def _validate_window_days(value: int) -> int:
+    """Validação da janela comparativa de canibalização v2 (P-128: {30, 60, 90})."""
+    if value not in ALLOWED_WINDOW_DAYS:
+        raise ValueError("windowDays fora do conjunto permitido")
+    return value
+
+
+WindowDaysQuery = Annotated[
+    int,
+    Query(alias="windowDays", description="Janela comparativa em dias (30, 60 ou 90)."),
+    AfterValidator(_validate_window_days),
+]
+
+
+# NOTA: /cannibalization/report e /cannibalization/report/{sku} DEVEM vir ANTES de /cannibalization/{sku}
+# para evitar conflito de path parameter no FastAPI.
+
+@analytics_router.get(
+    "/cannibalization/report",
+    response_model=CannibalizationReportResponse,
+    summary="Relatório global de canibalização por migração de clientes e equilíbrio de preço",
+    responses=_CANNIBALIZATION_ERRORS,
+    description="Lista vítimas de canibalização intracategoria por migração direcional líquida de clientes com preços sugeridos de equilíbrio (P-128 a P-138).",
+)
+def get_cannibalization_report(
+    window_days: WindowDaysQuery = DEFAULT_WINDOW_DAYS,
+    min_drop_pct: float = Query(
+        default=DEFAULT_MIN_DROP_PCT,
+        ge=MIN_DROP_PCT_LOWER,
+        le=MIN_DROP_PCT_UPPER,
+        alias="minDropPct",
+        description="Queda percentual mínima de faturamento da vítima (1.0 a 80.0).",
+    ),
+    min_migrated_clients: int = Query(
+        default=DEFAULT_MIN_MIGRATED_CLIENTS,
+        ge=MIN_MIGRATED_CLIENTS_LOWER,
+        le=MIN_MIGRATED_CLIENTS_UPPER,
+        alias="minMigratedClients",
+        description="Mínimo de clientes em migração direcional líquida (1 a 50).",
+    ),
+    category: Optional[str] = Query(
+        default=None,
+        max_length=120,
+        description="Filtro por categoria (`Tipo`).",
+    ),
+    supplier: Optional[str] = Query(
+        default=None,
+        max_length=120,
+        description="Filtro por fornecedor.",
+    ),
+    mechanism: Optional[CannibalizationMechanismLiteral] = Query(
+        default=None,
+        description="Filtro por mecanismo de canibalização.",
+    ),
+    search: Optional[str] = Query(
+        default=None,
+        max_length=MAX_SEARCH_LENGTH,
+        description="Busca textual por SKU ou descrição da vítima (máx. 80 chars).",
+    ),
+) -> CannibalizationReportResponse:
+    return analytics_service.get_cannibalization_report(
+        window_days=window_days,
+        min_drop_pct=min_drop_pct,
+        min_migrated_clients=min_migrated_clients,
+        category=category,
+        supplier=supplier,
+        mechanism=mechanism,
+        search=search,
+    )
+
+
+@analytics_router.get(
+    "/cannibalization/report/{sku}",
+    response_model=CannibalizationVictimDetailResponse,
+    summary="Detalhe de canibalização e equilíbrio de preço de uma vítima específica",
+    responses=_CANNIBALIZATION_ERRORS,
+    description="Retorna diagnóstico detalhado da vítima e até 10 canibalizadores ordenados por receita migrada (P-136.2).",
+)
+def get_cannibalization_victim_detail(
+    sku: SkuPath,
+    window_days: WindowDaysQuery = DEFAULT_WINDOW_DAYS,
+    min_drop_pct: float = Query(
+        default=DEFAULT_MIN_DROP_PCT,
+        ge=MIN_DROP_PCT_LOWER,
+        le=MIN_DROP_PCT_UPPER,
+        alias="minDropPct",
+        description="Queda percentual mínima de faturamento considerada (1.0 a 80.0).",
+    ),
+    min_migrated_clients: int = Query(
+        default=DEFAULT_MIN_MIGRATED_CLIENTS,
+        ge=MIN_MIGRATED_CLIENTS_LOWER,
+        le=MIN_MIGRATED_CLIENTS_UPPER,
+        alias="minMigratedClients",
+        description="Mínimo de clientes em migração direcional líquida (1 a 50).",
+    ),
+) -> CannibalizationVictimDetailResponse:
+    return analytics_service.get_cannibalization_sku_detail(
+        sku=str(sku),
+        window_days=window_days,
+        min_drop_pct=min_drop_pct,
+        min_migrated_clients=min_migrated_clients,
+    )
+
+
+@analytics_router.get(
+    "/cannibalization/{sku}",
+    response_model=CannibalizationResponse,
+    summary="Análise causal de canibalização e substituição (DiD + FDR)",
+    responses=_CANNIBALIZATION_ERRORS,
+    description="Mede o impacto causal de promoções, alterações de preço ou lançamentos sobre substitutos (P-128 a P-138).",
+)
+def get_cannibalization(
+    sku: SkuPath,
+    event_type: Literal["promo", "price", "launch"] = Query(
+        default="promo",
+        alias="eventType",
+        description="Tipo de evento comercial: promo, price ou launch.",
+    ),
+    event_date: Optional[date] = Query(
+        default=None,
+        alias="eventDate",
+        description="Data de referência T0 do evento (AAAA-MM-DD).",
+    ),
+    window_weeks: int = Query(
+        default=DEFAULT_ANALYSIS_WINDOW_WEEKS,
+        ge=MIN_ANALYSIS_WINDOW_WEEKS,
+        le=MAX_ANALYSIS_WINDOW_WEEKS,
+        alias="windowWeeks",
+        description="Tamanho da janela simétrica em semanas (2 a 12).",
+    ),
+    include_non_significant: bool = Query(
+        default=False,
+        alias="includeNonSignificant",
+        description="Se true, inclui produtos classificados como SEM_EFEITO.",
+    ),
+) -> CannibalizationResponse:
+    return analytics_service.get_cannibalization_analysis(
+        sku=str(sku),
+        event_type=event_type,
+        event_date=event_date,
+        window_weeks=window_weeks,
+        include_non_significant=include_non_significant,
+    )
+
+
+@analytics_router.get(
+    "/substitution/{sku}",
+    response_model=SubstitutionResponse,
+    summary="Mapa de produtos substitutos por similaridade de compradores (Jaccard)",
+    responses=_CANNIBALIZATION_ERRORS,
+    description="Lista os produtos substitutos diretos do SKU alvo sem expor identificadores de clientes (P-128).",
+)
+def get_substitution(
+    sku: SkuPath,
+    min_jaccard: float = Query(
+        default=MIN_JACCARD_SIMILARITY,
+        ge=0.05,
+        le=0.50,
+        alias="minJaccard",
+        description="Limiar mínimo de similaridade de Jaccard (0.05 a 0.50).",
+    ),
+    limit: int = Query(
+        default=MAX_CANDIDATE_SUBSTITUTES,
+        ge=1,
+        le=50,
+        description="Quantidade máxima de substitutos retornados (1 a 50).",
+    ),
+) -> SubstitutionResponse:
+    return analytics_service.get_substitution_candidates(
+        sku=str(sku),
+        min_jaccard=min_jaccard,
+        limit=limit,
+    )

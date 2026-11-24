@@ -367,3 +367,210 @@ def fetch_product_recent_volume_60d(sku: int, cutoff: date, window_days: int = 6
     if math.isnan(net_volume):
         return 0.0
     return max(0.0, net_volume)
+
+
+# ------------------------------------------------------------------ Canibalização e Substituição (F6 / P-128..P-137)
+
+_CANNIBALIZATION_CATALOG_SQL = f"""
+SELECT
+    p.[Codigo],
+    p.[Descricao],
+    p.[Tipo],
+    p.[Fornecedor],
+    p.[Estoque],
+    p.[Pc.Ultimo Custo],
+    p.[Pc.Venda]
+{ACTIVE_CATALOG_FILTER_SQL}
+""".strip()
+
+_BUYERS_BY_SKU_SQL = f"""
+SELECT DISTINCT
+    [Cod Produto] AS sku,
+    [Cod Cliente] AS customer_code
+FROM Externo01.Vendas
+WHERE [Operação] = '{SALE_OPERATION}'
+  AND [Data] >= ?
+  AND [Data] < ?
+""".strip()
+
+_PROMO_CALENDAR_SQL = f"""
+SELECT
+    [Cod Produto] AS sku,
+    [Cod Promocao] AS cod_promocao,
+    MIN(CAST([Data] AS DATE)) AS start_date
+FROM Externo01.Vendas
+WHERE [Cod Produto] = ?
+  AND [Data] < ?
+  AND [Operação] = '{SALE_OPERATION}'
+  AND [Cod Promocao] IS NOT NULL
+  AND LTRIM(RTRIM(CAST([Cod Promocao] AS VARCHAR(50)))) NOT IN ('', '0')
+GROUP BY [Cod Produto], [Cod Promocao]
+""".strip()
+
+_PROMO_SKUS_WINDOW_SQL = f"""
+SELECT DISTINCT [Cod Produto] AS sku
+FROM Externo01.Vendas
+WHERE [Data] >= ?
+  AND [Data] <= ?
+  AND [Operação] = '{SALE_OPERATION}'
+  AND [Cod Promocao] IS NOT NULL
+  AND LTRIM(RTRIM(CAST([Cod Promocao] AS VARCHAR(50)))) NOT IN ('', '0')
+""".strip()
+
+
+def fetch_cannibalization_catalog() -> dict:
+    """Catálogo ativo com `Tipo` e `Fornecedor` para canibalização e grupo de controle (P-128.1, P-131)."""
+    with _execute_readonly(_CANNIBALIZATION_CATALOG_SQL) as cursor:
+        rows = [tuple(row) for row in cursor.fetchall()]
+    catalog = {}
+    for row in rows:
+        sku_str = str(int(row[0]))
+        catalog[sku_str] = {
+            "sku": sku_str,
+            "description": str(row[1] or "").strip(),
+            "category": str(row[2] or "").strip(),
+            "supplier": str(row[3] or "").strip(),
+            "active": True,
+            "current_stock": int(float(row[4] or 0)),
+            "last_cost": float(row[5]) if row[5] is not None else None,
+            "current_price": float(row[6] or 0.0),
+        }
+    return catalog
+
+
+def fetch_buyers_by_sku(cutoff: date, lookback_days: int = 365) -> dict:
+    """
+    Mapa volátil {sku: set(customer_code)} dos últimos 365 dias (LGPD-CAN-01 / LGPD-CAN-04).
+    Seleciona estritamente [Cod Produto] e [Cod Cliente].
+    """
+    start_date = cutoff - timedelta(days=lookback_days)
+    buyers_map: dict = {}
+    with _execute_readonly(_BUYERS_BY_SKU_SQL, (start_date, cutoff)) as cursor:
+        while True:
+            rows = cursor.fetchmany(FETCH_CHUNK_SIZE)
+            if not rows:
+                break
+            for sku_val, cust_val in rows:
+                if sku_val is None or cust_val is None:
+                    continue
+                sku_str = str(int(sku_val))
+                buyers_map.setdefault(sku_str, set()).add(int(cust_val))
+    return buyers_map
+
+
+def fetch_daily_sales_for_skus(
+    skus: Sequence[int],
+    start_date: date,
+    end_date: date,
+) -> pd.DataFrame:
+    """Agregado diário de vendas e devoluções para uma lista de SKUs (P-137.2)."""
+    if not skus:
+        return pd.DataFrame(columns=["sku", "date", "operation", "qty", "revenue"])
+    placeholders = ", ".join("?" for _ in skus)
+    sql = f"""
+SELECT
+    [Cod Produto] AS sku,
+    CAST([Data] AS DATE) AS sale_date,
+    [Operação] AS operation,
+    SUM([Qtd Venda]) AS qty,
+    SUM([Valor Venda]) AS revenue
+FROM Externo01.Vendas
+WHERE [Cod Produto] IN ({placeholders})
+  AND [Data] >= ?
+  AND [Data] <= ?
+  AND ([Operação] = '{SALE_OPERATION}' OR [Operação] LIKE '{RETURN_OPERATION_PATTERN}')
+GROUP BY [Cod Produto], CAST([Data] AS DATE), [Operação]
+""".strip()
+    params = [*[int(s) for s in skus], start_date, end_date]
+    with _execute_readonly(sql, params) as cursor:
+        rows = [tuple(row) for row in cursor.fetchall()]
+    if not rows:
+        return pd.DataFrame(columns=["sku", "date", "operation", "qty", "revenue"])
+    df = pd.DataFrame(rows, columns=["sku", "date", "operation", "qty", "revenue"])
+    df["sku"] = df["sku"].astype(int).astype(str)
+    return df
+
+
+def fetch_promo_calendar(sku: int, cutoff: date) -> pd.DataFrame:
+    """Datas de início de campanhas promocionais do SKU (P-129.1)."""
+    with _execute_readonly(_PROMO_CALENDAR_SQL, (int(sku), cutoff)) as cursor:
+        rows = [tuple(row) for row in cursor.fetchall()]
+    if not rows:
+        return pd.DataFrame(columns=["sku", "cod_promocao", "start_date"])
+    df = pd.DataFrame(rows, columns=["sku", "cod_promocao", "start_date"])
+    df["sku"] = df["sku"].astype(int).astype(str)
+    return df
+
+
+def fetch_promo_skus_in_window(start_date: date, end_date: date) -> set:
+    """Retorna conjunto de SKUs que tiveram promoção no intervalo (P-131.1)."""
+    with _execute_readonly(_PROMO_SKUS_WINDOW_SQL, (start_date, end_date)) as cursor:
+        rows = cursor.fetchall()
+    return {str(int(row[0])) for row in rows if row[0] is not None}
+
+
+# ------------------------------------------------------------------ Canibalização v2 — Migração de Clientes (P-128, P-137; ADR-007 DA-03)
+
+_CUSTOMER_SKU_WINDOW_SALES_SQL = f"""
+SELECT
+    base.customer_code,
+    base.sku,
+    SUM(CASE WHEN base.period_flag = 0 THEN base.net_qty ELSE 0 END) AS pre_qty,
+    SUM(CASE WHEN base.period_flag = 0 THEN base.net_rev ELSE 0 END) AS pre_rev,
+    SUM(CASE WHEN base.period_flag = 1 THEN base.net_qty ELSE 0 END) AS cur_qty,
+    SUM(CASE WHEN base.period_flag = 1 THEN base.net_rev ELSE 0 END) AS cur_rev
+FROM (
+    SELECT
+        [Cod Cliente] AS customer_code,
+        [Cod Produto] AS sku,
+        CASE WHEN [Data] >= ? THEN 1 ELSE 0 END AS period_flag,
+        CASE WHEN [Operação] LIKE '{RETURN_OPERATION_PATTERN}' THEN -ABS([Qtd Venda]) ELSE [Qtd Venda] END AS net_qty,
+        CASE WHEN [Operação] LIKE '{RETURN_OPERATION_PATTERN}' THEN -ABS([Valor Venda]) ELSE [Valor Venda] END AS net_rev
+    FROM Externo01.Vendas
+    WHERE ([Operação] = '{SALE_OPERATION}' OR [Operação] LIKE '{RETURN_OPERATION_PATTERN}')
+      AND [Data] >= ?
+      AND [Data] < ?
+      AND [Cod Cliente] IS NOT NULL
+      AND [Cod Produto] IS NOT NULL
+) AS base
+GROUP BY base.customer_code, base.sku
+HAVING SUM(CASE WHEN base.period_flag = 0 THEN base.net_rev ELSE 0 END) > 0
+    OR SUM(CASE WHEN base.period_flag = 1 THEN base.net_rev ELSE 0 END) > 0
+""".strip()
+
+
+def fetch_customer_sku_window_sales(
+    pre_start_date: date,
+    mid_date: date,
+    reference_date: date,
+) -> List[dict]:
+    """
+    Lê faturamento e quantidade líquidos por `(Cod Cliente, Cod Produto)` nas janelas
+    `PRE` [pre_start_date, mid_date) e `CUR` [mid_date, reference_date) (P-128, P-137.1, ADR-007 DA-03).
+
+    - Subquery iniciando por `SELECT` (compatível com `is_readonly_query`, sem `WITH` e sem `CONCAT`).
+    - Abate devoluções (`LIKE 'DEVOLU%'`) algebricamente.
+    - Seleciona estritamente `[Cod Cliente]`, `[Cod Produto]`, `[Quantidade]`, `[Valor Venda]` (LGPD-CAN-01).
+    - Leitura em blocos via `fetchmany(FETCH_CHUNK_SIZE)`.
+    """
+    result: List[dict] = []
+    params = (mid_date, pre_start_date, reference_date)
+    with _execute_readonly(_CUSTOMER_SKU_WINDOW_SALES_SQL, params) as cursor:
+        while True:
+            chunk = cursor.fetchmany(FETCH_CHUNK_SIZE)
+            if not chunk:
+                break
+            for row in chunk:
+                if row[0] is None or row[1] is None:
+                    continue
+                result.append(
+                    {
+                        "customer_code": int(row[0]),
+                        "sku": str(int(row[1])),
+                        "pre_qty": float(row[2] or 0.0),
+                        "pre_rev": float(row[3] or 0.0),
+                        "cur_qty": float(row[4] or 0.0),
+                        "cur_rev": float(row[5] or 0.0),
+                    }
+                )
+    return result
