@@ -659,6 +659,20 @@ _SINGLE_SIZE_RE = re.compile(
 _DISPLAY_PACK_MARKERS: Tuple[str, ...] = (
     "display", "sache", "saches", "monodose", "caixa", "cx ", "unidade", "avulso",
 )
+_PACK_CONTAINER_GROUPS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
+    ("refil_saco", ("saco", "refil", "pouch", "bag", "zip")),
+    ("pote", ("pote", "frasco", "vidro")),
+    ("display", ("display", "sache", "saches", "monodose")),
+)
+
+
+def _detect_pack_container(description: str) -> Optional[str]:
+    """Identifica o formato de apresentação quando explícito (saco/refil/pouch vs pote vs display)."""
+    norm = _strip_accents(str(description or "").lower())
+    for group_id, markers in _PACK_CONTAINER_GROUPS:
+        if any(re.search(rf"\b{re.escape(m)}\b", norm) for m in markers):
+            return group_id
+    return None
 
 
 def _extract_flavor_tokens(description: str) -> FrozenSet[str]:
@@ -806,6 +820,7 @@ def build_sku_compatibility_profile(
         "core_tokens": core_tokens,
         "flavors": _extract_flavor_tokens(description),
         "size": _extract_size_signature(description),
+        "pack": _detect_pack_container(description),
     }
 
 
@@ -819,7 +834,9 @@ def compute_pair_affinity_score(
     - Trava estrutural de compatibilidade (`_pair_compatibility_multiplier`);
     - 55% Nome / Função Semântica (`base_semantic_score`);
     - 25% Sabor (`_compute_flavor_similarity`);
-    - 20% Tamanho / Embalagem (`_compute_size_similarity`).
+    - 20% Conteúdo / Quantidade (`_compute_size_similarity`);
+    - Ajuste fino de apresentação (+0,02 mesmo formato saco/pote/display; -0,03 formatos distintos)
+      quando ambos explicitam a apresentação.
 
     Utilizado de forma idêntica em Canibalização (F6) e Produto Novo (Cold Start).
     """
@@ -841,6 +858,15 @@ def compute_pair_affinity_score(
         + AFFINITY_WEIGHT_FLAVOR * flavor_sim
         + AFFINITY_WEIGHT_SIZE * size_sim
     ) * mult
+
+    pack_a = prof_a.get("pack")
+    pack_b = prof_b.get("pack")
+    if pack_a and pack_b:
+        if pack_a == pack_b:
+            combined += 0.02
+        else:
+            combined -= 0.03
+
     return round(max(0.0, min(1.0, combined)), 4)
 
 

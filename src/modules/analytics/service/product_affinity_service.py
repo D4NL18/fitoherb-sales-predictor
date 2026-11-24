@@ -118,11 +118,15 @@ def _get_or_build_query_vector_cache(index: Dict[str, Any]) -> Optional[Dict[str
     skus = [sku for sku, _ in valid_items]
     docs = [doc for _, doc in valid_items]
     matrix, vectorizers = _vectorize_documents(docs)
+    core_vec = vectorizers[0]
+    doc_cores, _ = _split_doc_channels(docs)
+    core_matrix = normalize(core_vec.transform(doc_cores), norm="l2", axis=1)
     supplier_tokens = _collect_all_supplier_tokens(skus_meta)
     built = {
         "key": index_key,
         "skus": skus,
         "matrix": matrix,
+        "core_matrix": core_matrix,
         "vectorizers": vectorizers,
         "supplier_tokens": supplier_tokens,
     }
@@ -437,7 +441,11 @@ def find_similar_for_new_product(
     q_char = normalize(desc_char_vec.transform(q_riches), norm="l2", axis=1)
     q_vec = normalize(hstack([q_core * 0.80, q_word * 0.15, q_char * 0.05]).tocsr(), norm="l2", axis=1)
 
-    scores = (vec_cache["matrix"] @ q_vec.T).toarray().ravel()
+    # Usa max(core_cosine, full_cosine) no cold start para não penalizar produtos
+    # que possuem descrição rica da galeria do site frente a produtos sem descrição.
+    full_scores = (vec_cache["matrix"] @ q_vec.T).toarray().ravel()
+    core_scores = (vec_cache["core_matrix"] @ q_core.T).toarray().ravel()
+    scores = np.maximum(full_scores, core_scores)
     pool_k = min(len(scores), max(int(top_k) * 5, 50))
     if pool_k < len(scores):
         top_idx = np.argpartition(scores, -pool_k)[-pool_k:]
