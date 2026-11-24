@@ -30,5 +30,11 @@
 - Promoção só como indicador (as funções existentes dão presença, não a venda em promoção).
 - Limite por minuto devolve `TIA-004` com HTTP 429 (`motivo = LIMITE_DE_PEDIDOS`) para não criar código fora do catálogo do plano; falha do SQL usa o global `ANL-001`.
 
+## Revisão v2 (2026-11-24, custo e checkpoint)
+Regras reescritas conforme `STATE_IA_TendenciaIA.md` e ADR-009: último ID P agora `P-188`; erros até `TIA-007`; `PROMPT_VERSION = "tia-v2"`.
+- **Alteradas:** P-153.1 (consulta de 4 datas em todos os modos, um caminho só; CP-1), P-167 (+P-167.1 piso de `OUTRAS`, +P-167.2 `"<3"`), P-174 (+P-174.1 template não é erro), P-175 (chave com `evidenceHash`, TTL 30 dias, P-175.3 revogada, +P-175.6/.7), P-176 (2/min, 10/dia, `force` 3/dia, +P-176.4 contador em memória), P-177 (sem Neon; Flash de fallback), P-178 (US$ 1,80/0,20, reserva e acerto, livro GCS, 80%, kill-switch, esgotado = template), P-179 (8.000 caracteres, `"<3"`), P-180 (consultas sugeridas, +gate de grounding), P-181 (limites, +`explicacao`), P-182.2/182.4 (SKU por marcador, `SEM_DATA`), P-183 (Flash, `LLM_TOTAL_DEADLINE_SECONDS=110`), P-184.5 (ressalva CP-10), P-185.4 (Vertex AI/ADC), P-186 (`TIA-004` só 429; novos `TIA-006` 401 e `TIA-007` 409), P-187, §4 (condicionado a LGPD-TIA-03..06).
+- **Nova:** P-188 (gates sem LLM e resumo por template). Matriz: C-21a/b, C-25a/b, C-28a..d, C-29a, C-33a/b.
+- **Pendente do `architect`:** contrato e ADR ainda refletem a v1 (remover `deep`/`tipoAnalise`; decidir 200 com template em vez de 503 `TIA-004`).
+
 ## Log
 - **2026-11-24 — analyst:** regras F7 P-150..P-187 redigidas; doc da Canibalização alinhada ao código (índice de afinidade); glossário seção 6.

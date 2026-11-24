@@ -161,6 +161,14 @@ O Cloud Run escala para zero e o disco é efêmero.
 - Estimativa grosseira (preços de terceiros, confirmar na doc do Google): ~3–5 mil tokens de entrada + busca + ~1 mil de saída → **centavos de dólar por diagnóstico no Hydrogen**, cerca do dobro no Neon, mais a tarifa do grounding.
 - **Sem lote noturno nem pré-geração** (descartado pelo usuário).
 
+> **Revisão de custo (2026-11-24, decisão do usuário) — prevalece sobre o texto acima e sobre §3.6/§3.9:**
+> - **Neon removido.** Modelo único `gemini-4-hydrogen`; sem escalonamento automático, sem botão "Análise aprofundada" (`deep`).
+> - **Fallback de modelo:** `gemini-3.8-flash` (só por falha de infraestrutura do Hydrogen). Preços oficiais (por 1M): Hydrogen US$ 1,50/7,50; Flash US$ 0,75/3,75 até 31/12/2026 e US$ 1,50/7,50 depois.
+> - **Teto: US$ 2,00/mês** no total (LLM + grounding + infra). Teto de LLM no livro: US$ 1,80/mês; diário US$ 0,20. Fornecedor: Vertex AI. A IA não escreve números (só marcadores).
+> - **Custo por geração:** ~US$ 0,014 (sem grounding) a ~0,018 (com grounding na cota grátis); ~0,046 se o grounding fosse cobrado. Capacidade: **~100 gerações/mês** (~55 no pior caso). Cache hit e resumo por template custam US$ 0.
+> - **Como:** cache GCS compartilhado por `evidenceHash`, single-flight, pacote de 8 mil caracteres, saída curta, `thinking low`, grounding só por gate determinístico (≤ 2 consultas), template sem LLM para variação não explicável, livro de gastos no GCS, kill-switch e Billing Budget de US$ 2. Cache de contexto do Gemini **não compensa**. Detalhe e cálculos: `.agents/docs/architecture/trend-insights-llm.md` §14.
+> - Regras/constantes/contrato a alterar: `.agents/docs/STATE_IA_TendenciaIA.md` ("Impactos nas regras e no contrato").
+
 ### 3.8 API (contrato `trend-insights` 1.0.0, a detalhar pelo `architect`)
 | Método | Rota | Descrição |
 | :--- | :--- | :--- |
@@ -268,9 +276,9 @@ Produto Novo (F2) **não bloqueia** nenhuma fase. Quando chegar ao `main`, a F7 
 | # | Pergunta | Recomendação |
 | :-: | :--- | :--- |
 | Q-1 | ~~Diagnóstico sob demanda ou também em lote noturno?~~ | **Decidido (2026-11-24):** só ao apertar o botão "Gerar análise com IA"; sem lote |
-| Q-2 | Hydrogen padrão, Neon no escalonamento/"análise aprofundada" | **Aprovado (2026-11-24)** |
+| Q-2 | Hydrogen padrão, Neon no escalonamento/"análise aprofundada" | ~~Aprovado~~ **Revisado (2026-11-24): só Hydrogen; Neon removido; `gemini-3.8-flash` como fallback** |
 | Q-3 | Diagnósticos em GCS | **Aprovado (2026-11-24)** |
-| Q-4 | Teto de gasto com IA | **Aprovado (2026-11-24):** US$ 30/mês (≈ US$ 1/dia), configurável por variável de ambiente |
+| Q-4 | Teto de gasto com IA | ~~US$ 30/mês~~ **Revisado (2026-11-24): US$ 2,00/mês no total**, configurável por variável de ambiente. Neon removido; Flash como fallback (§3.7) |
 | Q-5 | Histórico de estoque no ERP | **Aprovado (2026-11-24):** verificar com `/banco` na Etapa 3; até lá a regra assume só estoque atual |
 | Q-6 | Limiar do grupo afim 0,50 (igual F6/F2) | **Aprovado (2026-11-24)** |
 | Q-7 | Produto primeiro, fornecedor na 7.4 | **Aprovado (2026-11-24)** |

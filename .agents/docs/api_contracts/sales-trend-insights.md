@@ -8,13 +8,22 @@
 | :--- | :--- |
 | **Módulo backend** | `src/modules/trend_insights/` (FastAPI + Pydantic v2), ADR-009 |
 | **Consumidor** | `frontend/src/app/features/sales-trend/` (painel "Por que?" da página `/tendencia-vendas`) |
-| **Versão do contrato** | **1.0.0** (`meta.version`, constante `TREND_INSIGHTS_CONTRACT_VERSION`) |
-| **Regras** | `P-150` a `P-187` (`business_rules/analytics-tendencia-ia.md`); reaproveita `P-072..P-093` (Tendência) e `P-128..P-138` (Canibalização) |
-| **Decisões** | `adr/ADR-009-diagnostico-tendencia-ia.md` (DA-01 a DA-11, CP-1 a CP-8) |
+| **Versão do contrato** | **1.1.0** (`meta.version`, constante `TREND_INSIGHTS_CONTRACT_VERSION`). Revisão da 1.0.0 (nunca implantada) após as decisões de 2026-11-24: Hydrogen sempre, Neon removido, teto de US$ 2/mês, Vertex AI. Histórico na seção 0 |
+| **Regras** | `P-150` a `P-188` (`business_rules/analytics-tendencia-ia.md`; revisões v2 de P-174..P-181 e P-183 e a nova P-188 a cargo do `analyst`); reaproveita `P-072..P-093` (Tendência) e `P-128..P-138` (Canibalização) |
+| **Decisões** | `adr/ADR-009-diagnostico-tendencia-ia.md` (DA-01 a DA-12, CP-1 a CP-15) |
 | **Camada de IA** | `architecture/trend-insights-llm.md` (`ai_specialist`): prompt, schema do LLM, grounding. Este contrato define só o que sai da API, já validado |
 | **Autenticação** | HTTP Basic do middleware global (`src/core/auth.py`, P-033) em todas as rotas `/api/v1/...`. A rota interna `POST /internal/v1/affinity-index/sync` usa **token OIDC do Google** (3.5) |
-| **Privacidade** | Zero `Cod Cliente`, nome, documento ou contato de cliente em qualquer campo (P-185). Contagens por UF abaixo de 3 clientes são agregadas em `"OUTRAS"` (P-167). Custos unitários do ERP não aparecem; margem só como `netMarginImpact` e mecanismo |
-| **Autor / Data** | Arquiteto (Etapa 2) — 2026-11-24 |
+| **Privacidade** | Zero `Cod Cliente`, nome, documento ou contato de cliente em qualquer campo (P-185). Contagens por UF abaixo de 3 clientes são agregadas em `"OUTRAS"` (P-167). Custos unitários do ERP não aparecem; margem só como `netMarginImpact` e mecanismo. **Custos de IA (dólares, tokens, consultas de busca, preços, tetos, livro de gastos) nunca saem da API** (4.4). O texto da IA não contém números |
+| **Autor / Data** | Arquiteto (Etapa 2) — 2026-11-24 (revisão v2, mesma data) |
+
+---
+
+## 0. Histórico de versões
+
+| Versão | Mudanças |
+| :--- | :--- |
+| 1.0.0 | Primeira versão do desenho (nunca implantada). |
+| **1.1.0** | **Removidos:** `deep` no corpo do `POST`, `meta.tipoAnalise`, `meta.escalonadoAutomaticamente`, `meta.ia.escalonamentoPrevisto`, aviso `ESCALONAMENTO_NEGADO_POR_ORCAMENTO`, o modelo `gemini-4-neon`, o botão "Análise aprofundada", `diagnosticoIa.desatualizado`, aviso `DIAGNOSTICO_DESATUALIZADO`, `503 TIA-004` de IA (viram `200` com template), `credencialConfigurada` e valores em dólar de `meta.ia.orcamento` e de `health`. **Acrescentados:** `meta.origem` (`llm`\|`cache`\|`template`\|`fallback`) no `POST`, `diagnosticoIa.origem`, `meta.motivoTemplate`, `meta.ia.{geraComIa, motivoTemplate, podeForcar, diagnosticoVencido, orcamento.nivel}`, `diagnosticoIa.explicacao` (≤ 160), aviso `SEM_BUSCA_EXTERNA`, motivo `LIMITE_DIARIO` em `429 TIA-004`, códigos oficiais `TIA-006` (401) e `TIA-007` (409). **Alterados:** `modelo` ∈ {`gemini-4-hydrogen`, `gemini-3.8-flash`}; `promptVersion = "tia-v2"`; chave do diagnóstico com `evidenceHash` no lugar de `dataReferencia`; limites do diagnóstico (5 fatores, 2 fontes por fator, 3 hipóteses, 3 recomendações, `resumo` ≤ 400); texto da IA **sem números**; migração lida **sempre** com 4 datas. Mudança incompatível com a 1.0.0, que nunca teve consumidor. |
 
 ---
 
@@ -23,14 +32,14 @@
 - **Prefixo Base:** `/api/v1/sales-trend/insights` (rotas públicas) e `/internal/v1` (rota de máquina).
 - **Protocolo:** HTTP/REST síncrono, `application/json; charset=utf-8`.
 - **Convenção de Nomenclatura:** `camelCase` em query params, corpo e respostas (atributos Python em `snake_case` com `alias_generator=to_camel`). Campos de negócio em português, alinhados ao Glossário (seção 6) e às regras; os termos já públicos da F6 mantêm o nome original (`sameSupplier`, `affinityScore`, `netMarginImpact`). Enums de entrada em inglês minúsculo (`revenue`, `quantity`, `point`, `average`), enums de domínio em maiúsculas (`QUANTITATIVO`, `CANIBALIZACAO_OUTRO_FORNECEDOR`).
-- **Princípio:** todo número vem do Motor de Evidências. O LLM só é chamado por `POST .../generate` (P-174).
+- **Princípio:** todo número vem do Motor de Evidências; **o texto da IA não contém números** (ficam nos campos numéricos). O LLM só é chamado por `POST .../generate`, nunca por `GET`, nunca automaticamente (P-174). O `POST` responde sempre `200` com diagnóstico de IA (`llm`/`fallback`/`cache`) ou **resumo por template** (`template`, sem LLM, custo zero); a IA indisponível, desligada ou sem orçamento não é erro.
 
 | Método | Rota | Descrição | Chama o LLM? | Fase | Regras |
 | :--- | :--- | :--- | :-: | :-: | :--- |
 | `GET` | `/api/v1/sales-trend/insights/product/{sku}` | Cascata, grupo afim, diagnóstico de mercado e, se existir, o diagnóstico de IA já salvo | Não | 7.1 | P-150..P-174 |
-| `POST` | `/api/v1/sales-trend/insights/product/{sku}/generate` | Gera (ou reutiliza) o diagnóstico com IA | Sim (só se não houver salvo ou `force=true`) | 7.2 | P-174..P-184 |
+| `POST` | `/api/v1/sales-trend/insights/product/{sku}/generate` | Gera (ou reutiliza) o diagnóstico com IA, ou devolve resumo por template | Só se não houver salvo (ou `force=true`) **e** os gates, o orçamento e o kill-switch liberarem | 7.2 | P-174..P-184, P-188 |
 | `GET` | `/api/v1/sales-trend/insights/supplier/{supplierKey}` | Visão por fornecedor (soma das cascatas e canibalização interna do portfólio) | Não | **7.4** | P-172 |
-| `GET` | `/api/v1/sales-trend/insights/health` | Modelos, credencial (booleano), orçamento, índice de afinidade, cache de migração | Não | 7.1 (parte de IA em 7.2) | P-187 |
+| `GET` | `/api/v1/sales-trend/insights/health` | Modelos, IA ligada (booleano), nível do orçamento, índice de afinidade, cache de migração | Não | 7.1 (parte de IA em 7.2) | P-187 |
 | `POST` | `/internal/v1/affinity-index/sync` | Sincroniza o índice de afinidade no GCS; chamada pelo Cloud Scheduler | Não | 7.0 (c) | P-130.4..P-130.12, ADR-009 DA-06 |
 
 ### 1.1 Ordem de avaliação (rotas de produto)
@@ -39,9 +48,12 @@
 2. Snapshot da Tendência indisponível → `503 ANL-001`.
 3. `baseMonth` futuro → `400 TIA-001` (`fields: ["baseMonth"]`); anterior à base ou sem dia coberto → `422 TIA-003`.
 4. SKU fora do Catálogo Ativo → `404 TIA-002`.
-5. Só no `POST`: modo `SEM_VARIACAO` → `422 TIA-003`; diagnóstico salvo e `force=false` → `200` reutilizado (pula 6 e 7); rate limit → `429 TIA-004`; credencial ausente → `503 TIA-004`; orçamento → `503 TIA-004`.
-6. Só no `POST`: dedup em voo (aguarda o resultado do pedido em curso para a mesma chave).
-7. Só no `POST`: chamada ao LLM; falha persistente → `200` com `diagnosticoIa = null` e aviso `IA_FALHOU` (P-183.3).
+5. Só no `POST`: modo `SEM_VARIACAO` → `422 TIA-003`; diagnóstico salvo (chave com `evidenceHash`) e `force=false` → `200` com `origem = "cache"` (pula 6 a 9); `force=true` acima de `FORCE_MAX_PER_USER_PER_DAY` ou com orçamento em `ALERTA`/`ESGOTADO` → `429 TIA-004` (`LIMITE_DIARIO`) ou ignora o `force` e devolve o salvo, conforme `meta.ia.podeForcar`.
+6. Só no `POST`: kill-switch (`TREND_AI_ENABLED=false`) ou Vertex indisponível → `200` com `origem = "template"` (`IA_DESLIGADA`/`IA_INDISPONIVEL`).
+7. Só no `POST`: gates de não chamada (P-188: variação ínfima, base insuficiente, delta financeiro < R$ 1.000, resíduo < 0,20 sem `REGIONAL` e sem diagnóstico de mercado) → `200` com `origem = "template"` (`GATE_*`).
+8. Só no `POST`: rate limit (2/min, 10/dia por usuário) → `429 TIA-004`; reserva no livro de gastos negada (mês, dia ou saldo) ou livro indisponível → `200` com `origem = "template"` (`ORCAMENTO_ESGOTADO`).
+9. Só no `POST`: dedup em voo (aguarda o resultado do pedido em curso para a mesma chave).
+10. Só no `POST`: chamada ao Hydrogen; falha de infraestrutura após 2 tentativas → 1 chamada ao `gemini-3.8-flash` (`origem = "fallback"`); falha geral → `200` com `origem = "template"` e aviso `IA_FALHOU` (P-183.3). Nada é salvo em caso de falha (P-175.5).
 
 Fontes internas que falham (afinidade, sazonalidade, elasticidade, churn, estoque, promoção, UF) **não** geram erro: a parcela fica `NAO_AVALIADO` (P-173).
 
@@ -54,14 +66,14 @@ Fontes internas que falham (afinidade, sazonalidade, elasticidade, churn, estoqu
 | Campo | Tipo | Descrição | Regra |
 | :--- | :--- | :--- | :--- |
 | `timestamp` | string ISO-8601 UTC | Momento da resposta | — |
-| `version` | string | `"1.0.0"` | P-186 |
+| `version` | string | `"1.1.0"` | P-186 |
 | `dataReferencia` | string `AAAA-MM-DD` | Data de referência da snapshot da Tendência (UTC−3); entra na chave do diagnóstico | P-175, P-083.3 |
 | `ultimoDiaCoberto` | string `AAAA-MM-DD` | `dataReferencia − 1 dia` | P-076.1 |
 | `mesBase` | string `AAAA-MM` | Mês-Base efetivo | P-150 |
 | `metrica` | `"revenue"` \| `"quantity"` | Métrica efetiva | P-150 |
 | `janela` | `1` \| `3` \| `6` \| `12` | Tamanho da janela | P-150 |
 | `modoComparacao` | `"point"` \| `"average"` | Modo efetivo | P-150, P-151 |
-| `promptVersion` | string | Versão do prompt em vigor (`"tia-v1"`) | P-175 |
+| `promptVersion` | string | Versão do prompt em vigor (`"tia-v2"`) | P-175 |
 | `indiceAfinidade` | `{ disponivel: boolean, lastSyncAt: string \| null }` | Estado do índice usado no cálculo | P-173 |
 | `avisos` | `InsightWarning[]` | Avisos não bloqueantes (2.2); lista vazia quando não há | P-173, P-186 |
 | `ia` | `InsightAiState` (abaixo) | Estado do botão de IA, presente no `GET` e no `POST` das rotas de produto (Design Plan Q-D7) | P-152, P-175, P-176, P-178.5 |
@@ -70,23 +82,26 @@ Fontes internas que falham (afinidade, sazonalidade, elasticidade, churn, estoqu
 
 | Campo | Tipo | Descrição |
 | :--- | :--- | :--- |
-| `podeGerar` | boolean | `false` quando há `motivoBloqueio` ou `geracaoEmAndamento` |
-| `motivoBloqueio` | `"SEM_VARIACAO"` \| `"ORCAMENTO_ESGOTADO"` \| `"IA_INDISPONIVEL"` \| `null` | Por que o botão está desabilitado (o limite por minuto só é conhecido no `POST`) |
-| `diagnosticoSalvo` | boolean | Existe diagnóstico salvo para a chave (botão vira "Gerar de novo") |
+| `podeGerar` | boolean | `false` apenas quando há `motivoBloqueio` ou `geracaoEmAndamento`. Orçamento esgotado, IA desligada e gates **não** bloqueiam o botão: o clique devolve o resumo por template |
+| `motivoBloqueio` | `"SEM_VARIACAO"` \| `null` | Por que o botão está desabilitado (limites de pedidos só são conhecidos no `POST`) |
+| `geraComIa` | boolean | `false` quando o clique devolveria template (gate, kill-switch, orçamento, IA indisponível): a tela troca o rótulo para "Gerar resumo automático" |
+| `motivoTemplate` | `"GATE_VARIACAO"` \| `"GATE_RESIDUO_BAIXO"` \| `"GATE_VALOR_BAIXO"` \| `"ORCAMENTO_ESGOTADO"` \| `"IA_DESLIGADA"` \| `"IA_INDISPONIVEL"` \| `null` | Previsão do motivo quando `geraComIa = false` |
+| `diagnosticoSalvo` | boolean | Existe diagnóstico salvo para a chave atual (botão vira "Atualizar"/"Gerar de novo") |
 | `diagnosticoSalvoEm` | string ISO-8601 UTC \| `null` | Data da análise salva |
-| `geracaoEmAndamento` | boolean | Há lease de geração em voo para a chave (qualquer instância); a tela mostra "gerando" e pode refazer o `GET` em alguns segundos |
-| `escalonamentoPrevisto` | boolean | P-177.2 usaria o modelo de escalonamento neste caso |
-| `orcamento` | `{ usadoUsd, restanteUsd, tetoUsd, percentualUsado }` | Gasto do mês civil (UTC−3), cache de até 60 s |
+| `diagnosticoVencido` | boolean | TTL lógico de 30 dias (`INSIGHT_SOFT_TTL_DAYS`) vencido: a tela mostra "gerado há N dias" e oferece "Atualizar" (explícito) |
+| `podeForcar` | boolean | `false` em orçamento `ALERTA`/`ESGOTADO` ou com `force` do dia esgotado: desabilita "Gerar de novo"/"Atualizar" |
+| `geracaoEmAndamento` | boolean | Há lease de geração em voo para a chave (qualquer instância); a tela mostra "gerando" e refaz o `GET` em alguns segundos |
+| `orcamento` | `{ nivel }` | `nivel` ∈ `NORMAL`, `ALERTA` (≥ 80%), `ESGOTADO`. **Sem valores em dólar, percentuais, teto ou saldo** (4.4). Cache de até 60 s |
 
 **Só no `POST /generate`** (`GenerateMeta`, estende `InsightMeta`):
 
 | Campo | Tipo | Descrição | Regra |
 | :--- | :--- | :--- | :--- |
-| `reutilizado` | boolean | `true` quando devolveu o diagnóstico salvo sem chamar o LLM (inclui o caso de aguardar um pedido em voo) | P-175.1, P-176.2 |
-| `modelo` | string \| `null` | ID do modelo que gerou o diagnóstico devolvido; `null` no fallback | P-177 |
-| `tipoAnalise` | `"PADRAO"` \| `"APROFUNDADA"` \| `null` | `APROFUNDADA` quando gerado com o modelo de escalonamento (pedido `deep` ou escalonamento automático) | P-175.3 |
-| `escalonadoAutomaticamente` | boolean | `true` quando P-177.2 escolheu o modelo de escalonamento sem `deep` | P-177.2 |
-| `geradoEm` | string ISO-8601 UTC \| `null` | Momento da geração do diagnóstico devolvido | P-175.1 |
+| `origem` | `"cache"` \| `"template"` \| `"llm"` \| `"fallback"` | Como esta resposta foi obtida: `cache` = diagnóstico salvo reaproveitado (custo zero; inclui aguardar pedido em voo); `template` = resumo determinístico sem LLM (`diagnosticoIa = null`, tela rotula "Resumo automático (sem IA)"); `llm` = gerado agora pelo `gemini-4-hydrogen`; `fallback` = gerado agora pelo `gemini-3.8-flash` | P-174, P-175, P-177, P-188 |
+| `motivoTemplate` | enum de `meta.ia.motivoTemplate` \| `null` | Preenchido só quando `origem = "template"` | P-188 |
+| `modelo` | `"gemini-4-hydrogen"` \| `"gemini-3.8-flash"` \| `null` | Modelo que gerou o diagnóstico devolvido; `null` no `template`. Em `cache`, o modelo que o gerou | P-177 |
+| `geradoEm` | string ISO-8601 UTC \| `null` | Momento da geração do diagnóstico devolvido; `null` no `template` | P-175.1 |
+| `reutilizado` | boolean | `true` quando `origem = "cache"` (atalho de `origem` para a tela) | P-175.1, P-176.2 |
 
 ### 2.2 `InsightWarning`
 
@@ -98,9 +113,8 @@ Fontes internas que falham (afinidade, sazonalidade, elasticidade, churn, estoqu
 | :--- | :--- | :--- |
 | `TIA-005` | Índice de afinidade indisponível (P-173) | "Índice de produtos afins em atualização: canibalização e grupo afim não avaliados." |
 | `FORNECEDOR_NAO_INFORMADO` | SKU sem fornecedor no catálogo (P-154.2) | "Fornecedor do produto não informado." |
-| `IA_FALHOU` | Só no `POST`: fallback após tentativas (P-183.3) | "Não foi possível gerar a análise com IA agora. A parte numérica está disponível." |
-| `ESCALONAMENTO_NEGADO_POR_ORCAMENTO` | Só no `POST` (P-177.4) | "Análise feita com o modelo padrão: o saldo do mês não cobre a análise aprofundada." |
-| `DIAGNOSTICO_DESATUALIZADO` | Diagnóstico salvo gerado com evidências diferentes das atuais (ADR-009 DA-07) | "As evidências mudaram desde a geração desta análise. Gere de novo para atualizar." |
+| `IA_FALHOU` | Só no `POST`: a tentativa de IA falhou e a resposta é template (P-183.3) | "Não foi possível gerar a análise com IA agora. Exibindo o resumo automático." |
+| `SEM_BUSCA_EXTERNA` | Só no `POST`: gerado pelo `gemini-3.8-flash` sem *grounding* (schema + busca não suportado no fallback) | "Análise feita sem busca externa." |
 
 A tela decide pelo `codigo`, nunca pelo texto.
 
@@ -135,7 +149,13 @@ A tela decide pelo `codigo`, nunca pelo texto.
 | `tipoImpacto` | `CANIBALIZACAO_INTERNA`, `GANHO_SOBRE_CONCORRENTE` (P-171) |
 | `fator.tipo` (IA) | internos: os 6 da cascata + `PERDA_PARTICIPACAO_SEM_MIGRACAO`, `RUPTURA`, `PROMOCAO`, `REGIONAL`; externos: `CLIMA`, `POLITICO_REGULATORIO`, `MATERIA_PRIMA`, `CONCORRENCIA_MERCADO`, `OUTRO` (P-181) |
 | `hipotese.motivo` | `SEM_FONTE`, `FONTE_NAO_CITADA`, `SEM_DATA`, `FORA_DO_PERIODO` (P-182.4), `SKU_FORA_DO_PACOTE` (`trend-insights-llm.md` CP-8) |
-| `meta.ia.motivoBloqueio` | `SEM_VARIACAO`, `ORCAMENTO_ESGOTADO`, `IA_INDISPONIVEL`, `null` |
+| `meta.ia.motivoBloqueio` | `SEM_VARIACAO`, `null` |
+| `motivoTemplate` | `GATE_VARIACAO`, `GATE_RESIDUO_BAIXO`, `GATE_VALOR_BAIXO`, `ORCAMENTO_ESGOTADO`, `IA_DESLIGADA`, `IA_INDISPONIVEL` |
+| `meta.origem` (`POST`) | `cache`, `template`, `llm`, `fallback` (minúsculas, exceção à convenção de enums de domínio por decisão do coordenador) |
+| `diagnosticoIa.origem` | `llm`, `fallback` |
+| `modelo` | `gemini-4-hydrogen`, `gemini-3.8-flash` (nunca `gemini-4-neon`) |
+| `meta.ia.orcamento.nivel` | `NORMAL`, `ALERTA`, `ESGOTADO` |
+| `hipotese.motivo` (inclui `SEM_DATA`) | ver linha acima; `SEM_DATA` = fonte sem data de publicação confiável, nunca vira fator |
 
 ---
 
@@ -226,14 +246,13 @@ O estado do botão de IA fica em `meta.ia` (2.1).
 | Campo | Tipo | Origem |
 | :--- | :--- | :--- |
 | `direcao`, `diagnosticoMercado` | enum | Backend (cópia do motor) |
-| `resumo` | string ≤ 800 | LLM; marcadores já substituídos pelos números do motor (P-182.1); texto puro |
-| `fatores[]` | ≤ 8 `{ tipo, sentido, parcelaEstimada, confianca, rotulo, explicacao, evidenciaInterna, skusCitados[], fontes[] }` | `parcelaEstimada` copiada da cascata (`null` em externos e no `QUALITATIVO`); `rotulo = "POSSIVEL"` em fatores externos (teto `MEDIA`, P-182.5), `"EVIDENCIA"` nos internos; `explicacao` ≤ 300 caracteres, texto do LLM com as mesmas restrições do `resumo` (`trend-insights-llm.md` CP-8) |
-| `fonte` | `{ url, dominio, titulo, dataPublicacao, origemData }` | `dataPublicacao` (`AAAA-MM-DD`) é **anulável**: o *grounding* não devolve data; ela vem da leitura do modelo (`origemData = "MODELO"`) ou do caminho da URL (`"URL"`). Fontes de fatores aceitos sempre têm data válida (P-182.4); fontes com data nula só aparecem em hipóteses |
-| `hipotesesNaoConfirmadas[]` | ≤ 5 `{ tipo, descricao, motivo, fontes[] }` | P-182.4; `fontes[]` pode vir vazio ou com fontes rejeitadas (ex.: `SEM_DATA`, `FORA_DO_PERIODO`) para o usuário conferir |
-| `recomendacoes[]` | ≤ 5 strings | LLM, mesmas restrições do `resumo` |
+| `resumo` | string ≤ 400 | LLM; **texto puro sem números** (nenhum dígito, valor, percentual ou código de SKU); cita produtos por descrição e as grandezas ficam nos campos numéricos do motor (P-182.1 revisada) |
+| `fatores[]` | ≤ 5 `{ tipo, sentido, parcelaEstimada, confianca, rotulo, explicacao, evidenciaInterna, skusCitados[], fontes[] }` | `parcelaEstimada` copiada da cascata (`null` em externos e no `QUALITATIVO`); `rotulo = "POSSIVEL"` em fatores externos (teto `MEDIA`, P-182.5), `"EVIDENCIA"` nos internos; `explicacao` ≤ 160 caracteres, texto do LLM **sem números**, mesmas restrições do `resumo`; `fontes[]` ≤ 2 por fator; `skusCitados` são ids do pacote (a tela mostra nome e célula do produto) |
+| `fonte` | `{ url, dominio, titulo, dataPublicacao, origemData }`. `titulo` vem da citação da fonte (não é texto da IA e pode conter dígitos) | `dataPublicacao` (`AAAA-MM-DD`) é **anulável**: o *grounding* não devolve data; ela vem da leitura do modelo (`origemData = "MODELO"`) ou do caminho da URL (`"URL"`). Fontes de fatores aceitos sempre têm data válida (P-182.4); fontes com data nula só aparecem em hipóteses |
+| `hipotesesNaoConfirmadas[]` | ≤ 3 `{ tipo, descricao ≤ 120, motivo, fontes[] }` | P-182.4; `fontes[]` pode vir vazio ou com fontes rejeitadas (`SEM_DATA`, `FORA_DO_PERIODO`) para o usuário conferir. `descricao` sem números |
+| `recomendacoes[]` | ≤ 3 strings (≤ 120 caracteres cada) | LLM, mesmas restrições do `resumo` (sem números) |
 | `sugestoesBuscaHtml` | string \| `null` | **Opcional e pendente do checkpoint (ADR-009 CP-10).** HTML das *Search Suggestions* exigido pelos Termos do *grounding*. Se o checkpoint aprovar, a tela o renderiza **só** em `<iframe sandbox>` (sem `allow-scripts` do nosso domínio, sem `innerHTML` na página); caso contrário, o campo vem sempre `null` |
-| `modelo`, `tipoAnalise`, `geradoEm`, `promptVersion` | | Backend |
-| `desatualizado` | boolean | `true` se o pacote atual difere do usado na geração (hash) |
+| `origem`, `modelo`, `geradoEm`, `promptVersion` | | Backend. `origem` ∈ `llm`, `fallback`; `modelo` ∈ `gemini-4-hydrogen`, `gemini-3.8-flash` |
 
 `impactoEmOutrosProdutos` **não** se repete dentro de `diagnosticoIa`: a tela usa o bloco de topo (P-181 marca o campo como do backend).
 
@@ -296,12 +315,12 @@ O estado do botão de IA fica em `meta.ia` (2.1).
     "diagnosticoIa": null
   },
   "meta": {
-    "timestamp": "2026-11-24T14:02:11.204Z", "version": "1.0.0",
+    "timestamp": "2026-11-24T14:02:11.204Z", "version": "1.1.0",
     "dataReferencia": "2026-11-24", "ultimoDiaCoberto": "2026-11-23", "mesBase": "2026-10",
-    "metrica": "quantity", "janela": 1, "modoComparacao": "point", "promptVersion": "tia-v1",
+    "metrica": "quantity", "janela": 1, "modoComparacao": "point", "promptVersion": "tia-v2",
     "indiceAfinidade": { "disponivel": true, "lastSyncAt": "2026-11-24T03:00:41.512Z" },
     "avisos": [],
-    "ia": { "podeGerar": true, "motivoBloqueio": null, "diagnosticoSalvo": false, "diagnosticoSalvoEm": null, "geracaoEmAndamento": false, "escalonamentoPrevisto": false, "orcamento": { "usadoUsd": 4.82, "restanteUsd": 25.18, "tetoUsd": 30.0, "percentualUsado": 16.1 } }
+    "ia": { "podeGerar": true, "motivoBloqueio": null, "diagnosticoSalvo": false, "diagnosticoSalvoEm": null, "geracaoEmAndamento": false, "diagnosticoVencido": false, "geraComIa": true, "motivoTemplate": null, "podeForcar": true, "orcamento": { "nivel": "NORMAL" } }
   }
 }
 ```
@@ -387,12 +406,12 @@ O estado do botão de IA fica em `meta.ia` (2.1).
     "diagnosticoIa": null
   },
   "meta": {
-    "timestamp": "2026-11-24T14:05:42.870Z", "version": "1.0.0",
+    "timestamp": "2026-11-24T14:05:42.870Z", "version": "1.1.0",
     "dataReferencia": "2026-11-24", "ultimoDiaCoberto": "2026-11-23", "mesBase": "2026-10",
-    "metrica": "revenue", "janela": 3, "modoComparacao": "point", "promptVersion": "tia-v1",
+    "metrica": "revenue", "janela": 3, "modoComparacao": "point", "promptVersion": "tia-v2",
     "indiceAfinidade": { "disponivel": true, "lastSyncAt": "2026-11-24T03:00:41.512Z" },
     "avisos": [],
-    "ia": { "podeGerar": true, "motivoBloqueio": null, "diagnosticoSalvo": false, "diagnosticoSalvoEm": null, "geracaoEmAndamento": false, "escalonamentoPrevisto": false, "orcamento": { "usadoUsd": 4.82, "restanteUsd": 25.18, "tetoUsd": 30.0, "percentualUsado": 16.1 } }
+    "ia": { "podeGerar": true, "motivoBloqueio": null, "diagnosticoSalvo": false, "diagnosticoSalvoEm": null, "geracaoEmAndamento": false, "diagnosticoVencido": false, "geraComIa": false, "motivoTemplate": "GATE_RESIDUO_BAIXO", "podeForcar": true, "orcamento": { "nivel": "NORMAL" } }
   }
 }
 ```
@@ -448,12 +467,12 @@ Mesma forma; as parcelas e blocos que dependem de afinidade ficam `NAO_AVALIADO`
     "diagnosticoIa": null
   },
   "meta": {
-    "timestamp": "2026-11-24T08:01:03.117Z", "version": "1.0.0",
+    "timestamp": "2026-11-24T08:01:03.117Z", "version": "1.1.0",
     "dataReferencia": "2026-11-24", "ultimoDiaCoberto": "2026-11-23", "mesBase": "2026-10",
-    "metrica": "revenue", "janela": 3, "modoComparacao": "point", "promptVersion": "tia-v1",
+    "metrica": "revenue", "janela": 3, "modoComparacao": "point", "promptVersion": "tia-v2",
     "indiceAfinidade": { "disponivel": false, "lastSyncAt": null },
     "avisos": [ { "codigo": "TIA-005", "mensagem": "Índice de produtos afins em atualização: canibalização e grupo afim não avaliados." } ],
-    "ia": { "podeGerar": true, "motivoBloqueio": null, "diagnosticoSalvo": false, "diagnosticoSalvoEm": null, "geracaoEmAndamento": false, "escalonamentoPrevisto": true, "orcamento": { "usadoUsd": 4.82, "restanteUsd": 25.18, "tetoUsd": 30.0, "percentualUsado": 16.1 } }
+    "ia": { "podeGerar": true, "motivoBloqueio": null, "diagnosticoSalvo": false, "diagnosticoSalvoEm": null, "geracaoEmAndamento": false, "diagnosticoVencido": false, "geraComIa": true, "motivoTemplate": null, "podeForcar": true, "orcamento": { "nivel": "NORMAL" } }
   }
 }
 ```
@@ -462,8 +481,8 @@ Mesma forma; as parcelas e blocos que dependem de afinidade ficam `NAO_AVALIADO`
 
 ### 3.2 `POST /api/v1/sales-trend/insights/product/{sku}/generate`
 
-- **Objetivo:** gerar o diagnóstico com IA para a chave `(sku, metric, window, baseMonth, comparisonMode, dataReferencia, promptVersion)`, ou devolver o já salvo (P-174..P-184).
-- **Quem chama:** só os botões "Gerar análise com IA", "Gerar de novo" e "Análise aprofundada". A tela desabilita os botões enquanto o pedido está em voo (P-176.1) e usa timeout HTTP de **150 s** (a camada de IA tem prazo total de 110 s, `LLM_TOTAL_DEADLINE_SECONDS`; ADR-009 DA-08).
+- **Objetivo:** gerar o diagnóstico com IA para a chave `(sku, metric, window, baseMonth, comparisonMode, promptVersion, evidenceHash)`, devolver o já salvo, ou devolver o resumo por template quando a IA não deve ou não pode ser chamada (P-174..P-184, P-188). `evidenceHash` é interno e nunca exposto: carga nova do ERP com evidência igual reaproveita o salvo.
+- **Quem chama:** só os botões "Gerar análise com IA", "Gerar resumo automático" (quando `meta.ia.geraComIa = false`), "Atualizar" (diagnóstico vencido) e "Gerar de novo". Não existe mais "Análise aprofundada". Nada chama sozinho. A tela desabilita os botões enquanto o pedido está em voo (P-176.1) e usa timeout HTTP de **150 s** (a camada de IA tem prazo total de 110 s, `LLM_TOTAL_DEADLINE_SECONDS`; ADR-009 DA-08).
 - **Headers:** `Content-Type: application/json`.
 
 **Corpo (`GenerateRequest`):**
@@ -471,27 +490,31 @@ Mesma forma; as parcelas e blocos que dependem de afinidade ficam `NAO_AVALIADO`
 | Campo | Tipo | Default | Validação | Descrição | Regra |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `metric`, `window`, `baseMonth`, `comparisonMode` | | como em 3.1 | como em 3.1 | Identificam a célula | P-150 |
-| `deep` | boolean | `false` | — | `true` = "Análise aprofundada" (modelo de escalonamento) | P-175.3, P-177.1 |
-| `force` | boolean | `false` | — | `true` = "Gerar de novo". A tela só envia `true` **depois** da confirmação "Gerar de novo consome créditos de IA. Continuar?" | P-175.2 |
+| `force` | boolean | `false` | — | `true` = "Gerar de novo"/"Atualizar": ignora o salvo e **custa dinheiro**; a tela só envia `true` depois da confirmação "Gerar de novo consome créditos de IA. Continuar?". Limitado a 3 por usuário por dia e desabilitado com orçamento em `ALERTA`/`ESGOTADO` (`meta.ia.podeForcar`) | P-175.2, P-176 |
 
 ```json
-{ "metric": "revenue", "window": 3, "baseMonth": "2026-10", "comparisonMode": "point", "deep": false, "force": false }
+{ "metric": "revenue", "window": 3, "baseMonth": "2026-10", "comparisonMode": "point", "force": false }
 ```
+
+Campo `deep` enviado por cliente antigo é ignorado (parâmetros desconhecidos), nunca escalona modelo.
 
 **Comportamento:**
 
 | Situação | Resposta |
 | :--- | :--- |
-| Diagnóstico salvo para a chave e `force = false` (com ou sem `deep`) | `200`, `meta.reutilizado = true`, sem chamar o LLM, sem contar no rate limit. Para trocar um `PADRAO` salvo por `APROFUNDADA`, a tela confirma e envia `deep = true, force = true` |
-| Outro pedido em voo para a mesma chave (qualquer instância) | Aguarda e devolve o mesmo resultado (`reutilizado = true`) |
-| Geração bem-sucedida | `200`, `reutilizado = false`, `diagnosticoIa` preenchido, salvo no GCS |
-| LLM falha após as tentativas (schema ou transitório) ou estoura o prazo total de 110 s | `200`, `diagnosticoIa = null`, aviso `IA_FALHOU`; nada é salvo (P-175.5); o custo já consumido entra no orçamento |
+| Diagnóstico salvo para a chave e `force = false` | `200`, `meta.origem = "cache"`, `reutilizado = true`, sem LLM, sem contar no rate limit, custo zero |
+| Outro pedido em voo para a mesma chave (qualquer instância) | Aguarda e devolve o mesmo resultado (`origem = "cache"`) |
+| Geração bem-sucedida no Hydrogen | `200`, `origem = "llm"`, `diagnosticoIa` preenchido, salvo no GCS |
+| Falha de infraestrutura do Hydrogen e sucesso do `gemini-3.8-flash` | `200`, `origem = "fallback"`, `modelo = "gemini-3.8-flash"`, `diagnosticoIa` preenchido e salvo |
+| Gate de não chamada (variação ínfima, base insuficiente, delta < R$ 1.000, resíduo < 0,20 sem região/mercado) | `200`, `origem = "template"`, `motivoTemplate = GATE_*`, `diagnosticoIa = null`; nada é salvo |
+| Kill-switch ligado, Vertex indisponível desde o início | `200`, `origem = "template"`, `motivoTemplate = IA_DESLIGADA` ou `IA_INDISPONIVEL` |
+| Orçamento do mês ou do dia sem saldo, ou livro de gastos indisponível | `200`, `origem = "template"`, `motivoTemplate = ORCAMENTO_ESGOTADO` |
+| Hydrogen e Flash falham (schema ou prazo total de 110 s) | `200`, `origem = "template"`, aviso `IA_FALHOU`; nada é salvo (P-175.5); o custo já consumido é acertado no livro |
 | `SEM_VARIACAO` | `422 TIA-003` ("Não há variação relevante para analisar.") |
-| Credencial ausente / serviço do LLM fora desde o início | `503 TIA-004` `motivo = IA_INDISPONIVEL` |
-| Orçamento do mês insuficiente | `503 TIA-004` `motivo = ORCAMENTO_ESGOTADO` (com `deep=false`, se só o escalonamento não couber, usa o padrão e avisa `ESCALONAMENTO_NEGADO_POR_ORCAMENTO`) |
-| Mais de 5 pedidos que chamam o LLM no minuto | `429 TIA-004` `motivo = LIMITE_DE_PEDIDOS`, header `Retry-After` (segundos) |
+| Mais de 2 pedidos que chamam o LLM no minuto | `429 TIA-004` `motivo = LIMITE_DE_PEDIDOS`, header `Retry-After` (segundos) |
+| Mais de 10 pedidos que chamam o LLM no dia, ou 3 com `force`, por usuário | `429 TIA-004` `motivo = LIMITE_DIARIO`, header `Retry-After` |
 
-**Resposta `200` — `data`:** o mesmo `ProductInsight` de 3.1 (já com `diagnosticoIa`), e `meta.ia.diagnosticoSalvo = true` após uma geração bem-sucedida; `meta` é `GenerateMeta` (2.1).
+**Resposta `200` — `data`:** o mesmo `ProductInsight` de 3.1 (com `diagnosticoIa` preenchido em `llm`/`fallback`/`cache`, `null` em `template`); `meta` é `GenerateMeta` (2.1); `meta.ia.diagnosticoSalvo = true` após geração bem-sucedida. O resumo por template é devolvido em `data.resumoAutomatico` (string ≤ 400, sem números, só quando `origem = "template"`; `null` nos demais casos), para a tela exibi-lo rotulado "Resumo automático (sem IA)".
 
 #### 3.2.1 Exemplo `200` — queda com canibalização de mesmo e de outro fornecedor e lançamento afim
 
@@ -574,23 +597,20 @@ Mesma forma; as parcelas e blocos que dependem de afinidade ficam `NAO_AVALIADO`
     "diagnosticoIa": {
       "direcao": "QUEDA",
       "diagnosticoMercado": "PERDA_DE_PARTICIPACAO",
-      "resumo": "A categoria de creatina cresceu no período, mas este produto perdeu espaço. A maior parte da queda vem de clientes que passaram a comprar a Creatina Pura 300G (outro fornecedor, R$ 3.400,00), o lançamento Creatina Creapure 250G (R$ 3.100,00) e a versão de 150G do próprio fornecedor (R$ 1.450,00). O aumento de preço explica R$ 1.161,60 e a época do ano, R$ 2.400,00. A queda se concentrou em Pernambuco.",
+      "resumo": "A categoria de creatina cresceu no período, mas este produto perdeu espaço. A maior parte da queda vem de clientes que passaram a comprar o concorrente de menor preço de outro fornecedor, do lançamento recente e da versão menor do próprio fornecedor. A época do ano também pesou. A queda se concentrou em Pernambuco.",
       "fatores": [
         { "tipo": "CANIBALIZACAO_OUTRO_FORNECEDOR", "sentido": "NEGATIVO", "parcelaEstimada": -3400.0, "confianca": "ALTA", "rotulo": "EVIDENCIA",
-          "explicacao": "Clientes deste produto reduziram a compra e passaram a comprar a Creatina Pura 300G, de preço menor.",
+          "explicacao": "Clientes deste produto reduziram a compra e passaram a comprar o concorrente de menor preço.",
           "evidenciaInterna": "CANIBALIZACAO_OUTRO_FORNECEDOR", "skusCitados": [3301], "fontes": [] },
         { "tipo": "PRODUTO_NOVO", "sentido": "NEGATIVO", "parcelaEstimada": -3100.0, "confianca": "MEDIA", "rotulo": "EVIDENCIA",
-          "explicacao": "O lançamento Creatina Creapure 250G atraiu clientes deste produto logo no primeiro trimestre de venda.",
+          "explicacao": "O lançamento atraiu clientes deste produto logo nos primeiros meses de venda.",
           "evidenciaInterna": "PRODUTO_NOVO", "skusCitados": [3120], "fontes": [] },
         { "tipo": "SAZONALIDADE", "sentido": "NEGATIVO", "parcelaEstimada": -2400.0, "confianca": "MEDIA", "rotulo": "EVIDENCIA",
-          "explicacao": "Outubro costuma vender menos que julho para este produto.",
+          "explicacao": "O mês atual costuma vender menos que o mês de comparação para este produto.",
           "evidenciaInterna": "SAZONALIDADE", "skusCitados": [], "fontes": [] },
         { "tipo": "CANIBALIZACAO_MESMO_FORNECEDOR", "sentido": "NEGATIVO", "parcelaEstimada": -1450.0, "confianca": "MEDIA", "rotulo": "EVIDENCIA",
           "explicacao": "Parte dos clientes trocou para a embalagem menor do mesmo fornecedor.",
           "evidenciaInterna": "CANIBALIZACAO_MESMO_FORNECEDOR", "skusCitados": [2046], "fontes": [] },
-        { "tipo": "PRECO", "sentido": "NEGATIVO", "parcelaEstimada": -1161.6, "confianca": "MEDIA", "rotulo": "EVIDENCIA",
-          "explicacao": "O preço médio praticado subiu e a elasticidade do produto indica perda de volume.",
-          "evidenciaInterna": "PRECO", "skusCitados": [], "fontes": [] },
         { "tipo": "MATERIA_PRIMA", "sentido": "NEGATIVO", "parcelaEstimada": null, "confianca": "MEDIA", "rotulo": "POSSIVEL",
           "explicacao": "Notícias do setor relatam alta no custo da creatina importada, o que pode ter pressionado o preço de reposição.",
           "evidenciaInterna": null, "skusCitados": [],
@@ -604,25 +624,24 @@ Mesma forma; as parcelas e blocos que dependem de afinidade ficam `NAO_AVALIADO`
                         "titulo": "Marcas próprias ganham espaço em suplementos", "dataPublicacao": null, "origemData": null } ] }
       ],
       "recomendacoes": [
-        "Comparar o preço deste produto com o da Creatina Pura 300G antes de novas compras.",
+        "Comparar o preço deste produto com o do concorrente de menor preço antes de novas compras.",
         "Avaliar ação comercial em Pernambuco, onde a queda se concentrou."
       ],
       "sugestoesBuscaHtml": null,
+      "origem": "llm",
       "modelo": "gemini-4-hydrogen",
-      "tipoAnalise": "PADRAO",
       "geradoEm": "2026-11-24T14:10:27.530Z",
-      "promptVersion": "tia-v1",
-      "desatualizado": false
+      "promptVersion": "tia-v2"
     }
   },
   "meta": {
-    "timestamp": "2026-11-24T14:10:27.611Z", "version": "1.0.0",
+    "timestamp": "2026-11-24T14:10:27.611Z", "version": "1.1.0",
     "dataReferencia": "2026-11-24", "ultimoDiaCoberto": "2026-11-23", "mesBase": "2026-10",
-    "metrica": "revenue", "janela": 3, "modoComparacao": "point", "promptVersion": "tia-v1",
+    "metrica": "revenue", "janela": 3, "modoComparacao": "point", "promptVersion": "tia-v2",
     "indiceAfinidade": { "disponivel": true, "lastSyncAt": "2026-11-24T03:00:41.512Z" },
     "avisos": [],
-    "ia": { "podeGerar": true, "motivoBloqueio": null, "diagnosticoSalvo": true, "diagnosticoSalvoEm": "2026-11-24T14:10:27.530Z", "geracaoEmAndamento": false, "escalonamentoPrevisto": false, "orcamento": { "usadoUsd": 4.89, "restanteUsd": 25.11, "tetoUsd": 30.0, "percentualUsado": 16.3 } },
-    "reutilizado": false, "modelo": "gemini-4-hydrogen", "tipoAnalise": "PADRAO", "escalonadoAutomaticamente": false, "geradoEm": "2026-11-24T14:10:27.530Z"
+    "ia": { "podeGerar": true, "motivoBloqueio": null, "diagnosticoSalvo": true, "diagnosticoSalvoEm": "2026-11-24T14:10:27.530Z", "geracaoEmAndamento": false, "diagnosticoVencido": false, "geraComIa": true, "motivoTemplate": null, "podeForcar": true, "orcamento": { "nivel": "NORMAL" } },
+    "origem": "llm", "motivoTemplate": null, "reutilizado": false, "modelo": "gemini-4-hydrogen", "geradoEm": "2026-11-24T14:10:27.530Z"
   }
 }
 ```
@@ -633,7 +652,7 @@ Conferência dos números (para o `tester`): `Σ parcelas = −2.400 − 1.161,6
 
 ### 3.3 `GET /api/v1/sales-trend/insights/supplier/{supplierKey}` — **fase 7.4**
 
-> Rota reservada no 1.0.0 e **não implementada** até a fase 7.4. Até lá responde `404` do FastAPI (rota inexistente). O detalhamento final pode acrescentar campos (versão `1.1.0`, compatível).
+> Rota reservada no 1.1.0 e **não implementada** até a fase 7.4. Até lá responde `404` do FastAPI (rota inexistente). O detalhamento final pode acrescentar campos (versão `1.2.0`, compatível).
 
 - **Path:** `supplierKey` = chave opaca `fornecedorChave` da Tendência (`"f:<nome normalizado>"` ou `"sem-fornecedor"`), 1..200 caracteres; inexistente no universo → `404 TIA-002`.
 - **Query:** os mesmos de 3.1.
@@ -644,25 +663,19 @@ Conferência dos números (para o `tester`): `Σ parcelas = −2.400 − 1.161,6
 
 ### 3.4 `GET /api/v1/sales-trend/insights/health`
 
-- **Objetivo (P-187):** estado operacional sem chamar o LLM e sem ler o banco. Lê o acumulado do mês (cache de 60 s) e os metadados do índice.
+- **Objetivo (P-187):** estado operacional sem chamar o LLM e sem ler o banco. Lê o nível do livro de gastos (cache de 60 s) e os metadados do índice. **Não expõe custo**: sem dólares, tokens, consultas de busca, preços ou teto (4.4); quem precisa dos números consulta o Cloud Billing e o livro no GCS.
 - **Resposta `200`:**
 
 ```json
 {
   "data": {
     "ia": {
+      "ligada": true,
       "modeloPadrao": "gemini-4-hydrogen",
-      "modeloAprofundado": "gemini-4-neon",
-      "credencialConfigurada": true,
-      "promptVersion": "tia-v1"
+      "modeloFallback": "gemini-3.8-flash",
+      "promptVersion": "tia-v2"
     },
-    "orcamento": {
-      "mes": "2026-11",
-      "gastoUsd": 4.82,
-      "tetoUsd": 30.0,
-      "percentualUsado": 16.1,
-      "esgotado": false
-    },
+    "orcamento": { "mes": "2026-11", "nivel": "NORMAL" },
     "indiceAfinidade": {
       "disponivel": true,
       "lastSyncAt": "2026-11-24T03:00:41.512Z",
@@ -674,11 +687,11 @@ Conferência dos números (para o `tester`): `Σ parcelas = −2.400 − 1.161,6
       { "modoComparacao": "average", "janela": 12, "mesBase": "2026-10", "carregadoEm": "2026-11-24T14:00:40.022Z", "expiraEm": "2026-11-24T20:00:40.022Z", "duracaoCargaMs": 9870, "pares": 9144 }
     ]
   },
-  "meta": { "timestamp": "2026-11-24T14:12:00.000Z", "version": "1.0.0", "dataReferencia": "2026-11-24" }
+  "meta": { "timestamp": "2026-11-24T14:12:00.000Z", "version": "1.1.0", "dataReferencia": "2026-11-24" }
 }
 ```
 
-`credencialConfigurada` é só booleano: o valor da chave nunca aparece. `indiceAfinidade.origem` ∈ `GCS`, `LOCAL`. `cacheMigracao` não traz SKUs nem clientes, só contagem de pares. **Erros:** nenhum específico.
+`ia.ligada` é o kill-switch `TREND_AI_ENABLED` (booleano); não existe campo de credencial (Vertex AI usa a conta de serviço). `orcamento.nivel` ∈ `NORMAL`, `ALERTA`, `ESGOTADO`. `indiceAfinidade.origem` ∈ `GCS`, `LOCAL`. `cacheMigracao` não traz SKUs nem clientes, só contagem de pares. **Erros:** nenhum específico.
 
 ---
 
@@ -706,7 +719,7 @@ Conferência dos números (para o `tester`): `Σ parcelas = −2.400 − 1.161,6
     "durationMs": 38215,
     "geracaoObjeto": "1764039641512000"
   },
-  "meta": { "timestamp": "2026-11-24T03:00:41.900Z", "version": "1.0.0" }
+  "meta": { "timestamp": "2026-11-24T03:00:41.900Z", "version": "1.1.0" }
 }
 ```
 
@@ -714,8 +727,8 @@ Conferência dos números (para o `tester`): `Σ parcelas = −2.400 − 1.161,6
 
 | HTTP | `code` | Quando |
 | :--- | :--- | :--- |
-| `401` | `TIA-006` *(pendente do checkpoint, ADR-009 CP-3)* | Token ausente, inválido, expirado, audiência ou chamador diferente (a resposta não diz qual) |
-| `409` | `TIA-007` *(pendente do checkpoint)* | Outra sincronização em andamento (lease `locks/affinity-sync.lock`) |
+| `401` | `TIA-006` | Token ausente, inválido, expirado, audiência ou chamador diferente (a resposta não diz qual) |
+| `409` | `TIA-007` | Outra sincronização em andamento (lease `locks/affinity-sync.lock`) |
 | `503` | `ANL-001` | Catálogo do ERP ou galeria indisponível; o índice anterior no GCS permanece |
 
 ---
@@ -727,7 +740,7 @@ Conferência dos números (para o `tester`): `Σ parcelas = −2.400 − 1.161,6
 ```json
 {
   "error": { "code": "TIA-001", "message": "Parâmetros inválidos para o diagnóstico.", "fields": ["window", "comparisonMode"], "motivo": null },
-  "meta": { "timestamp": "2026-11-24T14:00:00.000Z", "version": "1.0.0" }
+  "meta": { "timestamp": "2026-11-24T14:00:00.000Z", "version": "1.1.0" }
 }
 ```
 
@@ -736,44 +749,44 @@ Conferência dos números (para o `tester`): `Σ parcelas = −2.400 − 1.161,6
 | `error.code` | string | Código interno; a tela decide sempre por ele |
 | `error.message` | string | Mensagem fixa em PT-BR, sem valor recebido, sem SQL, sem stacktrace |
 | `error.fields` | string[] | Nomes dos campos inválidos (`TIA-001`, e `["baseMonth"]` em `TIA-003` quando o mês foi informado); lista vazia nos demais |
-| `error.motivo` | string \| `null` | Só em `TIA-004`: `IA_INDISPONIVEL`, `ORCAMENTO_ESGOTADO`, `LIMITE_DE_PEDIDOS` |
+| `error.motivo` | string \| `null` | Só em `TIA-004` (`429`): `LIMITE_DE_PEDIDOS`, `LIMITE_DIARIO` |
 
 ### 4.2 Códigos
 
 | HTTP | `code` | Quando | `message` (fixa) | Regra |
 | :--- | :--- | :--- | :--- | :--- |
-| `400` | `TIA-001` | `sku` não inteiro/≤ 0; `metric`, `window`, `comparisonMode` fora do domínio; `baseMonth` fora do formato ou futuro; corpo do `POST` inválido (`deep`/`force` não booleanos, JSON malformado) | "Parâmetros inválidos para o diagnóstico." | P-150 |
+| `400` | `TIA-001` | `sku` não inteiro/≤ 0; `metric`, `window`, `comparisonMode` fora do domínio; `baseMonth` fora do formato ou futuro; corpo do `POST` inválido (`force` não booleano, JSON malformado) | "Parâmetros inválidos para o diagnóstico." | P-150 |
 | `404` | `TIA-002` | SKU fora do Catálogo Ativo; `supplierKey` inexistente (7.4) | "Produto ou fornecedor não encontrado no catálogo ativo." | P-150 |
 | `422` | `TIA-003` | Mês-Base anterior à base ou sem dia coberto | "Não há base de vendas suficiente para diagnosticar esta janela." | P-151 |
 | `422` | `TIA-003` | `POST /generate` em modo `SEM_VARIACAO` | "Não há variação relevante para analisar." | P-152 |
-| `429` | `TIA-004` | `motivo = LIMITE_DE_PEDIDOS`; header `Retry-After` | "Análise com IA indisponível no momento. A parte numérica continua disponível." | P-176.3 |
-| `503` | `TIA-004` | `motivo = IA_INDISPONIVEL` ou `ORCAMENTO_ESGOTADO` | idem | P-178.5, P-183.3 |
+| `429` | `TIA-004` | `motivo = LIMITE_DE_PEDIDOS` (2/min) ou `LIMITE_DIARIO` (10/dia por usuário; `force` 3/dia); header `Retry-After` | "Limite de análises com IA atingido. A parte numérica continua disponível." | P-176 |
+| `200` | — | **Não é mais erro:** IA desligada, indisponível, orçamento esgotado ou gate de não chamada → resumo por template (`meta.origem = "template"`, `meta.motivoTemplate`) | — | P-178.5, P-183.3, P-188 |
 | `200` + aviso | `TIA-005` | Índice de afinidade indisponível (em `meta.avisos`, nunca como erro) | "Índice de produtos afins em atualização: canibalização e grupo afim não avaliados." | P-173 |
 | `503` | `ANL-001` | Base de vendas (SQL Server) indisponível para a célula da Tendência | "Base de vendas indisponível no momento. Tente novamente em instantes." | P-173 |
 | `401` | — | Produção sem credencial Basic (middleware global) | Comportamento existente (`WWW-Authenticate: Basic`) | P-033 |
-| `401` / `409` | `TIA-006` / `TIA-007` | Só na rota interna (3.5), pendentes do checkpoint | — | ADR-009 CP-3 |
+| `401` / `409` | `TIA-006` / `TIA-007` | Só na rota interna (3.5): token OIDC ausente/inválido/chamador não autorizado (a resposta não diz qual) / sincronização já em andamento | "Não autorizado." / "Sincronização já em andamento." | ADR-009 DA-06, CP-3 |
 | `500` | — | Erro não previsto | Corpo genérico, sem stacktrace | `security-anti-patterns` |
 
 Exemplos:
 
 ```json
 { "error": { "code": "TIA-002", "message": "Produto ou fornecedor não encontrado no catálogo ativo.", "fields": [], "motivo": null },
-  "meta": { "timestamp": "2026-11-24T14:00:00.000Z", "version": "1.0.0" } }
+  "meta": { "timestamp": "2026-11-24T14:00:00.000Z", "version": "1.1.0" } }
 ```
 
 ```json
 { "error": { "code": "TIA-003", "message": "Não há variação relevante para analisar.", "fields": [], "motivo": null },
-  "meta": { "timestamp": "2026-11-24T14:00:00.000Z", "version": "1.0.0" } }
+  "meta": { "timestamp": "2026-11-24T14:00:00.000Z", "version": "1.1.0" } }
 ```
 
 ```json
-{ "error": { "code": "TIA-004", "message": "Análise com IA indisponível no momento. A parte numérica continua disponível.", "fields": [], "motivo": "ORCAMENTO_ESGOTADO" },
-  "meta": { "timestamp": "2026-11-24T14:00:00.000Z", "version": "1.0.0" } }
+{ "error": { "code": "TIA-004", "message": "Limite de análises com IA atingido. A parte numérica continua disponível.", "fields": [], "motivo": "LIMITE_DE_PEDIDOS" },
+  "meta": { "timestamp": "2026-11-24T14:00:00.000Z", "version": "1.1.0" } }
 ```
 
 ```json
 { "error": { "code": "ANL-001", "message": "Base de vendas indisponível no momento. Tente novamente em instantes.", "fields": [], "motivo": null },
-  "meta": { "timestamp": "2026-11-24T14:00:00.000Z", "version": "1.0.0" } }
+  "meta": { "timestamp": "2026-11-24T14:00:00.000Z", "version": "1.1.0" } }
 ```
 
 - A validação do FastAPI é convertida pela classe de rota do módulo (`InsightsAPIRoute`), sem handler global (ADR-009 DA-11).
@@ -787,14 +800,32 @@ Exemplos:
 | `CLIENTES_PERDIDOS.detalhe` | Não | Só `clientesPerdidosQtd` |
 | `REGIONAL.evidencia.porUf` | Não | UF com < 3 clientes agregada em `"OUTRAS"`; nenhuma contagem de clientes exposta |
 | `diagnosticoIa` | Não | Gerado a partir do pacote sem cliente (P-179); validado antes de salvar |
-| `health` | Não | Só contagens agregadas, booleano da credencial |
+| `health` | Não | Só contagens agregadas, booleano `ia.ligada` e nível do orçamento |
+
+---
+
+### 4.4 Campos de custo e orçamento que NÃO são expostos ao cliente
+
+Nenhuma resposta (rotas de produto, fornecedor, `health`, erros) nem objeto salvo devolvido à tela contém:
+
+| Dado | Onde fica |
+| :--- | :--- |
+| Valores em dólar (gasto do mês/dia, teto, saldo, reserva, custo por diagnóstico) | Livro `ai-budget/AAAA-MM.json` no GCS, logs estruturados e Cloud Billing |
+| Percentual do orçamento usado | Idem (a API só devolve o `nivel`) |
+| Tokens de entrada/saída/*thinking* | Log estruturado da etapa (sem prompt) |
+| Consultas de busca executadas e cota de *grounding* | Livro e log |
+| Tabela de preços (`TREND_AI_PRICING_JSON`) e constantes de orçamento | Variáveis de ambiente |
+| `evidenceHash`, chave de cache, caminhos e gerações do GCS | Interno (DA-07). O `StoredInsight` gravado guarda custo, tokens e consultas, mas o mapper da API os descarta |
+| Credenciais (não há chave de API; o Vertex usa ADC) | — |
+
+Teste de contrato: serializar todas as respostas e falhar se aparecer qualquer chave `usd`, `custo`, `token`, `consultas`, `preco`, `teto`, `gasto`, `saldo`, `evidenceHash` (T-7.2.9).
 
 ---
 
 ## 5. Diretrizes de Integração no Frontend
 
 - **Serviço:** `features/sales-trend/services/trend-insights.service.ts` (`getProductInsight`, `generateProductInsight`, `getInsightsHealth`). Estado do painel num store com Signals próprio do painel (`loading`, `success`, `generating`, `error`).
-- **Botões (P-175, P-176):** "Gerar análise com IA" quando `meta.ia.diagnosticoSalvo = false`; "Gerar de novo" quando `true` (confirmação antes de `force = true`); "Análise aprofundada" envia `deep = true` (com confirmação se já houver salvo). Desabilitar durante o pedido e quando `meta.ia.podeGerar = false`; com `meta.ia.geracaoEmAndamento = true`, mostrar o estado "gerando" e refazer o `GET` a cada 5 s até 150 s.
+- **Botões (P-175, P-176, P-188):** "Gerar análise com IA" quando `meta.ia.geraComIa = true` e não há salvo; "Gerar resumo automático" quando `geraComIa = false` (a resposta vem rotulada "Resumo automático (sem IA)", com o motivo em linguagem simples); "Atualizar" quando `diagnosticoVencido`; "Gerar de novo" quando há salvo (confirmação antes de `force = true`). **Não existe "Análise aprofundada".** Desabilitar durante o pedido, quando `meta.ia.podeGerar = false` e, no caso de `force`, quando `podeForcar = false`. Com `geracaoEmAndamento = true`, mostrar "gerando" e refazer o `GET` a cada 5 s até 150 s. A tela **não mostra** valores de custo ou orçamento; no nível `ALERTA` pode exibir um aviso genérico e no `ESGOTADO`, o rótulo de resumo automático.
 - **Timeout HTTP do `POST`:** 150 s.
 - **Link para a Canibalização (Design Plan Q-D2, Q-D8):** `/analytics/canibalizacao?periodo=90&busca={sku}`; quando a F6 aceitar `abrir` (tarefa 7.3-F6), `&abrir={sku}` abre direto o drawer de equilíbrio de preço. O painel exibe a nota "A Canibalização usa períodos em dias (90 dias); os números podem diferir das janelas em meses desta análise".
 - **Sugestões de busca (`sugestoesBuscaHtml`):** só em `<iframe sandbox>` e só se o checkpoint aprovar (ADR-009 CP-10); nunca `innerHTML` na página.
@@ -823,33 +854,40 @@ export interface CascadeParcel {
 
 export interface InsightWarning { codigo: string; mensagem: string; }
 
+export type TemplateReason = 'GATE_VARIACAO' | 'GATE_RESIDUO_BAIXO' | 'GATE_VALOR_BAIXO' | 'ORCAMENTO_ESGOTADO' | 'IA_DESLIGADA' | 'IA_INDISPONIVEL';
+export type GenerationOrigin = 'cache' | 'template' | 'llm' | 'fallback';
+export type AiModel = 'gemini-4-hydrogen' | 'gemini-3.8-flash';
+
 export interface InsightMeta {
   timestamp: string; version: string; dataReferencia: string; ultimoDiaCoberto: string; mesBase: string;
   metrica: 'revenue' | 'quantity'; janela: 1 | 3 | 6 | 12; modoComparacao: 'point' | 'average'; promptVersion: string;
   indiceAfinidade: { disponivel: boolean; lastSyncAt: string | null }; avisos: InsightWarning[];
   ia: {
-    podeGerar: boolean; motivoBloqueio: 'SEM_VARIACAO' | 'ORCAMENTO_ESGOTADO' | 'IA_INDISPONIVEL' | null;
-    diagnosticoSalvo: boolean; diagnosticoSalvoEm: string | null; geracaoEmAndamento: boolean; escalonamentoPrevisto: boolean;
-    orcamento: { usadoUsd: number; restanteUsd: number; tetoUsd: number; percentualUsado: number };
+    podeGerar: boolean; motivoBloqueio: 'SEM_VARIACAO' | null;
+    geraComIa: boolean; motivoTemplate: TemplateReason | null;
+    diagnosticoSalvo: boolean; diagnosticoSalvoEm: string | null; diagnosticoVencido: boolean;
+    podeForcar: boolean; geracaoEmAndamento: boolean;
+    orcamento: { nivel: 'NORMAL' | 'ALERTA' | 'ESGOTADO' };
   };
 }
 
 export interface GenerateMeta extends InsightMeta {
-  reutilizado: boolean; modelo: string | null; tipoAnalise: 'PADRAO' | 'APROFUNDADA' | null;
-  escalonadoAutomaticamente: boolean; geradoEm: string | null;
+  origem: GenerationOrigin; motivoTemplate: TemplateReason | null; reutilizado: boolean;
+  modelo: AiModel | null; geradoEm: string | null;
 }
 
 export interface ProductInsightResponse { data: ProductInsight; meta: InsightMeta; }
 export interface GenerateInsightResponse { data: ProductInsight; meta: GenerateMeta; }
 export interface InsightErrorResponse {
-  error: { code: string; message: string; fields: string[]; motivo: 'IA_INDISPONIVEL' | 'ORCAMENTO_ESGOTADO' | 'LIMITE_DE_PEDIDOS' | null };
+  error: { code: string; message: string; fields: string[]; motivo: 'LIMITE_DE_PEDIDOS' | 'LIMITE_DIARIO' | null };
   meta: { timestamp: string; version: string };
 }
 export interface SourceRef {
   url: string; dominio: string; titulo: string; dataPublicacao: string | null; origemData: 'MODELO' | 'URL' | null;
 }
 // ProductInsight, AffineItem (celula: TrendCell do contrato da Tendência), Indicator, MarketDiagnosisBlock,
-// ImpactBlock e AiDiagnosis (inclui explicacao, hipoteses com fontes, sugestoesBuscaHtml): espelham 3.1.1 a 3.1.6.
+// ImpactBlock e AiDiagnosis (inclui explicacao, origem, hipoteses com fontes, sugestoesBuscaHtml): espelham 3.1.1 a 3.1.6.
+// ProductInsight acrescenta resumoAutomatico: string | null (só em origem = 'template'). Nenhum tipo carrega custo, tokens ou orçamento em dólar.
 ```
 
 ### 5.1 Respostas às dúvidas do Design Plan (`design/plans/analytics-tendencia-ia.md` §13)
@@ -861,7 +899,7 @@ export interface SourceRef {
 | Q-D3 | **Aceito.** `AfimItem.celula` é a `TrendCell` completa da Tendência | 3.1.4 |
 | Q-D4, Q-D5, Q-D9 | Fora do contrato (frontend). Q-D4 e Q-D5 aceitos como refatorações sem mudança de comportamento na 7.3; Q-D9 fica como T7 separada | tasks 7.3 |
 | Q-D6 | **Aceito.** `impactoEmOutrosProdutos` vem no `GET` (é do motor, P-171) | 3.1.5 |
-| Q-D7 | **Aceito.** `meta.ia` traz orçamento usado/restante, geração em andamento para a chave e data da análise salva | 2.1 |
+| Q-D7 | **Aceito com ajuste (v1.1.0):** `meta.ia` traz o **nível** do orçamento (`NORMAL`/`ALERTA`/`ESGOTADO`), geração em andamento e data da análise salva; **valores usado/restante/teto saíram por decisão de custo e privacidade operacional (4.4)** | 2.1 |
 | Q-D8 | **Aceito.** Link com `periodo=90` e nota de que os números podem diferir | §5 |
 
 ---
@@ -873,6 +911,6 @@ export interface SourceRef {
 | Python: topo de arquivo | Docstring do módulo com objetivo e as regras atendidas (`P-15X`) |
 | Python: constantes | Em `trend_insights/domain/constants.py`, cada uma com comentário de intenção e a regra; as marcadas "(reuso)" são **importadas** do módulo de origem |
 | Python: funções públicas | Docstring Google (Args/Returns/Raises) com `Regra: P-1XX` e o porquê quando não óbvio |
-| Pydantic / OpenAPI | `Field(description=...)` em PT-BR; `Literal[...]` nos enums; `responses={400, 404, 422, 429, 503}` com `model=InsightErrorResponse`; `json_schema_extra` com os exemplos 3.1.7, 3.1.8 e 3.2.1; `TREND_INSIGHTS_CONTRACT_VERSION = "1.0.0"`; a rota interna com `include_in_schema=False` |
+| Pydantic / OpenAPI | `Field(description=...)` em PT-BR; `Literal[...]` nos enums; `responses={400, 404, 422, 429, 503}` com `model=InsightErrorResponse` (o `503` só vale para `ANL-001`); `json_schema_extra` com os exemplos 3.1.7, 3.1.8 e 3.2.1; `TREND_INSIGHTS_CONTRACT_VERSION = "1.1.0"`; a rota interna com `include_in_schema=False` |
 | TypeScript | Comentário de topo por arquivo; TSDoc nas exportações com a regra; proibido `any` |
 | Logs | Só etapa, latência, modelo, tokens, custo, status, tamanhos e `PROMPT_VERSION` (P-185.2); nunca pacote, prompt, resposta, SKU+cliente ou a chave de API |

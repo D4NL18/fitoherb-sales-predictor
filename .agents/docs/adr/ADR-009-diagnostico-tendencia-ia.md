@@ -1,6 +1,6 @@
-# ADR-009: Diagnóstico de Motivos da Tendência de Vendas com IA (F7): módulo `trend_insights` por portas, migração nas janelas da Tendência, persistência em GCS e Gemini 4 sem LangChain/LangGraph
+# ADR-009: Diagnóstico de Motivos da Tendência de Vendas com IA (F7): módulo `trend_insights` por portas, migração nas janelas da Tendência, persistência em GCS e Gemini 4 Hydrogen (fallback Gemini 3.8 Flash) via Vertex AI, sem LangChain/LangGraph, com teto de US$ 2/mês
 
-> **Status:** Proposto (Etapa 2). Aguarda o checkpoint do usuário.
+> **Status:** Proposto (Etapa 2). **Revisão v2 (2026-11-24):** incorpora as decisões do usuário (Hydrogen sempre, Neon removido, fallback Gemini 3.8 Flash, teto de US$ 2/mês, Vertex AI, texto da IA sem números, geração só por botão) e a estratégia de custo do `ai_specialist` (`trend-insights-llm.md` §14). Aguarda o checkpoint do usuário nos pontos que seguem abertos (CP-10).
 > **Data:** 2026-11-24
 > **Autor:** Arquiteto (`architect.md`)
 > **Localização Mandatória:** `.agents/docs/adr/ADR-009-diagnostico-tendencia-ia.md`
@@ -9,8 +9,8 @@
 | :--- | :--- |
 | **Feature / Branch** | F7 — Diagnóstico de Motivos da Tendência de Vendas com IA. Worktree `claude/ai-sales-trend-analysis-8b0d75` (com `origin/main` mesclado, F6 incluída) |
 | **Plano aprovado** | `.agents/docs/tasks/ia-tendencia-vendas-motivos.md` (v2, Q-1..Q-8 decididas em 2026-11-24) |
-| **Regras de negócio** | `.agents/docs/business_rules/analytics-tendencia-ia.md` (`P-150` a `P-187`, erros `TIA-001` a `TIA-005`) |
-| **Contrato de API** | `.agents/docs/api_contracts/sales-trend-insights.md` (`trend-insights` **1.0.0**) |
+| **Regras de negócio** | `.agents/docs/business_rules/analytics-tendencia-ia.md` (`P-150` a `P-188`, erros `TIA-001` a `TIA-007`; revisões v2 de P-174..P-181, P-183 e P-185.4 a cargo do `analyst`) |
+| **Contrato de API** | `.agents/docs/api_contracts/sales-trend-insights.md` (`trend-insights` **1.1.0**) |
 | **Checklist técnico** | `.agents/docs/tasks/analytics-tendencia-ia.md` |
 | **Camada de IA (prompt, schema, grounding)** | `.agents/docs/architecture/trend-insights-llm.md` (responsável: `ai_specialist`; este ADR só referencia) |
 | **ADRs relacionados** | `ADR-003` (isolamento do `sales_trend`), `ADR-007` (migração direcional da F6, `MigrationSnapshot`, LGPD-CAN) |
@@ -25,7 +25,7 @@
 2. **Isolamento herdado.** O ADR-003 proíbe o `sales_trend` de importar `analytics`. A F7 precisa dos dois.
 3. **Janelas incompatíveis.** A F6 mede migração em 30/60/90 dias corridos com `PRE` e `CUR` contíguos. A Tendência compara meses com `comparisonMode` ∈ {`point`, `average`}. No `point` com X > 1, `CUR = [M]` e `PRE = [M − X]` **não são contíguos**, e `fetch_customer_sku_window_sales(pre_start, mid, ref)` não consegue representá-los (achado 1 do `analyst`, P-153.1).
 4. **Índice de afinidade efêmero.** `product_affinity_service` grava o índice em `data/cache/product_affinity_index.json` (disco do contêiner) e o atualiza num laço `asyncio` às 00:00 dentro do processo. O Cloud Run escala para zero (`--min-instances=0`, `--cpu-throttling`): o arquivo some a cada instância nova, o laço quase nunca dispara e não há reconstrução no cold start. A F7 proíbe o fallback por palavras da F6 (P-153.3), então sem índice ela perde metade do diagnóstico (achado 3).
-5. **LLM com custo, latência e superfície de ataque.** Gemini 4 Hydrogen/Neon com *grounding* no Google Search, só por botão (Q-1), teto mensal de US$ 30 (Q-4), chave de API, conteúdo da web dentro do prompt e instâncias efêmeras (até 3) que precisam compartilhar orçamento, trava de voo e diagnósticos salvos.
+5. **LLM com custo, latência e superfície de ataque.** Gemini 4 Hydrogen (fallback Gemini 3.8 Flash) pelo **Vertex AI**, com *grounding* no Google Search, só por botão (Q-1), **teto total de US$ 2,00/mês** (revisão v2; antes US$ 30), conteúdo da web dentro do prompt e instâncias efêmeras (até 3) que precisam compartilhar orçamento, trava de voo e diagnósticos salvos. Com escala a zero, nada em memória sobrevive: cache, livro de gastos e travas ficam no GCS.
 6. **Memória.** O contêiner tem 2Gi e já carrega os snapshots de `pricing`, `analytics` e `sales_trend`. A leitura por `(cliente, SKU)` é a etapa mais pesada da F7.
 
 ---
@@ -50,7 +50,7 @@ src/modules/trend_insights/
 │   ├── migration_cache.py    # TrendMigrationSnapshot por chave, voo único, TTL, LRU (DA-04)
 │   ├── evidence_cache.py     # EvidencePackage por chave completa, TTL, LRU (DA-05)
 │   ├── generation_guard.py   # dedup em voo (local + lease GCS), rate limit, orçamento (DA-08, DA-09)
-│   └── llm_orchestrator.py   # fluxo fixo do LLM: modelo -> chamada -> validação -> retry/fallback (DA-10)
+│   └── llm_orchestrator.py   # fluxo fixo: kill-switch -> cache -> gates -> reserva -> Hydrogen -> [Flash] -> validação -> template (DA-10, DA-12)
 ├── domain/                   # Python puro: sem I/O, sem fastapi, pyodbc, google-*, src.core
 │   ├── constants.py          # constantes da seção 2 das regras (as "(reuso)" são importadas, não redeclaradas)
 │   ├── exceptions.py         # TrendInsightsDomainException, TIA-001..003
@@ -61,8 +61,10 @@ src/modules/trend_insights/
 │   ├── affinity_group.py     # grupo afim, shift-share, diagnóstico de mercado (P-154..P-156)
 │   ├── decomposition.py      # cascata, corte, resíduo, altas e impacto em outros produtos (P-157..P-171)
 │   ├── supplier_rollup.py    # visão por fornecedor (P-172, fase 7.4)
-│   ├── model_selection.py    # Hydrogen x Neon (P-177)
-│   ├── budget.py             # pré-checagem do teto mensal (P-178.2), usando llm/pricing.py
+│   ├── model_policy.py       # Hydrogen -> Flash só por falha de infraestrutura (P-177 revisada, DA-12)
+│   ├── budget.py             # níveis NORMAL/ALERTA/ESGOTADO, reserva e acerto (P-178 revisada), usando llm/pricing.py
+│   ├── gates.py              # gates de não chamada e de grounding (P-188, P-180; DA-12), funções puras
+│   ├── template_summary.py   # resumo determinístico sem LLM (DA-12)
 │   └── ports.py              # Protocol de cada fonte (lista abaixo)
 ├── adapters/                 # implementações das portas; ÚNICO lugar que importa outros módulos
 │   ├── trend_adapter.py      # sales_trend: snapshot, compute_cell, catálogo ativo, 1ª venda por SKU
@@ -72,11 +74,11 @@ src/modules/trend_insights/
 │   └── promo_adapter.py, region_adapter.py, price_equilibrium_adapter.py
 ├── store/
 │   ├── insight_store.py      # diagnósticos salvos no GCS (DA-07)
-│   └── budget_store.py       # acumulado mensal no GCS com CAS (DA-09)
+│   └── budget_ledger.py      # livro de gastos no GCS com reserva e CAS (DA-09)
 ├── llm/                      # layout e conteúdo: .agents/docs/architecture/trend-insights-llm.md (ai_specialist)
 │   ├── client.py             # porta LlmClient + DTOs (LlmRequest, LlmResponse, LlmUsage, GroundingCitation)
-│   ├── gemini_client.py      # adaptador google-genai (ÚNICO arquivo de llm/ com I/O); backend gemini_api | vertex
-│   ├── prompts/tia_v1/       # blocos versionados (PROMPT_VERSION = "tia-v1")
+│   ├── gemini_client.py      # adaptador google-genai em modo Vertex AI com ADC (ÚNICO arquivo de llm/ com I/O)
+│   ├── prompts/tia_v2/       # blocos versionados (PROMPT_VERSION = "tia-v2")
 │   ├── output_schema.py      # Pydantic da resposta do LLM
 │   ├── evidence_payload.py   # pacote P-179 por lista branca (LGPD-TIA-03/04/06)
 │   ├── search_queries.py     # consultas sugeridas (P-180, LGPD-TIA-12)
@@ -87,7 +89,7 @@ src/modules/trend_insights/
 tests/trend_insights/          # pasta própria
 ```
 
-**Portas (`domain/ports.py`, `typing.Protocol`).** `TrendSource`, `AffinitySource`, `MigrationSource`, `SeasonalitySource`, `ElasticitySource`, `ChurnSource`, `StockSource`, `PromoSource`, `RegionSource`, `PriceEquilibriumSource`, `InsightStore`, `BudgetStore`, `InFlightLease`, `LlmClient`. Cada método devolve um resultado tipado **ou** um `NotEvaluated(reason)` (P-173): a falha de uma fonte vira `NAO_AVALIADO` com `motivoNaoAvaliado` e o diagnóstico segue. A única exceção que interrompe é `TrendSourceUnavailable` (a própria célula, `503 ANL-001`).
+**Portas (`domain/ports.py`, `typing.Protocol`).** `TrendSource`, `AffinitySource`, `MigrationSource`, `SeasonalitySource`, `ElasticitySource`, `ChurnSource`, `StockSource`, `PromoSource`, `RegionSource`, `PriceEquilibriumSource`, `InsightStore`, `BudgetLedger`, `InFlightLease`, `LlmClient`. Cada método devolve um resultado tipado **ou** um `NotEvaluated(reason)` (P-173): a falha de uma fonte vira `NAO_AVALIADO` com `motivoNaoAvaliado` e o diagnóstico segue. A única exceção que interrompe é `TrendSourceUnavailable` (a própria célula, `503 ANL-001`).
 
 **Regras de dependência (verificadas por teste de importação no `tester`):**
 
@@ -127,7 +129,7 @@ GET /insights/product/{sku}                       POST /insights/product/{sku}/g
         │                                                   ▼
         ▼                                       modo SEM_VARIACAO? ─► 422 TIA-003
  InsightStore.get(chave) (só leitura,           InsightStore.get(chave) e !force ─► devolve salvo (reutilizado)
-   zero token, P-174)                           GenerationGuard: rate limit (429) ─► orçamento (503)
+   zero token, P-174)                           gates e kill-switch (DA-12) ─► rate limit (429) ─► reserva de orçamento (negada = template)
         │                                         ─► lease local+GCS (dedup, DA-08)
         ▼                                       LlmOrchestrator (DA-10) ─► validação P-181/P-182
  200 { cascata, grupoAfim,                      ─► InsightStore.put (só sucesso, P-175.5)
@@ -135,8 +137,8 @@ GET /insights/product/{sku}                       POST /insights/product/{sku}/g
                                                 200 { ..., diagnosticoIa } (ou fallback 200 sem IA)
 ```
 
-- **Chave do diagnóstico (P-175):** `(escopo, id, metric, window, baseMonth, comparisonMode, dataReferencia, PROMPT_VERSION)`.
-- **`dataReferencia` única:** a da **snapshot da Tendência** (`SalesTrendSnapshot.reference_date`, data de negócio UTC−3). A F7 usa essa data também como corte da migração, para que célula e migração vejam os mesmos dias. (A F6 usa `datetime.now(timezone.utc).date()`; a diferença não afeta a F7 e fica registrada como débito da F6.)
+- **Chave do diagnóstico (P-175 revisada, DA-12):** `(escopo, id, metric, window, baseMonth, comparisonMode, PROMPT_VERSION, evidenceHash)`. `dataReferencia` **saiu da chave**: carga nova do ERP com evidência arredondada igual reaproveita o diagnóstico salvo (custo US$ 0).
+- **`dataReferencia` única:** a da **snapshot da Tendência** (`SalesTrendSnapshot.reference_date`, data de negócio UTC−3). Ela deixa de compor a chave do diagnóstico (DA-12), mas continua como corte da migração: para que célula e migração vejam os mesmos dias. (A F6 usa `datetime.now(timezone.utc).date()`; a diferença não afeta a F7 e fica registrada como débito da F6.)
 - **Nenhuma rota `GET` recebe o `LlmClient`** por injeção: o router do `GET` monta o serviço sem o cliente. O teste de P-174 usa dublê com contador.
 
 ### DA-03 — Janelas: `TrendWindowSpec` reaproveita `window_pair`
@@ -155,7 +157,7 @@ TrendWindowSpec(pre_start, pre_end_exclusive, cur_start, cur_end_exclusive,
 
 ### DA-04 — Migração nas janelas da Tendência (achado 1)
 
-**Uma única variante de leitura com 4 datas, usada em todos os modos.** Em vez de dois caminhos (contíguo × não contíguo), a F7 usa sempre `fetch_customer_sku_split_window_sales(pre_start, pre_end, cur_start, cur_end)`; nos modos contíguos `pre_end == cur_start` e o resultado é idêntico ao de `fetch_customer_sku_window_sales` (o `tester` prova a equivalência com a mesma massa). A função da F6 fica intacta.
+**Uma única variante de leitura com 4 datas, usada em todos os modos.** Em vez de dois caminhos (contíguo × não contíguo), a F7 usa sempre `fetch_customer_sku_split_window_sales(pre_start, pre_end, cur_start, cur_end)`; nos modos contíguos `pre_end == cur_start` e o resultado é idêntico ao de `fetch_customer_sku_window_sales` (o `tester` prova a equivalência com a mesma massa). A função da F6 fica intacta e a F7 **nunca** a chama: **4 datas sempre** (reafirmado na revisão v2), inclusive em `average` e quando `pre_end == cur_start`.
 
 ```sql
 SELECT
@@ -241,7 +243,7 @@ Meta: **pico incremental ≤ 200 MB e residente ≤ 50 MB** por instância, com 
 - **Lançamento afim (P-160):** a 1ª venda de cada SKU vem da série mensal da snapshot da Tendência (primeiro mês com faturamento líquido > 0). Como as janelas são alinhadas a mês, a granularidade mensal basta; o corte `primeiraData + 90 dias` é aplicado no mês que contém essa data. Nenhuma SQL nova.
 - **Região (P-167):** `fetch_sku_region_window_sales(sku, pre_start, pre_end, cur_start, cur_end)` em `analytics/repository`: `SELECT [UF], somas pre/cur e COUNT(DISTINCT [Cod Cliente])` agrupado por UF, só para o SKU pedido. Devolve só UF, somas e contagens, nunca códigos (LGPD-TIA-01). O agrupamento é feito no domínio antes de qualquer saída (LGPD-TIA-05): UF com < 3 clientes vai para `OUTRAS`; se `OUTRAS` ficar com < 3 clientes, absorve a menor UF exibida até atingir o piso; se nem assim, a quebra regional inteira fica `NAO_AVALIADO` com motivo `ANONIMIZACAO`. As contagens nunca saem do domínio.
 - **Contagens pequenas (LGPD-TIA-06 e pedido do coordenador para a API):** `clientesMigrados` e `clientesPerdidosQtd` menores que 3 saem como a faixa `"<3"` na API, no GCS e no pacote do LLM; a confiança `BAIXA` carrega a mesma informação.
-- **`meta.ia` no `GET` (Design Plan Q-D7):** o `GET` lê o acumulado do mês (cache de 60 s por instância), consulta a existência do lease de geração em voo da chave (uma leitura de metadados no GCS) e a data do diagnóstico salvo, para a tela desabilitar o botão antes do primeiro clique. Nenhuma dessas leituras chama o LLM.
+- **`meta.ia` no `GET` (Design Plan Q-D7):** o `GET` lê o **nível** do orçamento (`NORMAL`/`ALERTA`/`ESGOTADO`, do livro de gastos, cache de 60 s por instância; valores em dólar, tokens e consultas nunca saem da API), consulta a existência do lease de geração em voo da chave (uma leitura de metadados no GCS) e a data do diagnóstico salvo, para a tela desabilitar o botão antes do primeiro clique. Nenhuma dessas leituras chama o LLM.
 
 ### DA-06 — Índice de afinidade no GCS e sync por Cloud Scheduler (tarefa 7.0 c, achado 2)
 
@@ -277,14 +279,14 @@ Um bucket por ambiente, `fitoherb-trend-insights-<env>`, região `southamerica-e
 
 | Prefixo | Conteúdo | Ciclo de vida |
 | :--- | :--- | :--- |
-| `insights/v1/product/{sku}/{metric}/{comparisonMode}/w{window}/{baseMonth}/{dataReferencia}/{promptVersion}.json` | Diagnóstico validado (`StoredInsight`: diagnóstico, `sugestoesBuscaHtml`, `modelo`, `tipoAnalise`, `geradoEm`, `promptVersion`, `evidenceHash`, tokens, consultas, custo). **Sem** usuário, e-mail ou IP de quem gerou (LGPD-TIA-09) | Exclusão com 90 dias (`INSIGHT_RETENTION_DAYS`, Q-3), configurada **no bucket** (regra de ciclo de vida no script de deploy), não só no código |
+| `insights/v1/product/{sku}/{metric}/{comparisonMode}/w{window}/{baseMonth}/{promptVersion}/{evidenceHash}.json` | Diagnóstico validado (`StoredInsight`: diagnóstico, `sugestoesBuscaHtml`, `modelo`, `origem`, `geradoEm`, `promptVersion`, `evidenceHash`, tokens, consultas, custo). **Sem** usuário, e-mail ou IP de quem gerou (LGPD-TIA-09) | Exclusão com 90 dias (`INSIGHT_RETENTION_DAYS`, Q-3), configurada **no bucket** (regra de ciclo de vida no script de deploy), não só no código |
 | `insights/v1/supplier/{supplierKeyHash}/...` | Idem para fornecedor (fase 7.4); a chave opaca vira SHA-256 truncado para caber no caminho | 90 dias |
 | `affinity/product_affinity_index.json` | Índice de afinidade (DA-06) | Sem exclusão |
-| `budget/{AAAA-MM}.json` | Acumulado do mês (DA-09) | 400 dias |
+| `ai-budget/{AAAA-MM}.json` | Livro de gastos do mês com reservas (DA-09). Só agregados em dólar; sem usuário | 400 dias |
 | `locks/...` | Leases de geração (`locks/insights/{sha256(chave)}.lock`) e de sync; corpo só `{expiresAt}`, sem identificador de pessoa (LGPD-TIA-10) | 1 dia (limpeza de leases órfãos) |
 
 - Gravação do diagnóstico: `if_generation_match=0` na primeira vez; em "Gerar de novo" (`force=true`) sobrescreve com a geração lida. Escrita só depois da validação (P-175.5: fallback nunca é salvo).
-- `evidenceHash` = SHA-256 do pacote enviado ao LLM; o `GET` o compara ao pacote atual e marca `diagnosticoIa.desatualizado = true` se diferirem (ex.: o índice mudou no mesmo dia). Isso responde ao P-175.4 sem listar histórico.
+- `evidenceHash` = SHA-256 do pacote de evidências **canônico** (o mesmo que iria ao LLM: listas ordenadas, números arredondados, sem timestamp nem nonce). Faz parte da chave do objeto: o `GET` monta o pacote, calcula o hash e procura o objeto; achando, devolve o diagnóstico; não achando, `diagnosticoIa = null`. Sem listagem de histórico (P-175.4 resolvido). **TTL lógico** de `INSIGHT_SOFT_TTL_DAYS = 30`: vencido, a resposta traz `meta.vencido = true` e a tela oferece "Atualizar" (explícito; nada regenera sozinho); diagnóstico sem fator externo não vence por tempo. Teste de contrato "mesmo dado, mesmo hash" obrigatório.
 - Conteúdo salvo: só agregados de produto/fornecedor, texto do LLM já validado e URLs de fonte. Zero dado de cliente (P-185.1).
 
 ### DA-08 — Deduplicação de pedidos em voo (P-176.2)
@@ -297,27 +299,39 @@ Duas camadas:
 
 **Por que síncrono (sem 202 + polling de job):** o Cloud Run roda com `--cpu-throttling`, então trabalho em segundo plano depois da resposta fica sem CPU. A chamada síncrona de 10–30 s típicos cabe no timeout de 300 s; a tela já tem o estado "gerando IA".
 
-### DA-09 — Teto de custo e rate limit
+### DA-09 — Teto de US$ 2/mês, livro de gastos, kill-switch e rate limit (revisado v2)
 
-- **Tabela de preços em configuração** (`TREND_AI_PRICING_JSON`: preço por 1M tokens de entrada/saída por modelo e **preço por consulta de busca executada**), nunca no código (P-178.1). A documentação oficial cobra o *grounding* por consulta executada (US$ 14 por 1.000 após 5.000 grátis/mês compartilhadas), não por pedido; o orçamento assume sempre o preço cobrado, porque o saldo grátis não é legível pela API (`trend-insights-llm.md` §10, CP-10).
-- **Custo real:** `llm/pricing.py` = tokens informados pela API (inclui *thinking*) + `executed_queries_count × preço por consulta`.
-- **Limite de consultas sugeridas:** `MAX_SEARCH_QUERIES_DEFAULT = 3`, `MAX_SEARCH_QUERIES_DEEP = 5` (o modelo decide as consultas; o backend sugere e mede).
-- **Pré-checagem antes de cada tentativa (P-178.2):** `gastoMes + custoEstimadoMaximo(modelo) > TREND_AI_MONTHLY_BUDGET_USD` → `503 TIA-004 ORCAMENTO_ESGOTADO` (na primeira tentativa) ou fallback (nas seguintes). Pior caso por tentativa: **~US$ 0,13 no Hydrogen e ~US$ 0,30 no Neon** (12 mil tokens de entrada, `max_output_tokens` do modelo, 2× o máximo de consultas). Ordem de grandeza: ~300 diagnósticos/mês no pior caso realista dentro dos US$ 30.
-- **Liquidação:** após cada chamada (inclusive falhas que consumiram tokens), `BudgetStore.add(custo)` faz *read-modify-write* em `budget/{AAAA-MM}.json` com `if_generation_match` e até 5 novas tentativas em conflito. Mês civil em UTC−3. Alerta de log ao cruzar 80%.
-- **Excesso aceito:** entre a pré-checagem e a liquidação, pedidos concorrentes podem passar do teto em no máximo `instâncias × pedidos em voo × custo máximo` (alguns centavos). Documentado; sem reserva distribuída (YAGNI).
-- **Rate limit (P-176.3; onde vive o contador, PC-04 / LGPD-TIA-11):** janela deslizante de 60 s **só em memória**, por instância (`service/generation_guard.py`). A chave é `HMAC-SHA256(sal, identificador)`, em que o identificador é o usuário do Basic Auth ou, na ausência, o 1º IP de `X-Forwarded-For`, e o sal é gerado com `secrets.token_bytes(32)` na partida do processo (nunca persistido). O dicionário guarda só o hash e os instantes dos pedidos; entradas sem pedido há mais de 60 s são removidas a cada acesso. Usuário, IP e hash **não** vão para log, GCS, resposta ou nome de objeto. Só pedidos que **chamam** o LLM contam. Excedido → `429 TIA-004 LIMITE_DE_PEDIDOS` com `Retry-After`. Limitação aceita: com até 3 instâncias o limite efetivo pode chegar a 3× por usuário; como todos os usuários hoje compartilham a mesma credencial Basic, o limite é na prática global por instância (CP-4). Compartilhar o contador entre instâncias exigiria objeto no GCS com hash e TTL ≤ 1 min; não adotado (YAGNI, o teto mensal já protege o custo).
+- **Meta e teto:** gasto total da F7 (LLM + *grounding* + infra) ≤ **US$ 2,00/mês**. `TREND_AI_MONTHLY_BUDGET_USD = 1,80` (LLM + *grounding*; ~US$ 0,10 de infra e ~US$ 0,10 de margem) e `TREND_AI_DAILY_BUDGET_USD = 0,20` (evita queimar o mês em um dia). Estimativa: ~US$ 0,014 a 0,018 por geração, **~104 gerações/mês** (~55 no pior caso com *grounding* todo cobrado); cache e template custam US$ 0 e são ilimitados (`trend-insights-llm.md` §14.10).
+- **Tabela de preços em configuração** (`TREND_AI_PRICING_JSON`), nunca no código: `gemini-4-hydrogen` US$ 1,50/7,50 por 1M tokens (entrada/saída, saída inclui *thinking*); `gemini-3.8-flash` US$ 0,75/3,75 **até 31/12/2026** e US$ 1,50/7,50 **a partir de 01/01/2027** (a configuração leva a data de virada; revisar na virada); *grounding* US$ 0,014 por consulta executada acima da cota. Preços do Vertex AI **não confirmados** na documentação: usar esta tabela e conferir no Billing.
+- **Custo real:** `llm/pricing.py` = tokens informados pela API (inclui *thinking*) + `consultas_executadas × preço`, com as primeiras `GROUNDING_FREE_QUERIES_ASSUMED = 1500` consultas do mês tratadas como grátis (premissa conservadora; a cota real é 5.000 e o escopo não está confirmado).
+- **Livro de gastos** (`ai-budget/AAAA-MM.json` no GCS, `BudgetLedger`): `gastoMes`, `gastoDia` (com a data), `reservado` (lista de reservas com `expiresAt`) e `consultasMes`. Escrita *read-modify-write* com `if_generation_match` e até 5 novas tentativas em conflito. Mês e dia civis em UTC−3.
+- **Reserva e acerto (substitui a pré-checagem e o "excesso aceito"):** antes de cada chamada ao LLM, reserva-se `custoEstimadoMaximo` (8.000 tokens de entrada + 2.500 de saída = ~US$ 0,031; +3 × 0,014 = ~US$ 0,073 se acima da cota grátis assumida). Depois da chamada, acerta-se com o `usage` real (inclusive falhas que consumiram tokens). Reservas sem acerto vencem em `RESERVATION_TTL_SECONDS = 150` e são liberadas. Pedidos simultâneos não estouram o teto porque cada um reserva antes.
+- **Falha fechada:** se o livro não puder ser lido ou escrito (GCS fora), **não se chama o LLM**; responde-se com template.
+- **Níveis e degradação (P-178 revisada):**
+
+| Nível | Condição | Efeito |
+| :--- | :--- | :--- |
+| `NORMAL` | gasto do mês < 80% do teto e do dia < teto diário | Comportamento completo |
+| `ALERTA` | ≥ 80% (US$ 1,44) | Log `tia.budget.alert`; *grounding* só com resíduo ≥ 0,50; `force=true` e "Atualizar" desabilitados |
+| `ESGOTADO` | ≥ 100% (US$ 1,80), diário estourado ou saldo menor que a reserva | **Sem LLM:** resposta `200` com resumo por template (`meta.ia.origem = "template"`, `motivoTemplate = ORCAMENTO_ESGOTADO`). Volta no dia 1º (ou no dia seguinte, se foi o teto diário) |
+
+- **Kill-switch:** `TREND_AI_ENABLED=false` (variável de ambiente, sem deploy de código) é o 1º passo do fluxo; com ele desligado o `POST` responde template (`motivoTemplate = IA_DESLIGADA`) e o `GET` sinaliza `meta.ia.motivoBloqueio = IA_DESLIGADA`. Nova revisão do Cloud Run com a variável alterada basta para aplicar.
+- **Medição independente:** **Cloud Billing Budget de US$ 2,00** no projeto, alertas em 50/80/100% por e-mail (pendência do `devops`). Ele **não corta** gasto; o livro é a trava preventiva e a fatura é a verificação.
+- **Rate limit (P-176 revisada; PC-04 / LGPD-TIA-11):** janela deslizante de 60 s **só em memória**, por instância (`service/generation_guard.py`), `GENERATE_RATE_LIMIT_PER_MINUTE = 2`; limites diários por usuário `GENERATE_MAX_PER_USER_PER_DAY = 10` e `FORCE_MAX_PER_USER_PER_DAY = 3`, também em memória. A chave é `HMAC-SHA256(sal, identificador)` (usuário do Basic ou 1º IP de `X-Forwarded-For`), sal por processo (`secrets.token_bytes(32)`, nunca persistido); entradas expiradas são removidas a cada acesso; usuário, IP e hash não vão para log, GCS, resposta ou nome de objeto. Só pedidos que **chamam** o LLM contam (cache e template não contam). Excedido → `429 TIA-004` com `motivo = LIMITE_DE_PEDIDOS` (minuto) ou `LIMITE_DIARIO` (dia/`force`) e `Retry-After`. **Limitação aceita:** com escala a zero e até 3 instâncias, os contadores zeram e multiplicam; como todos os usuários compartilham a credencial Basic, é praticamente um limite global por instância. A proteção financeira real é o livro (diário e mensal), não este limite.
+- **Nada de custo vai ao cliente:** a API não expõe valores em dólar, tokens, consultas de busca, preços, tetos nem o livro (contrato 1.1.0, §2.1 e §3.4). A tela recebe só o `nivel` do orçamento e a `origem` da resposta.
 
 ### DA-10 — Camada de LLM: SDK `google-genai`, sem LangChain e sem LangGraph
 
-- `llm/gemini_client.py` implementa a porta `LlmClient` (`llm/client.py`: `generate(LlmRequest) -> LlmResponse`, `is_configured() -> bool`) sobre o SDK oficial `google-genai`, pela **Interactions API** (recomendada pelo Google para projetos novos), com *grounding* `google_search` como única ferramenta, saída estruturada, `thinking_level` explícito, timeout `LLM_TIMEOUT_SECONDS`. Devolve texto validável, citações `url_citation`, URLs dos resultados da busca, nº de consultas executadas, `search_suggestions` (HTML do Google) e uso de tokens. Nenhuma exceção do SDK sai sem conversão; logs nunca usam `str(exc)` do SDK (LGPD-TIA-07). Detalhes: `trend-insights-llm.md` §3, §4 e §8.
-- `service/llm_orchestrator.py` é o fluxo fixo em Python: `escolher modelo (P-177) → pré-checar orçamento → chamar → validar (P-181/P-182) → [1 nova tentativa com violações | até 3 por erro transitório com backoff exponencial | troca para 2 chamadas] → resultado | fallback (P-183)`, tudo dentro de `LLM_TOTAL_DEADLINE_SECONDS = 110`. Cada etapa é uma função pura testável sobre um DTO imutável; log estruturado por etapa (etapa, latência, modelo, tokens, consultas, custo, status, tamanho do pacote, `PROMPT_VERSION`), sem prompt, pacote ou resposta (P-185.2).
+- `llm/gemini_client.py` implementa a porta `LlmClient` (`llm/client.py`: `generate(LlmRequest) -> LlmResponse`, `is_configured() -> bool`) sobre o SDK oficial `google-genai` em **modo Vertex AI** (credencial da conta de serviço do Cloud Run por ADC; endpoint `global`, processamento `us`/`eu`), com *grounding* `google_search` como única ferramenta, saída estruturada, `thinking_level` explícito, timeout `LLM_TIMEOUT_SECONDS`. Usa a Interactions API se estiver disponível no Vertex e, senão, `generate_content` (confirmar no spike 7.2-S). Devolve texto validável, citações `url_citation`, URLs dos resultados da busca, nº de consultas executadas, `search_suggestions` (HTML do Google) e uso de tokens. Nenhuma exceção do SDK sai sem conversão; logs nunca usam `str(exc)` do SDK (LGPD-TIA-07). Detalhes: `trend-insights-llm.md` §3, §4 e §8.
+- `service/llm_orchestrator.py` é o fluxo fixo em Python (DA-12): `kill-switch → cache → gates → rate limit → reserva de orçamento → Hydrogen → [falha de infraestrutura: 1 chamada Gemini 3.8 Flash] → validar (P-181/P-182) → [1 nova tentativa por schema no mesmo modelo | até LLM_TRANSIENT_RETRY_LIMIT = 2 por erro transitório com backoff] → resultado | template`, tudo dentro de `LLM_TOTAL_DEADLINE_SECONDS = 110` (limite duro, cabe com 2 tentativas + Flash). Cada etapa é uma função pura testável sobre um DTO imutável; log estruturado por etapa (etapa, latência, modelo, tokens, consultas, custo, status, tamanho do pacote, `PROMPT_VERSION`), sem prompt, pacote ou resposta (P-185.2).
 - **Modo de chamada (`TREND_AI_CALL_MODE = single | two_step`, padrão `single`):** saída estruturada + Google Search na mesma chamada é suportada nos Gemini 4, mas está em **Preview**. Por isso o orquestrador também implementa o modo de 2 chamadas (pesquisa com busca e texto livre → estruturação **sem** busca, com a lista de URLs da etapa 1 como allow-list). A troca é por configuração ou **automática na mesma geração** quando a API recusa a combinação (`400`) ou devolve fator externo sem nenhuma citação. A troca automática não conta como nova tentativa por schema, mas o custo da 1ª chamada entra no orçamento.
-- **Fornecedor do LLM (PC-01 da privacidade × CP-1 do `ai_specialist`, ponto CP-9 do checkpoint):** decisão desta versão = **Gemini API em projeto pago, com `store=false`** (desliga a retenção de 55 dias das interações), porque é onde preço, *grounding* + schema e Interactions API estão confirmados na documentação oficial dos Gemini 4. O transporte é **selecionável por variável de ambiente** `TREND_AI_BACKEND = gemini_api | vertex`: com `vertex`, o cliente usa a conta de serviço do Cloud Run (ADC, sem chave) e o `GEMINI_API_KEY` deixa de ser necessário, sem mudança de código no domínio. A privacidade recomenda Vertex AI; a troca fica para o usuário no checkpoint, após um spike que confirme preço e Interactions no Vertex. **Nível gratuito proibido** (sem *grounding* no Hydrogen e com uso dos dados para melhoria de produto, LGPD-TIA-08). Registro de retenção: Gemini API pago `store=false` sem retenção de interação; o *grounding* tem retenção própria do Google de 30 dias de prompt e saída (Termos). Região de processamento: não informada na Gemini API; no Vertex, `global`/`us`/`eu` (nenhuma no Brasil). O pacote não tem dado pessoal (LGPD-TIA-03..06), então não há transferência internacional de dado pessoal; o que sai é segredo comercial, coberto pelo contrato do projeto pago.
-- **Temperatura (exceção registrada a `ai-llm-integration-rules.md` §3, CP-6 do `ai_specialist`):** não se envia `temperature`. Para Gemini 3 o Google recomenda manter 1.0 e, para Gemini 4, o parâmetro não tem efeito documentado; o determinismo vem do JSON Schema fechado (`enum`, `maxItems`, `additionalProperties: false`), do `thinking_level` explícito (Hydrogen `low`, Neon `medium`) e da validação estrita. Revisitar se o Google documentar `temperature` para os Gemini 4.
+- **Fornecedor do LLM (decisão do usuário, resolve PC-01 e CP-9):** **Vertex AI**, sem chave de API (ADC). `TREND_AI_BACKEND` e `GEMINI_API_KEY` deixam de existir; a conta de runtime recebe `roles/aiplatform.user` no projeto. **Nível gratuito da Gemini API proibido** (LGPD-TIA-08) e a Gemini API com chave não é mais backend suportado. Na documentação, o Hydrogen no Vertex tem *grounding* e saída estruturada no endpoint `global`; **não confirmados** preço no Vertex e Interactions API no Vertex (spike 7.2-S; contingência `generate_content`). Retenção: o *grounding* tem retenção própria do Google de 30 dias de prompt e saída (Termos); processamento em `us`/`eu` (nenhuma região no Brasil). O pacote não tem dado pessoal (LGPD-TIA-03..06), então não há transferência internacional de dado pessoal; o que sai é segredo comercial, coberto pelo contrato do projeto pago.
+- **Temperatura (exceção registrada a `ai-llm-integration-rules.md` §3, CP-6 do `ai_specialist`):** não se envia `temperature`. Para Gemini 3 o Google recomenda manter 1.0 e, para Gemini 4, o parâmetro não tem efeito documentado; o determinismo vem do JSON Schema fechado (`enum`, `maxItems`, `additionalProperties: false`), do `thinking_level` explícito (`low` no Hydrogen e no Flash; `minimal` dá erro no Flash) e da validação estrita. Revisitar se o Google documentar `temperature` para os Gemini 4.
 - **Sugestões de busca do Google (Termos do *grounding*), ponto aberto CP-10 do checkpoint:** os Termos exigem exibir as *Search Suggestions* (HTML fornecido pelo Google) junto do resultado e proíbem modificar ou intercalar conteúdo nos *Grounded Results*. Isso conflita com P-184.5 (texto puro) e com a troca de marcadores pelos números do motor (P-182.1). Desenho provisório: o HTML é guardado no GCS com o diagnóstico e exposto no campo opcional `diagnosticoIa.sugestoesBuscaHtml`, que a tela só pode renderizar num `iframe` com `sandbox` (sem scripts do nosso domínio) abaixo do diagnóstico, como única exceção ao texto puro; no modo de 2 chamadas, o texto exibido vem da chamada **sem** *grounding*, o que separa o *Grounded Result* (notas) da redação final. Precisa de avaliação do `security` e jurídica (ou `ai_governance_auditor`) antes da Etapa 3.
 - **Datas das fontes:** o *grounding* não devolve data de publicação. A data vem da leitura do modelo, cruzada com data no caminho da URL (`origemData = MODELO | URL`); sem data, o fator externo vira hipótese `SEM_DATA` (P-182.4). O contrato aceita `dataPublicacao` nula nas fontes das hipóteses.
-- **Segredo:** `GEMINI_API_KEY` no **Secret Manager** (`gemini-api-key`), exposto ao contêiner com `--set-secrets=GEMINI_API_KEY=gemini-api-key:<versão fixada>`; a conta de runtime recebe `roles/secretmanager.secretAccessor` só nesse segredo. `config.py` guarda só `has_api_key: bool` para o health; a chave nunca entra em log, resposta, exceção ou repositório (P-185.4). Sem chave (com `gemini_api`) → `503 TIA-004 IA_INDISPONIVEL` no `POST`, `GET` intacto.
-- **IDs de modelo** em `TREND_AI_MODEL_DEFAULT`/`TREND_AI_MODEL_DEEP` (P-177.5); `thinking_level` em `TREND_AI_THINKING_DEFAULT`/`_DEEP`; teto de saída em `TREND_AI_MAX_OUTPUT_TOKENS_DEFAULT`/`_DEEP`.
+- **Segredo:** nenhum para a IA. Sem chave de API, o Secret Manager deixa de ser usado por ela (a migração de `AUTH_PASSWORD`/`DB_PASSWORD` do CP-8 permanece). O livro, os diagnósticos e o cache não guardam credencial. `config.py` expõe só `ia_ligada: bool` (`TREND_AI_ENABLED`) para o health. IA desligada ou Vertex indisponível desde o início → `POST` responde template (`IA_DESLIGADA`/`IA_INDISPONIVEL`), `GET` intacto.
+- **IDs de modelo e limites** em variáveis: `TREND_AI_MODEL_DEFAULT = gemini-4-hydrogen`, `TREND_AI_MODEL_FALLBACK = gemini-3.8-flash`, `TREND_AI_THINKING_DEFAULT = low`, `TREND_AI_MAX_OUTPUT_TOKENS_DEFAULT = 2500`. Nada de modelo "aprofundado": **o Neon foi removido** e não existe caminho de código que o use (teste de aceite na 7.2).
+- **IA sem números no texto (decisão do usuário):** `resumo`, `explicacao`, `recomendacoes` e a `descricao` das hipóteses saem **sem nenhum dígito, valor, percentual ou código de SKU**; o LLM cita produtos pela descrição e as grandezas ficam nos campos numéricos do motor (`parcelaEstimada`, `pontosPercentuais`, cascata), exibidos pela tela ao lado do texto. A validação (P-182.1 revisada) rejeita dígitos no texto (pedido de reescrita 1×, depois descarta o trecho) e o pacote enviado ao LLM não contém marcadores de substituição numérica. Isso elimina a troca de marcadores no texto e reduz o conflito com os Termos do *grounding* (CP-10).
 
 **Gatilhos para revisitar a decisão (adotar LangGraph):** (1) investigação agêntica em várias rodadas em que o LLM escolhe quais dados internos consultar (ciclo ReAct com ferramentas de leitura); (2) chat de acompanhamento sobre o diagnóstico com memória por conversa; (3) segundo agente (ex.: revisor de fontes) com estado compartilhado; (4) necessidade de checkpoint/retomada de um fluxo de mais de ~3 chamadas. Nesses casos, `LlmClient` e as funções de etapa viram nós sem reescrever o domínio.
 
@@ -326,6 +340,24 @@ Duas camadas:
 - `InsightsAPIRoute` (mesmo padrão do `TrendAPIRoute`, sem handler global): `RequestValidationError` → `400 TIA-001` com nomes de campo; exceções de domínio `TIA-002/003`; `GenerationRefused(motivo)` → `TIA-004` (503 ou 429); `TrendSourceUnavailable` → `503 ANL-001`; inesperado → 500 genérico sem stacktrace.
 - Os adaptadores traduzem `TrendDataSourceError` (TND-004) e `AnalyticsDataSourceError` (ANL-001) em exceções de porta; nenhuma exceção de outro módulo sobe até a rota (evita que o handler global do `analytics` responda no formato dele).
 - Corpo: `{ "error": { "code", "message", "fields", "motivo"? }, "meta": { "timestamp", "version" } }`.
+
+### DA-12 — Decisão de chamada: cache por `evidenceHash`, gates, template e fallback de modelo (revisão v2)
+
+Ordem do `POST /generate`, da etapa mais barata à mais cara; cada etapa que responde custa US$ 0 (`trend-insights-llm.md` §14.2):
+
+1. **Kill-switch** (`TREND_AI_ENABLED=false`) ou Vertex indisponível → template.
+2. **Cache de resultado** no GCS (chave com `evidenceHash`, sem usuário, compartilhado; L1 em memória de 5 min só para evitar leituras repetidas) → devolve o salvo (`origem = "cache"`). `force=true` é o único jeito de pular o cache.
+3. **Gate de explicabilidade** (P-188): `|variacaoPct| < 2%`, `SEM_BASE`, `|Δ faturamento| < R$ 1.000` (`LLM_MIN_ABS_REVENUE_DELTA`) ou resíduo < 0,20 (`LLM_MIN_RESIDUAL_SHARE`) sem `REGIONAL` e sem diagnóstico de mercado → template. (`SEM_VARIACAO` continua `422 TIA-003`.)
+4. **Rate limit** (DA-09) → `429`.
+5. **Reserva de orçamento** (DA-09): negada → template.
+6. **Single-flight** (DA-08): seguidor aguarda o resultado do pedido em voo.
+7. **Hydrogen**, com *grounding* só se o gate de *grounding* liberar (mercado em queda/alta, ou resíduo ≥ 0,30, ou `REGIONAL` com resíduo ≥ 0,15; a 80% do orçamento o limiar sobe a 0,50), `MAX_SEARCH_QUERIES = 2` (1 no `QUALITATIVO`).
+8. **Falha de infraestrutura** do Hydrogen (timeout, 5xx, 429, indisponível) após 2 tentativas → **uma** chamada ao Gemini 3.8 Flash (`origem = "fallback"`); se schema + *grounding* não funcionar no Flash, roda sem *grounding* com aviso. Falha de schema repete no mesmo modelo (1×) e nunca vai ao Flash. Falhando tudo → template. A chave de cache não inclui o modelo.
+
+- **Template (`template_summary.py`):** texto determinístico a partir de tipo, sentido e `pontosPercentuais` das parcelas e do diagnóstico de mercado; rotulado "Resumo automático (sem IA)"; `diagnosticoIa = null`; não é erro e **não é salvo** como diagnóstico. Respeita a regra de texto sem números (os valores ficam nos campos da cascata).
+- **Substitui o fallback antigo** "200 + `IA_FALHOU` + `diagnosticoIa = null`" por "200 + template" (preserva a UX e o gasto zero); o aviso `IA_FALHOU` continua sinalizando que a tentativa de IA falhou.
+- **Sem erro 503 de IA:** `ORCAMENTO_ESGOTADO`, `IA_INDISPONIVEL` e `IA_DESLIGADA` deixam de ser `503 TIA-004` e viram `200` com `origem = "template"` e `motivoTemplate`. `TIA-004` fica só para `429`.
+- **Prompt `tia-v2`:** pacote de 8.000 caracteres, saída curta (5 fatores, 2 fontes por fator, `resumo` ≤ 400, `explicacao` ≤ 160), `max_output_tokens = 2500`; o texto muda, logo `PROMPT_VERSION = "tia-v2"` (conteúdo em `trend-insights-llm.md` §14.5).
 
 ---
 
@@ -347,8 +379,13 @@ Duas camadas:
 | **Geração assíncrona (202 + job + polling)** | Sem CPU após a resposta com `--cpu-throttling`; exigiria Cloud Tasks e uma segunda rota |
 | **LangChain** | Ganho só na troca de fornecedor (já resolvido pela porta `LlmClient`); risco de o wrapper não expor *grounding* e citações dos modelos Gemini 4 recém-lançados; mais dependências no cold start |
 | **LangGraph** | O fluxo tem um desvio e nenhum estado entre requisições; ver gatilhos em DA-10 |
-| **Vertex AI como padrão já na v1** | Não descartado, adiado: elimina a chave e é a preferência da privacidade, mas o preço dos Gemini 4 e a Interactions API no Vertex não estão confirmados, e o processamento fica em `us`/`eu`. Fica selecionável por `TREND_AI_BACKEND=vertex` (DA-10, CP-9) |
+| **Gemini API com chave (`TREND_AI_BACKEND=gemini_api`)** | Descartada pela decisão do usuário (Vertex AI): evita segredo novo, chave em log e retenção de interações; preço e Interactions API no Vertex ficam sob spike |
 | **Gemini API no nível gratuito** | Proibido: sem *grounding* no Hydrogen e com uso dos dados para melhoria de produto (LGPD-TIA-08) |
+| **Neon e "Análise aprofundada" (escalonamento)** | Removidos pela decisão do usuário: ~US$ 0,13 a 0,20 por análise inviabiliza o teto de US$ 2 |
+| **Chave de cache com `dataReferencia`** | Cada carga do ERP invalidaria o salvo mesmo com evidência igual e geraria gasto à toa; `evidenceHash` reaproveita |
+| **Cache de contexto do Gemini (implícito/explícito)** | Explícito não é suportado no Hydrogen e o storage custaria ~US$ 1/mês para economizar ≤ ~US$ 0,17; implícito exige ≥ 4.096 tokens (não vale engordar o prompt). Ver `trend-insights-llm.md` §14.4 |
+| **Só Cloud Billing Budget como controle** | Alerta, não corta gasto; mantido como medição independente, com o livro como trava preventiva |
+| **Livro de gastos em memória ou só no log** | Perdido a cada escala a zero; GCS com precondição de geração atende |
 | **Buscar as páginas no backend para ler a data de publicação** | Custo, latência, nova superfície de SSRF e possível conflito com os Termos do *grounding*; a data vem do modelo + URL |
 | **Contador de rate limit compartilhado no GCS** | Exigiria guardar hash de usuário/IP fora do processo (LGPD-TIA-11) para pouco ganho; o teto mensal já limita o custo |
 | **Fallback por palavras quando o índice falta** | Proibido por P-153.3: mistura produtos não substitutos e contaminaria a cascata |
@@ -361,11 +398,13 @@ Duas camadas:
   - Reuso real: motor de migração, preço de equilíbrio, sazonalidade, elasticidade e churn são chamados, não copiados; o domínio da F7 só contém o que é novo (janelas com `k`, grupo afim, cascata, validação).
   - Degradação por fonte: qualquer porta pode falhar sem derrubar o painel.
   - Índice de afinidade sobrevive a escala para zero e beneficia F6 e F2.
-  - Custo do LLM controlado em três camadas: botão explícito, reuso do salvo e teto mensal persistido.
+  - Custo do LLM controlado em camadas: botão explícito, cache compartilhado por `evidenceHash`, gates determinísticos (não chamada e *grounding*), template sem LLM, livro de gastos com reserva (mensal US$ 1,80, diário US$ 0,20), kill-switch e Cloud Billing Budget de US$ 2.
   - Sem `Cod Cliente` fora da etapa volátil; as SQLs com cliente continuam num só arquivo auditado.
 - **Pontos Negativos / Débito Técnico Aceito:**
   - Primeira abertura de uma janela sem cache paga a query `(cliente, SKU)` (estimativa 2–10 s; medir em 7.1-M); a tela mostra skeleton.
-  - Orçamento e rate limit são aproximados entre instâncias (DA-09).
+  - Rate limit por usuário é aproximado entre instâncias (DA-09); o orçamento em dólar é exato por reserva no GCS (sem GCS, template).
+  - Com o teto de US$ 2 a capacidade é de ~55 a ~104 gerações novas por mês; esgotado o orçamento, o usuário recebe resumo por template (menos rico) até a virada.
+  - O Flash dobra de preço em 01/01/2027; `TREND_AI_PRICING_JSON` deve ser revisto na virada.
   - Edições em `src/core/auth.py` e `src/api.py` mexem em código compartilhado: revisão obrigatória do `security`.
   - Até 15 min de defasagem do índice entre instâncias após um sync.
   - Primeira venda por mês (não por dia) no Lançamento Afim.
@@ -379,14 +418,16 @@ Duas camadas:
 | :-: | :--- | :--- |
 | CP-1 | P-153.1 manda usar `fetch_customer_sku_window_sales` nos modos contíguos e a variante só no `point` | Usar a variante de 4 datas em todos os modos (DA-04), com teste de equivalência. Mesmo resultado, um caminho só |
 | CP-2 | `IN_FLIGHT_LOCK_TTL_SECONDS = 120` ("2× o timeout") é menor que o pior caso sem prazo total (60 s × tentativas) | Resolvido com a constante nova do `ai_specialist` `LLM_TOTAL_DEADLINE_SECONDS = 110` (DA-08): a trava de 120 s fica como está; tela com timeout HTTP de 150 s. Só falta o `analyst` registrar a constante |
-| CP-3 | A rota interna de sync precisa de erros de autenticação e de concorrência, fora do catálogo `TIA-001..005` | Acrescentar `TIA-006` (401, token OIDC ausente/inválido/chamador não autorizado, sem dizer qual) e `TIA-007` (409, sync já em andamento). Alternativa: respostas 401/409 sem código, só para a rota interna |
-| CP-4 | P-176.3 fala "por usuário"; o Basic Auth tem uma credencial compartilhada e o limite é por instância | Aceitar como limite efetivo por instância (até 3×) ou reduzir `GENERATE_RATE_LIMIT_PER_MINUTE` para 2 se o usuário quiser o teto global perto de 5 |
-| CP-5 | P-175.4 deixa ao arquiteto listar o diagnóstico de dados anteriores | Não listar histórico na 1.0.0. Em vez disso, o campo `diagnosticoIa.desatualizado` (hash do pacote) avisa quando o salvo da mesma chave foi gerado com evidências diferentes |
+| CP-3 | A rota interna de sync precisa de erros de autenticação e de concorrência | **Resolvido (revisão v2):** `TIA-006` (401, token OIDC ausente/inválido/chamador não autorizado, sem dizer qual) e `TIA-007` (409, sync já em andamento) entram no catálogo oficial (contrato 1.1.0); o `analyst` registra nas regras |
+| CP-4 | P-176.3 fala "por usuário"; o Basic Auth tem uma credencial compartilhada e os contadores vivem em memória | **Resolvido:** limite 2/min, 10/dia e `force` 3/dia, aproximados por instância (DA-09); o teto financeiro real é o livro de gastos |
+| CP-5 | P-175.4 deixa ao arquiteto listar o diagnóstico de dados anteriores | **Resolvido:** sem histórico. A chave inclui `evidenceHash` (DA-07, DA-12); `diagnosticoIa.desatualizado` e o aviso `DIAGNOSTICO_DESATUALIZADO` deixam de existir; entra `meta.vencido` (TTL lógico de 30 dias) |
 | CP-6 | Cache de migração (P-153.5) com chave de 4 elementos | Acrescentar a geração do índice de afinidade à chave, para invalidar sozinho após o sync |
 | CP-7 | Rotas de produto aceitam `comparisonMode`; a lista de erros não cita `comparisonMode=range` | `range` responde `400 TIA-001` até a Tendência expor o modo (P-151.1) |
 | CP-8 | Fora do escopo da F7, achado de segurança no `deploy-cloud-run.yml`: `AUTH_PASSWORD` tem valor padrão literal no workflow e as senhas do banco vão por `--set-env-vars` | Encaminhar ao `security`/`devops`: mover `AUTH_PASSWORD` e `DB_PASSWORD` para o Secret Manager junto com `GEMINI_API_KEY` (mesma mudança de deploy) e remover o padrão literal |
-| CP-9 | **Fornecedor do LLM** (privacidade PC-01 recomenda Vertex AI; `ai_specialist` CP-1 recomenda Gemini API paga) | **Decisão do usuário.** Proposta: Gemini API paga com `store=false` na v1, Vertex AI selecionável por `TREND_AI_BACKEND`, spike de preço/Interactions no Vertex antes de trocar. Nível gratuito proibido em qualquer caso |
+| CP-9 | **Fornecedor do LLM** | **Resolvido pelo usuário:** Vertex AI (DA-10). Gemini API com chave removida. Spike 7.2-S confirma preço e Interactions no Vertex |
 | CP-10 | **Termos do *grounding*** (exibir *Search Suggestions* em HTML; não modificar *Grounded Results*) × texto puro (P-184.5) e troca de números (P-182.1) | **Aberto.** Desenho provisório em DA-10 (`sugestoesBuscaHtml` em `iframe sandbox`; modo de 2 chamadas separa a redação final do resultado com busca). Exige parecer do `security` e jurídico/`ai_governance_auditor` antes da Etapa 3 |
 | CP-11 | P-180 diz consultas "montadas pelo backend", mas o modelo decide as consultas; P-178.1 cobra *grounding* "por pedido", mas o Google cobra por consulta executada; P-182.4 exige data que o *grounding* não devolve | Aceitar as propostas do `ai_specialist` (CP-2, CP-3, CP-10 dele): "sugeridas pelo backend", custo por consulta executada, data lida pelo modelo com `origemData`. O contrato já aceita `dataPublicacao` nula nas hipóteses |
 | CP-12 | Contagens de clientes < 3 (LGPD-TIA-06) e diferença de "Outras UFs" (LGPD-TIA-05) não estão em P-167/P-179 (privacidade PC-02, PC-03) | Contrato e domínio já aplicam `"<3"` (API, GCS e pacote) e o piso de 3 clientes em `OUTRAS`, com supressão `ANONIMIZACAO`; o `analyst` atualiza P-167 e P-179 |
 | CP-13 | Campos que o `ai_specialist` pediu no fator e nas hipóteses (`explicacao`, motivo `SKU_FORA_DO_PACOTE`) e que o Design Plan pediu na API (`pontosPercentuais`, `TrendCell` do afim, `meta.ia`) | Já refletidos no contrato 1.0.0; o `analyst` atualiza P-181 |
+| CP-14 | **Texto da IA sem números** (decisão do usuário) altera P-182.1 e o desenho de marcadores `{{parcela:TIPO}}`/`{{sku:COD}}` | O `analyst` revisa P-181/P-182: texto sem dígitos, validação rejeita dígitos, números só nos campos do motor (DA-10) |
+| CP-15 | Preço do Vertex AI para Hydrogen e 3.8 Flash, Interactions API no Vertex, schema + *grounding* no 3.8 Flash e escopo da cota grátis de *grounding* não confirmados | Spike **7.2-S** antes de codar o cliente; `devops` confere SKU/preço no Billing e cria o Cloud Billing Budget de US$ 2 |

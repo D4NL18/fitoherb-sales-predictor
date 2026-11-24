@@ -9,6 +9,13 @@
 | **ADR relacionado** | `ADR-009-diagnostico-tendencia-ia.md` (escrito pelo `architect`) |
 | **Versão de prompt** | `tia-v1` (`PROMPT_VERSION`, P-175) |
 
+> **REVISÃO v2 (2026-11-24, decisões do usuário) — esta nota prevalece sobre qualquer trecho abaixo que a contradiga:**
+> 1. **Modelo único: `gemini-4-hydrogen`.** O **Neon foi removido**: não há escalonamento automático, não há "análise aprofundada" (`deep`), não há `TREND_AI_MODEL_DEEP`. Onde o texto abaixo cita Neon, ignore.
+> 2. **Fallback de modelo: `gemini-3.8-flash`** (quando o Hydrogen falha por timeout, indisponibilidade, 5xx ou cota). Detalhes e preços na §14.1.
+> 3. **Fornecedor: Vertex AI** (decisão do usuário, CP-9): ADC da conta de serviço do Cloud Run, sem `GEMINI_API_KEY`. A recomendação "Gemini API paga" da §1.3 está superada.
+> 4. **Meta financeira: no máximo US$ 2,00/mês com IA** (LLM + grounding + armazenamento/agendador da F7). O teto anterior de US$ 30 e as tabelas de custo da §10 estão superados pela **§14**.
+> 5. **A IA não escreve números** (CP-10 do usuário): só cita fatores e marcadores; todo número vem da cascata do motor determinístico (já era o desenho; mantido).
+
 > Este documento detalha **só a camada de IA** (cliente Gemini, prompts, pacote de evidências, schema, validação, custo, avaliação e observabilidade). O Motor de Evidências, a API e a persistência estão no plano e no ADR-009. Nada aqui é código de produção: os trechos são contratos e exemplos de forma.
 
 ---
@@ -72,7 +79,9 @@ Fontes de terceiros usadas só para comparação (não para decisão): [eesel.ai
 | Retenção | 55 dias por padrão; `store=false` desliga | Sem armazenamento de interações; controles CMEK/VPC-SC |
 | Faturamento e orçamento | Conta do AI Studio vinculada ao billing | Mesmo projeto GCP do Cloud Run; alerta de orçamento nativo |
 
-**Recomendação:** começar com o **Gemini API (paid tier)**, com `store=false`, porque é onde a combinação grounding + saída estruturada e os preços estão confirmados e porque as regras já preveem a chave no Secret Manager. O `LlmClient` aceita os dois transportes (`TREND_AI_BACKEND = gemini_api | vertex`, variável de ambiente) e a migração para Vertex AI (sem chave, ADC) fica como **ponto de checkpoint CP-1**, a confirmar com um spike quando o preço do Vertex para Gemini 4 estiver legível. Free tier é proibido: não tem grounding no Hydrogen e não é adequado para dados da empresa.
+**(v2) Decisão do usuário: Vertex AI.** O preço do Hydrogen e do 3.8 Flash no Vertex **não foi confirmado** nesta revisão (a página de preços do Vertex veio truncada); a §14 usa a tabela oficial do AI Studio como referência e deixa a tabela em `TREND_AI_PRICING_JSON`. Confirmar no Billing/SKU do Vertex antes de liberar. A recomendação original abaixo fica só como histórico.
+
+**Recomendação (v1, superada):** começar com o **Gemini API (paid tier)**, com `store=false`, porque é onde a combinação grounding + saída estruturada e os preços estão confirmados e porque as regras já preveem a chave no Secret Manager. O `LlmClient` aceita os dois transportes (`TREND_AI_BACKEND = gemini_api | vertex`, variável de ambiente) e a migração para Vertex AI (sem chave, ADC) fica como **ponto de checkpoint CP-1**, a confirmar com um spike quando o preço do Vertex para Gemini 4 estiver legível. Free tier é proibido: não tem grounding no Hydrogen e não é adequado para dados da empresa.
 
 ---
 
@@ -108,7 +117,7 @@ O modo de 2 chamadas é ativado:
 Custo adicional estimado: ~US$ 0,01 por diagnóstico no Hydrogen (§10).
 
 ### 3.4 Seleção do modelo
-Decidida **antes** da chamada pelo serviço (P-177). O `LlmClient` só recebe o ID resolvido. Neon nunca é usado como retry de falha de schema (P-177.3).
+**(v2)** Sem escolha de modelo por caso: o `LlmClient` usa sempre `TREND_AI_MODEL_DEFAULT = gemini-4-hydrogen`. O único desvio é o **fallback** `TREND_AI_MODEL_FALLBACK = gemini-3.8-flash`, acionado só por falha de infraestrutura do Hydrogen (timeout, 5xx, 429/cota, modelo indisponível) depois de esgotar as tentativas dele (§14.9). Falha de schema **não** troca de modelo (repete no mesmo).
 
 ---
 
@@ -452,7 +461,7 @@ Uma página pode conter afirmação falsa ("ANVISA proíbe X"). A mitigação é
 
 ---
 
-## 10. Modelo de custo
+## 10. Modelo de custo (SUPERSEDIDO pela §14; mantido só como histórico da v1 com Neon e teto de US$ 30)
 
 ### 10.1 Premissas por diagnóstico (a calibrar no spike da Etapa 3 com `usage` real)
 
@@ -575,3 +584,194 @@ Opcional: `ai_governance_auditor` revisa o relatório da 7.5.
 | **CP-10** | P-178.1 cobra grounding "por pedido"; a página oficial cobra **por consulta executada** | Ajustar o texto da regra: custo = tokens + `executed_queries_count × preço por consulta` |
 | **CP-11** | Saída estruturada + busca na mesma chamada é **Preview** | Usar com o modo 2 chamadas como contingência automática (§3.2); nenhuma mudança de contrato |
 | **CP-12** | Dados processados em `us`/`eu` (sem região no Brasil) e retidos pelo Google por 30 dias no grounding | `privacy_officer`: o pacote não tem dado pessoal (P-179), mas registrar a transferência internacional de dados comerciais da empresa no RIPD/nota |
+
+---
+
+## 14. Estratégia de custo e teto de US$ 2/mês (v2, 2026-11-24)
+
+Substitui a §10. Meta do usuário: **gastar no máximo US$ 2,00 por mês com a IA da F7** (LLM, grounding e qualquer armazenamento/agendador que a F7 introduza). Teto anterior: US$ 30/mês e ~US$ 0,10 por análise. Meta nova por análise gerada: **~US$ 0,014 a 0,018**.
+
+### 14.1 Modelos e preços confirmados (documentação oficial, consultada em 2026-11-24)
+
+| Item | `gemini-4-hydrogen` (padrão) | `gemini-3.8-flash` (fallback) | Fonte |
+| :--- | :--- | :--- | :--- |
+| ID | `gemini-4-hydrogen` (Stable) | `gemini-3.8-flash` (Stable) | [Modelos](https://aistudio.google.com/docs/models) |
+| Entrada / saída por 1M tokens (Standard; saída inclui *thinking*) | **US$ 1,50 / 7,50**, sem data de mudança | **US$ 0,75 / 3,75 até 31/12/2026; US$ 1,50 / 7,50 a partir de 01/01/2027** (dobra em 5 semanas) | [Preços](https://aistudio.google.com/docs/pricing) |
+| Cache de contexto (leitura) | US$ 0,075 / 1M | US$ 0,075 (até 31/12) / US$ 0,15 (depois) | Preços |
+| Armazenamento de cache explícito | **Não suportado** (só implícito) | US$ 0,50 / 1M tokens·hora (até 31/12); US$ 1,00 (depois) | Preços; [Caching](https://aistudio.google.com/docs/caching) |
+| Mínimo para cache implícito | 4.096 tokens de entrada | 4.096 tokens | Caching |
+| Google Search grounding | Suportado; 5.000 consultas grátis/mês compartilhadas entre Gemini 3+; depois US$ 14/1.000; máx. 1.500/dia; cobrado por consulta executada | Idem | Preços; [página do modelo](https://aistudio.google.com/docs/models/gemini-3.8-flash) |
+| JSON Schema | Suportado | Suportado | Páginas dos modelos |
+| Schema **+** Search na mesma chamada | Sim (Preview), confirmado | **Não confirmado** (a página do 3.8 Flash não diz) | [Structured output](https://aistudio.google.com/docs/structured-output) |
+| Thinking | `low`/`medium`/`high`/`xhigh` | `low`/`medium`/`high`; **`minimal` não é suportado (erro)** | Páginas dos modelos |
+
+**Não confirmado:** (a) preços no **Vertex AI** (página truncada; fontes de busca divergem nos valores de token) — usar a tabela acima em `TREND_AI_PRICING_JSON` e conferir no Billing; (b) se o 3.8 Flash combina schema + grounding (o fallback roda sem grounding nesse caso, §14.9); (c) escopo exato da cota grátis de 5.000 (projeto ou conta de faturamento); (d) nível de *thinking* padrão do Hydrogen (sempre enviar `low` explícito).
+
+### 14.2 Princípio: o cache e os gates são o orçamento
+
+Ordem de decisão em `POST /generate`, da mais barata para a mais cara (cada passo que responde custa US$ 0):
+
+```
+1 kill-switch (TREND_AI_ENABLED=false) ou credencial ausente ─► template (sem LLM)
+2 cache de resultado (§14.3)                                   ─► devolve salvo
+3 gate de explicabilidade (§14.7)                              ─► template
+4 orçamento (§14.8): mensal, diário, por usuário               ─► template / 503 TIA-004
+5 single-flight (§14.3)                                         ─► aguarda o pedido em voo
+6 chamada Hydrogen (grounding só se o gate §14.6 liberar)
+7 falha de infraestrutura ─► 1 chamada Flash ─► falha ─► template
+```
+
+### 14.3 Cache de resultado e single-flight
+
+| Decisão | Especificação |
+| :--- | :--- |
+| Onde | **GCS é a fonte da verdade** (o Cloud Run escala a zero; memória some). Memória do processo só como L1 de 5 min para evitar leituras repetidas. Cache só em memória **não serve**: perde tudo a cada cold start |
+| Chave | `sha256(escopo, id, metric, window, baseMonth, comparisonMode, PROMPT_VERSION, evidenceHash)`. `evidenceHash = sha256` do pacote de evidências **canônico e arredondado** (o mesmo que iria ao LLM, sem timestamps nem nonce) |
+| Por que `evidenceHash` em vez de `dataReferencia` | Uma carga nova do ERP com **a mesma evidência** (cascata arredondada igual) **reaproveita** o diagnóstico; a chave só muda quando a evidência muda de fato. Hoje P-175.4 invalida a cada `dataReferencia` (cada carga) e geraria gasto à toa |
+| Compartilhamento | Um objeto por chave, **sem usuário na chave**: todos reaproveitam |
+| TTL | Retenção física 90 dias (lifecycle GCS). **TTL lógico de 30 dias** (`INSIGHT_SOFT_TTL_DAYS`) por causa das notícias externas; vencido, o painel mostra o salvo com "gerado há N dias" e o botão "Atualizar" (explícito; nada regenera sozinho). Diagnóstico sem fator externo não vence por tempo |
+| Invalidar | Só por: `evidenceHash` novo, `PROMPT_VERSION` novo ou `force=true` explícito |
+| `force=true` | Custa dinheiro: `FORCE_MAX_PER_USER_PER_DAY = 3`; a 80% do orçamento fica desabilitado |
+| Single-flight | Lock/Future por chave no processo + objeto de trava no GCS (`if_generation_match=0`, TTL 120 s) para várias instâncias. Seguidores aguardam e recebem o mesmo resultado (`reutilizado=true`). Com `max-instances=1`, a trava do processo basta |
+| Custo do cache | ~1 escrita + ~3 leituras por análise: frações de centavo (§14.11) |
+
+### 14.4 Cache de contexto do Gemini: **não compensa**
+
+| Opção | Análise | Veredito |
+| :--- | :--- | :--- |
+| Implícito (automático) | Exige ≥ 4.096 tokens de entrada; o prefixo estável (system + schema + glossário) tem ~1.000 a 1.400 tokens e o prompt total fica em 3.800 a 5.300. Economia máxima: ~1.200 tokens × (1,50 − 0,075)/1M = **~US$ 0,0017 por acerto**, e só se outra chamada com o mesmo prefixo ocorrer na janela do cache (TTL não documentado); com dezenas de análises/mês quase nunca | Aceitar se vier de graça; **não orçar nem engordar o prompt** para atingir 4.096 |
+| Explícito | **Não suportado no Hydrogen nem na Interactions API.** No 3.8 Flash só via `generateContent`. Armazenar 1.400 tokens por 730 h custa 1.400 × 730 × US$ 1,00/1M ≈ **US$ 1,02/mês** (US$ 0,51 em 2026) para economizar ≤ ~US$ 0,17/mês (100 acertos × 0,0017) | **Perde dinheiro. Rejeitado** |
+
+### 14.5 Prompt e saída enxutos (`tia-v1` → `tia-v2`)
+
+O texto muda, então `PROMPT_VERSION = "tia-v2"`.
+
+| Alavanca | v1 | v2 (meta) |
+| :--- | :--- | :--- |
+| System (S1+S2+S5) | ~1.500 tokens | ~900 a 1.200: instruções em inglês conciso, sem exemplos, sem repetição entre S1 e S5 |
+| `MAX_EVIDENCE_PAYLOAD_CHARS` | 16.000 (~4.500 tokens) | **8.000 (~2.200 tokens)** |
+| Afins no pacote | até 25 | **10** (a tela continua mostrando todos, vindos do motor) |
+| Migração | 10 pares por sentido | **5** |
+| UFs | 5 + OUTRAS | **3 + OUTRAS** |
+| Parcelas | 6 + indicadores, todas com status | só `AVALIADO` e relevantes (abs(valor) ≥ 5% de abs(Δ)); as demais viram `"nao":["PRECO","RUPTURA"]`; omitir zeros e `null` |
+| Números | 2 casas | % com 1 casa; R$ inteiros; nomes dos afins ≤ 30 caracteres; ids curtos |
+| Saída | `resumo` 800, fator 300, 8 fatores, 5 fontes/fator, 5 hipóteses, 5 recomendações | **`resumo` 400, `explicacao` 160, 5 fatores, 2 fontes/fator, 3 hipóteses (≤ 120), 3 recomendações (≤ 120)** |
+| `max_output_tokens` | 4.096 | **2.500** (inclui *thinking*; subir a 3.000 se o spike mostrar corte) |
+| *Thinking* | `low` | `low` explícito (`minimal` não existe no 3.8 Flash) |
+| Temperatura / few-shot | não enviada / nenhum | idem / nenhum (schema e enums bastam; medir na 7.5) |
+
+**Tokens estimados por análise (calibrar no spike com `usage` real):**
+
+| Bloco | Sem grounding | Com grounding |
+| :--- | :-: | :-: |
+| System | 1.100 | 1.100 |
+| Pacote + U1 + galeria | 2.700 | 2.700 |
+| Instruções internas e contexto da busca (não documentado) | 0 | 1.500 |
+| **Entrada** | **3.800** | **5.300** |
+| Saída visível (JSON) | 500 | 600 |
+| *Thinking* (`low`) | 600 | 700 |
+| **Saída** | **1.100** | **1.300** |
+
+### 14.6 Gate de grounding (determinístico, antes da chamada)
+
+Grounding **só liga** se houver termo de busca (§6.1) **e** pelo menos uma condição:
+
+1. `diagnosticoMercado ∈ {MERCADO_EM_QUEDA, MERCADO_EM_ALTA}` (categoria inteira se moveu: causa provavelmente externa); ou
+2. `residuo.fracaoDoObservado ≥ GROUNDING_MIN_RESIDUAL_SHARE` (**0,30**); ou
+3. indicador `REGIONAL` avaliado **e** resíduo ≥ 0,15.
+
+Com resíduo < 0,30 e diagnóstico competitivo, a cascata já explica: **chamada sem busca** (~US$ 0,014). A 80% do orçamento o limiar sobe para **0,50**.
+
+- **Consultas:** `MAX_SEARCH_QUERIES = 2` (era 3/5), só sugeridas no prompt (a API não impõe); o custo usa `executed_queries_count`. Modo `QUALITATIVO`: 1.
+- **Cota grátis:** ≤ ~100 gerações × ≤ 2 consultas = ≤ ~200 consultas/mês, **4% das 5.000 grátis**. Na prática o grounding custa **US$ 0**, desde que o projeto não use grounding Gemini 3+ em outro lugar. O livro (§14.8) trata as primeiras `GROUNDING_FREE_QUERIES_ASSUMED = 1.500` consultas do mês como grátis (premissa conservadora) e cobra US$ 0,014 por consulta acima disso.
+- **Duas chamadas (pesquisa + síntese):** **mais caras** na 1ª geração (~US$ 0,025 grátis / ~0,053 cobrado, contra 0,018 / 0,046 da chamada única). Só pagam se a pesquisa for reaproveitada. Padrão `single`; `two_step` fica como contingência técnica (§3.2) e como otimização opcional se a cota grátis estiver compartilhada/estourada.
+- **Cache de pesquisa externa (só no `two_step`):** chave `(termoCategoria, AAAA-MM, classeMercado)`, TTL 14 dias, **compartilhado entre produtos** da mesma categoria/matéria-prima. Um acerto elimina a etapa de pesquisa (~US$ 0,010 + consultas). Ganho de ~US$ 0,03 por acerto com grounding cobrado; ~US$ 0,004 com a cota grátis. **Não implementar na v1.**
+
+### 14.7 Quando não chamar o LLM (narrativa por *template*, US$ 0)
+
+O serviço devolve a cascata com um **resumo determinístico** (frases-modelo a partir de tipo, sentido e % das parcelas e do diagnóstico de mercado; rotulado "Resumo automático (sem IA)"), `diagnosticoIa = null` e `meta.ia.origem = "TEMPLATE"`, quando:
+
+| Condição | Observação |
+| :--- | :--- |
+| abs(variacaoPct) < `MIN_EXPLAINABLE_VARIATION_PCT` (2%) | Já é `SEM_VARIACAO` / 422 `TIA-003` (P-152) |
+| Modo `SEM_BASE` ou base insuficiente | Sem pacote útil |
+| abs(Δ faturamento) < `LLM_MIN_ABS_REVENUE_DELTA` (**R$ 1.000**, proposta ajustável) | Variação financeira ínfima |
+| Resíduo < `LLM_MIN_RESIDUAL_SHARE` (**0,20**) **e** sem `REGIONAL` **e** diagnóstico não é de mercado | A cascata explica ≥ 80%; a IA não acrescentaria fator externo |
+| Orçamento esgotado, kill-switch ligado, IA indisponível | §14.8, §14.9 |
+
+Decidido **antes** de qualquer custo, por função pura testável.
+
+### 14.8 Orçamento, limites e degradação
+
+| Controle | Valor padrão | Detalhe |
+| :--- | :--- | :--- |
+| Meta total | **US$ 2,00/mês** | LLM + grounding + infra (§14.11) |
+| `TREND_AI_MONTHLY_BUDGET_USD` | **1,80** | Teto de LLM+grounding; ~US$ 0,10 para infra e ~US$ 0,10 de margem (o `usage` pode não incluir todos os tokens internos de ferramenta) |
+| `TREND_AI_DAILY_BUDGET_USD` | **0,20** | Evita queimar o mês em um dia (~11 gerações) |
+| Por usuário | `GENERATE_RATE_LIMIT_PER_MINUTE = 2` (era 5) e `GENERATE_MAX_PER_USER_PER_DAY = 10` | Reusos de cache não contam |
+| Livro de gastos | Objeto GCS `ai-budget/AAAA-MM.json` com `gastoMes`, `gastoDia`, `reservado`, `consultasMes`; escrita com `if_generation_match` (repete em conflito) | Memória não persiste com escala a zero |
+| Reserva antes da chamada | Reserva `custoEstimadoMaximo` e acerta com o `usage` real | Impede estouro por pedidos simultâneos |
+| `custoEstimadoMaximo` | 8.000 entrada + 2.500 saída = US$ 0,031; + 3 × 0,014 = US$ 0,073 se acima da cota grátis assumida | Era US$ 0,13 |
+| 80% (US$ 1,44) | Log `tia.budget.alert`; grounding só com resíduo ≥ 0,50; `force` e "Atualizar" desabilitados | Degradação parcial |
+| 100% (US$ 1,80) ou saldo < reserva | Sem LLM: resumo por template (`meta.ia.origem="TEMPLATE"`, `motivoBloqueio="ORCAMENTO_ESGOTADO"`) | Volta no dia 1º |
+| **Kill-switch** | `TREND_AI_ENABLED=false` (env, sem deploy) | Passo 1 do §14.2 |
+| Alerta de faturamento | **Cloud Billing Budget de US$ 2,00** no projeto, alertas em 50/80/100% por e-mail; sem custo | Medição **independente** (a fatura); o livro é a trava preventiva. Billing Budget **não corta** gasto sozinho |
+
+### 14.9 Fallback para o Gemini 3.8 Flash
+
+- Só por falha de infraestrutura do Hydrogen após as tentativas dele (`LLM_TRANSIENT_RETRY_LIMIT` de 3 para **2**): timeout, 5xx, 429/cota, modelo indisponível. **Uma** chamada Flash; falhou, template.
+- Falha de schema/validação: repete no mesmo modelo (1×); não vai para o Flash.
+- Mesma validação e mesmo orçamento (preço do Flash em `TREND_AI_PRICING_JSON`, que muda em 01/01/2027). O diagnóstico registra `modelo = gemini-3.8-flash`.
+- Se schema + grounding não funcionar no Flash (não confirmado): Flash **sem grounding**, aviso "sem busca externa", em vez de 2 chamadas.
+- A chave do cache não inclui o modelo: um diagnóstico do Flash é reaproveitado.
+
+### 14.10 Custos por cenário (preços da §14.1; Hydrogen e Flash são iguais a partir de 01/01/2027)
+
+| Cenário | Entrada / saída (tokens) | Grounding (US$) | **Custo (US$)** |
+| :--- | :--- | :-: | :-: |
+| Acerto de cache | — | — | **0,0000** |
+| Resumo por template (gate, orçamento, kill-switch) | — | — | **0,0000** |
+| Miss, Hydrogen, **sem** grounding | 3.800 / 1.100 | — | **0,0140** |
+| Miss, Hydrogen, **com** grounding, cota grátis (2 consultas) | 5.300 / 1.300 | 0 | **0,0177** |
+| Miss, Hydrogen, grounding **cobrado** (2 × 0,014) | idem | 0,028 | **0,0457** |
+| Fallback Flash, sem grounding | 3.800 / 1.100 | — | **0,0070** até 31/12/2026; **0,0140** depois |
+| Fallback Flash, com grounding (grátis / cobrado) | 5.300 / 1.300 | 0 / 0,028 | 0,0089 / 0,0369 (até 31/12); 0,0177 / 0,0457 (depois) |
+| Nova tentativa por schema (~8% das gerações) | repete o caso | — | +0,014 a 0,018 |
+| Referência v1 (Hydrogen com grounding, pacote de 16 mil) | ~8.000 / 2.700 | 0,042 | ~0,074 |
+
+**Capacidade mensal no teto de LLM de US$ 1,80** (50% das gerações sem grounding e 50% com, +8% de novas tentativas):
+
+| Premissa de grounding | Custo médio por geração | **Gerações/mês** |
+| :--- | :-: | :-: |
+| Dentro da cota grátis (esperado) | 0,0173 | **~104** |
+| Todo grounding cobrado (pior caso) | 0,0325 | **~55** |
+| Sem grounding algum | 0,0151 | ~119 |
+
+Acertos de cache e resumos por template são ilimitados e gratuitos. O uso planejado ("dezenas por mês") cabe com folga; 10 gerações por dia útil esgotariam o teto em ~10 dias e cairiam em template.
+
+### 14.11 Infraestrutura associada (cada item que a F7 introduz)
+
+| Item | Uso estimado | Custo/mês (US$) | Observação |
+| :--- | :--- | :-: | :--- |
+| Vertex AI (Hydrogen/Flash) | Pago por uso | **0** fixo | Sem custo ocioso |
+| Grounding | ≤ ~200 consultas | **0** (cota de 5.000) | §14.6 |
+| GCS: diagnósticos (≤ ~300 objetos de ~8 KB em 90 dias) | < 3 MB | < 0,001 | Standard, mesma região do Cloud Run (evita egress) |
+| GCS: livro de gastos e travas | ~300 escritas + ~600 leituras | < 0,005 | Classe A ~US$ 0,005/1.000, B ~US$ 0,0004/1.000 (de memória, **confirmar**) |
+| GCS: índice de afinidade (1 escrita/dia + leituras em cold start) | 30 escritas + ~100 leituras | < 0,01 | **Gratuito na prática**; mover o índice para o GCS **não** estoura o teto. Tamanho do arquivo a confirmar |
+| Cloud Scheduler (sync do índice) | 1 job | **0** se a conta tiver ≤ 3 jobs (cota grátis); US$ 0,10 se já houver 3 | **Pendência do `devops`:** contar os jobs |
+| Cloud Run extra (acordar 1×/dia, 1–2 min) | ~60 vCPU·s/dia | 0 (cotas grátis) | Não usar `min-instances > 0` |
+| Secret Manager | Não usado (Vertex usa ADC) | 0 | — |
+| Logging / métricas por log | Só metadados | 0 | Sem payload |
+| Cloud Billing Budget e alertas | 1 orçamento | 0 | — |
+| **Infra total F7** | | **~0,00 a 0,12** | US$ 0,10 reservados |
+
+Conclusão: **nenhuma parte do plano (índice no GCS, locks, livro, diagnósticos de 90 dias, Scheduler) estoura US$ 2; o único risco real é o LLM**, controlado pelo livro e pelos gates. Preços de GCS/Scheduler são de memória e devem ser confirmados pelo `devops`/`gcp-finops-expert`.
+
+### 14.12 Riscos e incertezas
+
+1. **Tokens da ferramenta de busca** (~1.500) e o *thinking* real não são documentados: calibrar no spike da Etapa 3. Se a média passar de 1,5× a estimada, reduzir `max_output_tokens` ou subir o gate de grounding para 0,50.
+2. **Preço no Vertex AI** não confirmado; o Flash dobra em 01/01/2027. `TREND_AI_PRICING_JSON` obrigatório e revisto na virada.
+3. **Escopo da cota grátis** de grounding não confirmado: mitigado pelo contador de 1.500 e pelo Billing Budget.
+4. **Qualidade com os gates** (resíduo < 0,20 vira template; pacote de 8 mil; 5 fatores): a 7.5 mede a perda de concordância; se faltar, subir só o que pagar (ex.: pacote de 10 mil).
+5. **Acerto por `evidenceHash` exige pacote determinístico** (listas ordenadas, arredondamento, sem timestamps): teste de contrato "mesmo dado, mesmo hash".
+6. **Termos do grounding** (exibir Search Suggestions; não alterar Grounded Results) seguem em CP-4; o cache guarda `searchSuggestionsHtml` junto.
