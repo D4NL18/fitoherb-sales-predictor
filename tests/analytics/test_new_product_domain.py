@@ -724,3 +724,30 @@ def test_find_similar_for_new_product_applies_compatibility_guards(tmp_path):
     assert "1001" in returned_skus or "1002" in returned_skus
     assert "1003" not in returned_skus  # barra proteica bloqueada pela trava estrutural
     assert "1004" not in returned_skus  # pré-treino bloqueado pela trava estrutural
+
+
+def test_brand_sales_strength_impacts_actual_conservative_forecast_quantity():
+    """Força comercial real da marca impacta diretamente a quantidade prevista (Integral > Max > Probiótica) respeitando Q <= P25."""
+    from src.modules.analytics.domain.new_product import SimilarProductMatch
+
+    similars = [
+        SimilarProductMatch(1, "WHEY A", "INTEGRALMEDICA", date(2025, 6, 1), 220.0, 0.90, 0.0, 1.0, 0.9, (40, 45, 50), 0.95),
+        SimilarProductMatch(2, "WHEY B", "MAX TITANIUM", date(2025, 6, 1), 180.0, 0.80, 0.0, 0.8, 0.8, (30, 35, 40), 0.85),
+        SimilarProductMatch(3, "WHEY C", "PROBIOTICA", date(2025, 6, 1), 170.0, 0.75, 0.0, 0.8, 0.75, (20, 25, 30), 0.75),
+    ]
+    sup_avg = {
+        "integralmedica": 2500.0,
+        "max titanium": 900.0,
+        "probiotica": 250.0,
+    }
+
+    curve_int = compute_conservative_curve(similars, horizon_months=3, supplier_avg_monthly=sup_avg, target_fornecedor="INTEGRALMEDICA")
+    curve_max = compute_conservative_curve(similars, horizon_months=3, supplier_avg_monthly=sup_avg, target_fornecedor="MAX TITANIUM")
+    curve_pro = compute_conservative_curve(similars, horizon_months=3, supplier_avg_monthly=sup_avg, target_fornecedor="PROBIOTICA")
+
+    tot_int = sum(p.conservative_quantity for p in curve_int)
+    tot_max = sum(p.conservative_quantity for p in curve_max)
+    tot_pro = sum(p.conservative_quantity for p in curve_pro)
+
+    assert tot_int > tot_max > tot_pro
+    assert all(p.conservative_quantity <= p.similar_p25_quantity for p in curve_int + curve_max + curve_pro)

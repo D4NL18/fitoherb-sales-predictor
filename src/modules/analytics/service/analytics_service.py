@@ -965,7 +965,13 @@ def forecast_new_product(request: NewProductForecastRequest) -> NewProductForeca
             affinity_scores=affinity_scores_by_sku,
         )
 
-    base_curve = compute_conservative_curve(similars, horizon_months=request.horizon_months)
+    base_curve = compute_conservative_curve(
+        similars,
+        horizon_months=request.horizon_months,
+        product_avg_monthly=product_avg_monthly,
+        supplier_avg_monthly=supplier_avg_monthly,
+        target_fornecedor=canonical_fornecedor,
+    )
 
     seasonality_skus = list(
         dict.fromkeys(

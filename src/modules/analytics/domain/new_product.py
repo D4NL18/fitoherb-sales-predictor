@@ -50,6 +50,9 @@ CACHE_TTL_HOURS = 6
 HIGH_CANNIBALIZATION_AFFINITY = 0.75
 MODERATE_CANNIBALIZATION_CLUSTER_SCORE = 0.60
 HIGH_CANNIBALIZATION_CLUSTER_COUNT = 3
+BRAND_IMPACT_MIN_FACTOR = 0.75
+BRAND_IMPACT_MAX_FACTOR = 1.25
+BRAND_IMPACT_EXPONENT = 0.35
 
 
 # ---------------------------------------------------------------------------
@@ -534,21 +537,83 @@ def find_similars(
     return matches[:top_k]
 
 
+def compute_brand_strength_factor(
+    similars: Sequence[SimilarProductMatch],
+    target_fornecedor: Optional[str],
+    supplier_avg_monthly: Optional[Mapping[str, float]],
+) -> float:
+    """
+    Calcula o fator de tração comercial da marca alvo frente às marcas dos produtos de referência:
+    `(media_marca_alvo / media_ponderada_marcas_similares) ** 0.35`, limitado a `[0.75, 1.25]`.
+    Assim, marcas com maior giro real (ex.: Integralmedica > Max Titanium > Probiótica > Pronabol)
+    impactam diretamente a projeção real de unidades, preservando a trava conservadora `<= P25`.
+    """
+    if not target_fornecedor or not supplier_avg_monthly or not similars:
+        return 1.0
+
+    target_sales = float(supplier_avg_monthly.get(target_fornecedor.strip().casefold(), 0.0))
+    if target_sales <= 0.0:
+        return 1.0
+
+    weighted_sum = 0.0
+    weight_total = 0.0
+    for s in similars:
+        sup_sales = float(supplier_avg_monthly.get(s.fornecedor.strip().casefold(), 0.0))
+        if sup_sales <= 0.0:
+            continue
+        w = max(0.01, float(s.affinity_score or s.score_tfidf or 1.0))
+        weighted_sum += sup_sales * w
+        weight_total += w
+
+    if weight_total <= 0.0 or weighted_sum <= 0.0:
+        return 1.0
+
+    ref_avg_sales = weighted_sum / weight_total
+    ratio = target_sales / ref_avg_sales
+    factor = ratio ** BRAND_IMPACT_EXPONENT
+    return round(max(BRAND_IMPACT_MIN_FACTOR, min(BRAND_IMPACT_MAX_FACTOR, factor)), 4)
+
+
 def compute_conservative_curve(
     similars: Sequence[SimilarProductMatch],
     horizon_months: int = DEFAULT_HORIZON_MONTHS,
+    product_avg_monthly: Optional[Mapping[int, float]] = None,
+    supplier_avg_monthly: Optional[Mapping[str, float]] = None,
+    target_fornecedor: Optional[str] = None,
 ) -> List[ConservativeCurvePoint]:
     """
-    Calcula P10, P25, P50 e previsão conservadora (`P25 * 0.70`) para cada mês (P-145, P-147),
-    ponderando pela afinidade semântica (`affinity_score`) quando disponível.
+    Calcula P10, P25, P50 e previsão conservadora (`P25 * 0.70 * fator_marca`) para cada mês (P-145, P-147),
+    ponderando pela afinidade semântica (`affinity_score`) e pelo giro médio mensal real dos produtos/marcas.
     Garante matematicamente a trava inviolável `conservative_quantity <= similar_p25_quantity`.
     """
     if not similars:
         raise NewProductInsufficientSimilarsError(count=0)
 
     horizon = max(1, min(MAX_HORIZON_MONTHS, int(horizon_months)))
-    weights = [max(0.0, float(s.affinity_score or s.score_tfidf)) for s in similars]
+    prod_sales = product_avg_monthly or {}
+    raw_prod_vols = [
+        float(prod_sales.get(s.sku, 0.0))
+        or (sum(s.quantidades_primeiros_meses) / max(1, len(s.quantidades_primeiros_meses)))
+        for s in similars
+    ]
+    max_vol = max(raw_prod_vols) if raw_prod_vols else 0.0
+
+    weights: List[float] = []
+    for idx, s in enumerate(similars):
+        aff = max(0.0, float(s.affinity_score or s.score_tfidf))
+        if aff <= 0.0:
+            weights.append(0.0)
+            continue
+        vol_norm = (math.log1p(raw_prod_vols[idx]) / math.log1p(max_vol)) if max_vol > 0.0 else 0.5
+        # 70% afinidade pura + 30% peso pelo giro real do produto
+        weights.append(aff * (0.70 + 0.30 * vol_norm))
+
     use_weights = sum(weights) > 0.0
+    brand_factor = compute_brand_strength_factor(
+        similars=similars,
+        target_fornecedor=target_fornecedor,
+        supplier_avg_monthly=supplier_avg_monthly,
+    )
 
     curve: List[ConservativeCurvePoint] = []
     for m_idx in range(horizon):
@@ -563,7 +628,7 @@ def compute_conservative_curve(
             p50 = max(0, int(round(float(np.percentile(values, 50)))))
 
         p25 = max(0, int(round(p25_raw)))
-        conservative = max(0, int(round(p25_raw * NEW_PRODUCT_HAIRCUT)))
+        conservative = max(0, int(round(p25_raw * NEW_PRODUCT_HAIRCUT * brand_factor)))
         conservative = min(conservative, p25)
         assert conservative <= p25  # P-145.3: trava de segurança inviolável
         curve.append(
@@ -677,10 +742,29 @@ def compute_cannibalization_risk(
         )
 
     top_scores = [p.affinity_score for p in at_risk[:3]]
-    estimated_overlap_pct = round((sum(top_scores) / len(top_scores)) * 100.0, 1)
+    base_overlap_pct = (sum(top_scores) / len(top_scores)) * 100.0
+
+    # Pondera a pressão de canibalização pela força comercial relativa da marca lançadora
+    brand_pressure = 1.0
+    if sup_sales:
+        target_sup_sales = float(sup_sales.get(target_sup_norm, 0.0))
+        ref_sup_vals = [
+            float(sup_sales.get(p.fornecedor.strip().casefold(), 0.0))
+            for p in at_risk[:10]
+            if float(sup_sales.get(p.fornecedor.strip().casefold(), 0.0)) > 0.0
+        ]
+        if target_sup_sales > 0.0 and ref_sup_vals:
+            avg_ref_sup = sum(ref_sup_vals) / len(ref_sup_vals)
+            brand_pressure = max(
+                BRAND_IMPACT_MIN_FACTOR,
+                min(BRAND_IMPACT_MAX_FACTOR, (target_sup_sales / avg_ref_sup) ** BRAND_IMPACT_EXPONENT),
+            )
+
+    estimated_overlap_pct = round(min(100.0, base_overlap_pct * brand_pressure), 1)
     high_cluster = sum(1 for p in at_risk if p.affinity_score >= MODERATE_CANNIBALIZATION_CLUSTER_SCORE)
 
-    if at_risk[0].affinity_score >= HIGH_CANNIBALIZATION_AFFINITY or high_cluster >= HIGH_CANNIBALIZATION_CLUSTER_COUNT:
+    effective_top_score = min(1.0, at_risk[0].affinity_score * brand_pressure)
+    if effective_top_score >= HIGH_CANNIBALIZATION_AFFINITY or high_cluster >= HIGH_CANNIBALIZATION_CLUSTER_COUNT:
         risk_level = "ALTO"
         level_label = "Alto risco de canibalização"
     else:
