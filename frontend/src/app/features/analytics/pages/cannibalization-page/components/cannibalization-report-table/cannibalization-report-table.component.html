@@ -239,6 +239,7 @@
               class="report-row"
               [class.is-selected]="selectedSku() === item.sku"
               (click)="onRowClick(item, $event)"
+              (keydown.enter)="onRowClick(item, $event)"
             >
               <td class="product-cell">
                 <div class="product-sku-line">
@@ -342,6 +343,7 @@
           class="victim-card"
           [class.is-selected]="selectedSku() === item.sku"
           (click)="onRowClick(item, $event)"
+          (keydown.enter)="onRowClick(item, $event)"
         >
           <div class="card-top-row">
             <span class="sku-code tabular-nums">SKU {{ item.sku }}</span>

@@ -271,14 +271,14 @@ def sync_product_affinity_index(
 
     logger.info(
         "[AFFINITY-CRON] Sync concluído: ativos=%d gallery=%d matched=%d (+%d ~%d -%d) recomputed=%s (%dms)",
-        summary.get("total_active_skus", 0),
-        summary.get("gallery_products_fetched", 0),
-        summary.get("gallery_matched_skus", 0),
-        summary.get("added_count", 0),
-        summary.get("updated_count", 0),
-        summary.get("removed_count", 0),
-        summary.get("recomputed", False),
-        summary.get("duration_ms", 0),
+        int(summary.get("total_active_skus") or 0),
+        int(summary.get("gallery_products_fetched") or 0),
+        int(summary.get("gallery_matched_skus") or 0),
+        int(summary.get("added_count") or 0),
+        int(summary.get("updated_count") or 0),
+        int(summary.get("removed_count") or 0),
+        bool(summary.get("recomputed", False)),
+        int(summary.get("duration_ms") or 0),
     )
     return summary
 

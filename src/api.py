@@ -69,7 +69,7 @@ async def lifespan(app: FastAPI):
                 if summary.get("recomputed"):
                     analytics_service.reset_cannibalization_report_cache()
             except asyncio.CancelledError:
-                break
+                raise
             except Exception as exc:
                 logger.warning("[AFFINITY-CRON] Erro no ciclo diário (%s); tentará novamente amanhã.", type(exc).__name__)
                 await asyncio.sleep(60.0)
@@ -80,10 +80,7 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         cron_task.cancel()
-        try:
-            await cron_task
-        except asyncio.CancelledError:
-            pass
+        await asyncio.gather(cron_task, return_exceptions=True)
 
 
 app = FastAPI(

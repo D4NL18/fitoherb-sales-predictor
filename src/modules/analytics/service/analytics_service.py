@@ -1116,13 +1116,14 @@ def get_cannibalization_analysis(
             affected_items=net_items_input,
         )
 
-        # Constrói timeline semanal simétrica (-W..-1 e 1..W)
+        # Constrói timeline semanal simétrica (-W..-1 e 1..W) com limite explícito (S6680)
+        safe_weeks = max(2, min(int(window_weeks), 12))
         timeline: List[TimelinePointDTO] = []
-        for w_idx in range(-window_weeks, window_weeks + 1):
+        for w_idx in range(-safe_weeks, safe_weeks + 1):
             if w_idx == 0:
                 continue
             if w_idx < 0:
-                offset_days = (window_weeks + w_idx) * 7
+                offset_days = (safe_weeks + w_idx) * 7
                 w_start = target_windows.pre_start + timedelta(days=offset_days)
                 w_end = w_start + timedelta(days=6)
                 t_vol = float(

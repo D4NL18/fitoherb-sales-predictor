@@ -317,8 +317,7 @@ def _detect_promo_event(
 
     cal["start_date"] = pd.to_datetime(cal["start_date"]).dt.date
     if event_date is not None:
-        matched = cal[cal["start_date"] == event_date]
-        selected_date = event_date if not matched.empty else event_date
+        selected_date = event_date
     else:
         days = window_weeks * 7
         valid_dates = cal["start_date"]
