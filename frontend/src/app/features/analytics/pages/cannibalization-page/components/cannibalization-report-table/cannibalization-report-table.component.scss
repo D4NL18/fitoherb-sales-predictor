@@ -219,6 +219,11 @@
     text-align: right;
   }
 
+  .center-col,
+  .center-cell {
+    text-align: center;
+  }
+
   .action-col {
     text-align: right;
     white-space: nowrap;
@@ -254,6 +259,10 @@
 
   &.is-numeric {
     justify-content: flex-end;
+  }
+
+  &.is-centered {
+    justify-content: center;
   }
 
   @include ui.hover {

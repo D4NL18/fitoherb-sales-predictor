@@ -179,13 +179,13 @@
             </th>
             <th
               scope="col"
-              class="num-col"
+              class="center-col"
               [class.is-sorted]="isColumnSorted('reduction')"
               [attr.aria-sort]="getAriaSort('reduction')"
             >
               <button
                 type="button"
-                class="sort-header-btn is-numeric"
+                class="sort-header-btn is-centered"
                 (click)="onColumnSort('reduction')"
               >
                 <span>% Redução (Canib.)</span>
@@ -273,7 +273,7 @@
               </td>
 
               <td
-                class="num-cell"
+                class="center-cell"
                 [class.is-sorted]="isColumnSorted('reduction')"
               >
                 <span class="tag tabular-nums" [class]="getSeverityClass(item.cannibalizedRevenuePct)">
