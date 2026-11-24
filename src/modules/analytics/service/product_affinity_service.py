@@ -26,6 +26,7 @@ from src.modules.analytics.domain.product_affinity import (
     MIN_STORED_AFFINITY_SCORE,
     _collect_all_supplier_tokens,
     build_affinity_document,
+    build_sku_compatibility_profile,
     compute_affinity_matrix,
     compute_content_hash,
     compute_incremental_diff,
@@ -212,11 +213,20 @@ def sync_product_affinity_index(
                 sku: (str(meta.get("primary_function") or "") or None)
                 for sku, meta in merged_skus.items()
             }
+            profiles_for_matrix = {
+                sku: build_sku_compatibility_profile(
+                    description=str(meta.get("description") or ""),
+                    primary_function=funcs_for_matrix[sku],
+                    supplier_tokens=supplier_tokens,
+                )
+                for sku, meta in merged_skus.items()
+            }
             affinities = compute_affinity_matrix(
                 sku_documents=docs_for_matrix,
                 top_k=top_k,
                 min_score=MIN_STORED_AFFINITY_SCORE,
                 sku_primary_functions=funcs_for_matrix,
+                sku_profiles=profiles_for_matrix,
             )
 
             elapsed_ms = int((time.perf_counter() - started) * 1000)

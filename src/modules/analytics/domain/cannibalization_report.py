@@ -473,8 +473,9 @@ def _unpack_row(row: Union[Mapping[str, object], Sequence[object]]) -> Tuple[obj
 
 _QUANTITY_UNIT_RE = re.compile(
     r"\b\d+[.,]?\d*\s*(x\s*\d+[.,]?\d*)?\s*"
-    r"(g|gr|grs|kg|mg|mcg|ml|l|ui|caps|cap|comp|un|unid|saches|sache|gotas|gota)?\b"
+    r"(g|gr|grs|kg|mg|mcg|ml|l|ui|caps|cap|capsgel|comp|compr|cps|tabs|un|unid|saches|sache|gotas|gota)?\b"
 )
+_NEGATION_RE = re.compile(r"\b(?:s/|sem)\s+([a-z0-9]+)")
 _DOTTED_ACRONYM_RE = re.compile(r"\b(?:[a-z]\.){2,}[a-z]?\.?")
 _WORD_RE = re.compile(r"[a-z]{3,}")
 
@@ -482,29 +483,34 @@ _PRODUCT_TOKEN_STOPWORDS: FrozenSet[str] = frozenset(
     {
         # preposições / conectivos
         "de", "da", "do", "das", "dos", "com", "sem", "para", "por", "em", "na", "no", "e", "ou",
-        # embalagens / formatos / unidades
-        "caps", "capsula", "capsulas", "cap", "comp", "comprimido", "comprimidos", "softgel", "softgels",
-        "pote", "refil", "pouch", "sache", "saches", "display", "unid", "unidade", "unidades", "caixa",
-        "frasco", "bisnaga", "tubo", "lata", "vidro", "gotas", "gota", "grs", "mcg",
+        # embalagens / formatos / unidades / linhas
+        "caps", "capsula", "capsulas", "cap", "capsgel", "comp", "compr", "comprimido", "comprimidos",
+        "cps", "tabs", "softgel", "softgels", "pote", "refil", "pouch", "sache", "saches", "display",
+        "unid", "unidade", "unidades", "caixa", "frasco", "bisnaga", "tubo", "lata", "vidro",
+        "gotas", "gota", "grs", "mcg", "stand", "ziper", "monodose", "peixinhos", "bala", "balas",
         "liquido", "liquida", "spray", "gel", "creme", "oleo", "extrato", "tablete", "tabletes",
         "goma", "gomas", "stick", "sticks", "shot", "shots", "dose", "doses", "kit",
-        "suplemento", "alimentar", "composto", "complexo",
-        # sabores / atributos sensoriais
+        "suplemento", "alimentar", "composto", "composta", "complexo", "completo", "completa",
+        "seco", "semente", "erva", "ervas", "misto", "especiarias", "farinha", "sal",
+        "capilar", "corporal", "desodorizado", "std", "vita",
+        # sabores / atributos sensoriais / cores genéricas
         "chocolate", "choco", "morango", "baunilha", "limao", "uva", "roxa", "laranja", "abacaxi", "maracuja",
         "melancia", "frutas", "vermelhas", "amarelas", "tropicais", "tangerina", "pessego", "coco", "banana", "maca",
         "canela", "menta", "hortela", "neutro", "neutra", "natural", "cookies", "brigadeiro", "caramelo", "cafe",
         "cappuccino", "pacoca", "doce", "leite", "avela", "pistache", "cramberry", "cranberry", "acai", "guarana",
         "framboesa", "cereja", "kiwi", "manga", "limonada", "suico", "belga", "branco", "preto", "amargo", "salgado",
+        "verde", "vermelho", "amarelo", "roxo", "branca", "preta",
         "fruit", "punch", "pink", "lemonade", "cotton", "candy", "iced", "ice", "green", "apple", "berry", "citrus",
+        "banoffe", "cocada", "mocaccino", "chantilly", "tutti", "frutti", "belo",
         "tradicional", "original", "sabor", "zero", "acucar", "lactose", "gluten", "vegano", "vegana", "integral",
         # qualificadores de marketing / genéricos
-        "pura", "puro", "pure", "turbo", "hardcore", "ultra", "super", "plus", "max", "pro", "top", "gold", "black",
-        "premium", "master", "extreme", "forte", "extra", "nova", "novo", "formula", "kids", "senior", "fases",
-        "fem", "men", "woman", "sport", "fitness", "daily", "dia", "noite", "concentrado", "concentrada",
-        "isolado", "isolada", "hidrolisado", "hidrolisada", "monohidratada", "monohidratado", "monohid",
-        "micronizada", "micronizado", "quelato", "quelado", "complex", "blend", "mix",
-        "carbo", "low", "diet", "light", "fit", "energy", "power", "active", "life", "saude", "bem", "estar",
-        "linha", "promocao", "promo", "gratis", "leva", "pague", "edicao", "especial",
+        "pura", "puro", "pure", "purissimo", "turbo", "hardcore", "ultra", "super", "plus", "max", "maxima",
+        "pro", "top", "gold", "black", "premium", "master", "extreme", "forte", "extra", "nova", "novo", "formula",
+        "kids", "senior", "fases", "fem", "men", "woman", "sport", "fitness", "daily", "dia", "noite",
+        "concentrado", "concentrada", "isolado", "isolada", "hidrolisado", "hidrolisada",
+        "monohidratada", "monohidratado", "monohid", "micronizada", "micronizado", "quelato", "quelado",
+        "complex", "blend", "mix", "carbo", "low", "diet", "light", "fit", "energy", "power", "active", "life",
+        "saude", "bem", "estar", "linha", "promocao", "promo", "gratis", "leva", "pague", "edicao", "especial",
         "tasty", "crisp", "crunch", "mini", "big", "mega", "essential", "essentials",
         "vitamina", "vitaminas", "dado", "torta",
     }
@@ -519,8 +525,11 @@ _CANONICAL_SYNONYMS: Tuple[Tuple[str, str], ...] = (
     ("iso whey", "whey"),
     ("vitamina d3", "vitaminad"),
     ("vitamina d", "vitaminad"),
+    ("vita d3", "vitaminad"),
     ("vit d3", "vitaminad"),
     ("vit d", "vitaminad"),
+    ("d3 + c", "vitaminad + vitaminac"),
+    ("+ c +", "+ vitaminac +"),
     ("vitamina b12", "vitaminab12"),
     ("metilcobalamina", "vitaminab12"),
     ("vitamina c", "vitaminac"),
@@ -540,6 +549,27 @@ _CANONICAL_SYNONYMS: Tuple[Tuple[str, str], ...] = (
     ("l carnitina", "lcarnitina"),
     ("acido hialuronico", "hialuronico"),
     ("cha verde", "chaverde"),
+    ("cha preto", "chapreto"),
+    ("cafe verde", "cafeverde"),
+    ("banana verde", "bananaverde"),
+    ("maca verde", "macaverde"),
+    ("erva doce", "ervadoce"),
+    ("erva baleeira", "ervabaleeira"),
+    ("erva de sao joao", "ervasaojoao"),
+    ("erva de bicho", "ervabicho"),
+    ("sal amargo", "salamargo"),
+    ("sal de frutas", "salfrutas"),
+    ("sal frutas", "salfrutas"),
+    ("semente de abobora", "sementeabobora"),
+    ("semente de uva", "sementeuva"),
+    ("semente de girassol", "sementegirassol"),
+    ("semente de linhaca", "sementelinhaca"),
+    ("semente de chia", "sementechia"),
+    ("rosa mosqueta", "rosamosqueta"),
+    ("canela de velho", "canelavelho"),
+    ("ora pro nobis", "orapronobis"),
+    ("ora-pro-nobis", "orapronobis"),
+    ("limao siciliano", "limaosiciliano"),
     ("vinagre de maca", "vinagremaca"),
     ("oleo de coco", "oleococo"),
     ("psilium", "psyllium"),
@@ -576,6 +606,7 @@ def extract_product_family_tokens(
     descartando marca/fornecedor, gramatura/embalagem, sabor e adjetivos genéricos.
     """
     text = _collapse_dotted_acronyms(_strip_accents(str(description or "").lower()))
+    text = _NEGATION_RE.sub(r" sem_\1 ", text)
     for src, dst in _CANONICAL_SYNONYMS:
         if src in text:
             text = text.replace(src, dst)
