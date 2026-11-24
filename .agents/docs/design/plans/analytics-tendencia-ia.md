@@ -7,7 +7,7 @@
 > **Auditor:** UX Reviewer · **Executor:** Desenvolvedor (fase 7.3)
 > **Referências:** `.agents/docs/tasks/ia-tendencia-vendas-motivos.md` (§3.7, §3.9), `.agents/docs/business_rules/analytics-tendencia-ia.md` (P-150..P-187), `GLOSSARY.md` §6, planos `analytics-sales-trend.md` e `analytics-canibalizacao.md`, `.agents/rules/frontend-*.md`
 > **Fonte de tokens:** `frontend/src/styles.scss` (Papel & Tinta). O `DESIGN_SYSTEM.md` ainda tem placeholders genéricos (teal, Plus Jakarta) e **não** é usado para cores e fontes, como nas F4/F6 (D-1).
-> **Contrato:** `api_contracts/trend-insights.md` está sendo escrito pelo `architect` em paralelo. Os campos de que a tela depende estão na §11; nomes `camelCase` aqui são sugestões.
+> **Contrato:** `api_contracts/sales-trend-insights.md` **v1.1.0** (§0, §2.1, §4.2, §4.4). Sem "Análise aprofundada" e sem modelo Neon; **a UI não mostra nenhum valor de gasto, dólar, saldo ou percentual de orçamento** (o contrato só expõe `meta.ia.orcamento.nivel`, e a tela nem usa o nível para texto de custo). Campos na §11; onde um nome `camelCase` aqui divergir do contrato, vale o contrato.
 
 ---
 
@@ -24,7 +24,7 @@
 6. O que pode explicar o resto, com fonte? (análise com IA, só ao clicar)
 
 **Objetivos de UX**
-1. Abrir o painel nunca gasta crédito de IA: a parte numérica aparece sozinha; a IA tem botão próprio e explícito (P-174).
+1. Abrir o painel nunca aciona a IA: a parte numérica aparece sozinha; a IA tem botão próprio e explícito (P-174).
 2. Ler a cascata sem estatística: rótulos em português comum ("Época do ano", "Mudança de preço"), valor em R$ (ou un) e em pontos percentuais da variação.
 3. Deixar visível o que **não** foi medido ("não avaliado", com o motivo) e o que sobrou sem explicação (resíduo), sem esconder em tooltip.
 4. Separar, a olho nu, o que é evidência (número interno ou notícia com fonte e data) do que é hipótese.
@@ -109,9 +109,9 @@ Código novo em `frontend/src/app/features/sales-trend/insights/` (a feature mor
 
 | Componente / arquivo | Tipo | Entradas → saídas |
 | :--- | :--- | :--- |
-| `TrendInsightsService` | HTTP | `getProductInsight(sku, params)` (GET), `generate(sku, params, {force, deep})` (POST). Desembrulha `data`/`meta`; converte erro em `InsightApiError` |
+| `TrendInsightsService` | HTTP | `getProductInsight(sku, params)` (GET), `generate(sku, params, {force})` (POST; sem `deep`). Desembrulha `data`/`meta`; converte erro em `InsightApiError` |
 | `TrendInsightsStore` (provida **na página** `SalesTrendPageComponent`, não no painel) | Estado | `openKey`, máquina da parte numérica `idle → loading → success \| error`, máquina da IA (§7), `Map<chave, GenerationState>` para que fechar o painel não cancele uma geração (D-9). `switchMap` no GET; o POST **não** é cancelado por troca de janela |
-| `TrendInsightPanelComponent` | Burro (diálogo) | `view: InsightPanelView \| null`, `windowOptions`, `returnFocusTo` → `(close)`, `(windowChange)`, `(retry)`, `(generate: {deep})`, `(confirmRegenerate: {deep})`, `(cancelConfirm)` |
+| `TrendInsightPanelComponent` | Burro (diálogo) | `view: InsightPanelView \| null`, `windowOptions`, `returnFocusTo` → `(close)`, `(windowChange)`, `(retry)`, `(generate)`, `(confirmRegenerate)`, `(cancelConfirm)` |
 | `InsightSummaryComponent` | Burro | `summary: InsightSummaryView` (número herói, período, selo, frase de mercado, atalho para a IA) |
 | `MarketDiagnosisSealComponent` | Burro | `diagnosis: MarketDiagnosisView` |
 | `AttributionWaterfallComponent` | Burro | `waterfall: WaterfallView` → `(toggleParcel: tipo)` (abre a lista de produtos da parcela de migração) |
@@ -223,7 +223,10 @@ Seções separadas por `border-top: 1px solid var(--border-subtle)` e `padding-b
 | Fornecedor de `A` ausente (P-154.2) | info | `Fornecedor do produto não informado: todos os semelhantes aparecem como "outro fornecedor".` |
 | Modo `QUALITATIVO` por Base Baixa ou `SEM_BASE` (P-170) | info | `Base pequena: a análise mostra só os sinais, sem estimar valores.` |
 | Estado `NOVO` (P-170) | info | `Produto novo ou retomado nesta janela: não há período anterior para comparar.` |
-| `ESCALONAMENTO_NEGADO_POR_ORCAMENTO` em `meta.avisos` do POST | info (dentro do bloco de IA) | `O saldo de IA do mês não cobria a análise aprofundada; usamos a análise padrão.` |
+| `SEM_BUSCA_EXTERNA` em `meta.avisos` do POST | info (dentro do bloco de IA) | `Esta análise não consultou notícias externas; os fatores abaixo vêm só dos dados internos.` |
+| `IA_FALHOU` em `meta.avisos` do POST | info (dentro do bloco de IA) | `Não foi possível gerar a análise com IA agora; mostramos o resumo automático.` |
+
+> **Removido (v1.1.0):** o aviso `DIAGNOSTICO_DESATUALIZADO` e o `ESCALONAMENTO_NEGADO_POR_ORCAMENTO` não existem mais; a tela não os trata. Diagnóstico salvo antigo é indicado só pela data no rodapé e, se `meta.ia.diagnosticoVencido`, por `Gerada há {N} dias` (texto neutro, sem alerta).
 
 ### 6.5 Selo de diagnóstico de mercado (`MarketDiagnosisSealComponent`)
 
@@ -293,7 +296,7 @@ Cores escolhidas por **tipo de causa**, não por direção (direção = glifo e 
      4020 · EXTRATO DE PRÓPOLIS 20 ML · MELCO    semelhança 61%   −R$ 524,00     4 clientes   [↗ Migração por valor]
      Ver equilíbrio de preço no relatório de Canibalização →
 ```
-  Contagem de clientes é agregada (`netClients`), nunca identificação (LGPD). Selo do mecanismo com `MECHANISM_VISUAL_META`. Na alta, o título da sub-lista é `De onde vieram os clientes`.
+  Contagem de clientes é agregada (`netClients`/`clientesMigrados`), nunca identificação (LGPD); valor `"<3"` aparece como `menos de 3 clientes` (§7.3). Selo do mecanismo com `MECHANISM_VISUAL_META`. Na alta, o título da sub-lista é `De onde vieram os clientes`.
 - **Alta:** rótulos invertidos (§10.1); `Lançamento semelhante` e `Clientes que pararam de comprar` ficam `Sem efeito` com motivo `Não se aplica a altas.`
 - **Modo `QUALITATIVO`:** a tabela não aparece; em seu lugar a lista de sinais (§6.7) com presença sim/não/não avaliado (P-170), título `Sinais encontrados (sem estimar valores)`.
 - **Mobile (< 768 px):** cada linha vira um bloco em grade de 2 colunas: linha 1 rótulo | valor; linha 2 barra em largura total; linha 3 `p.p. · Confiança` e o motivo. A semântica continua `<table>` com `display: grid` nas linhas e cabeçalhos `sr-only` (os `th` de coluna seguem presentes para o leitor de tela).
@@ -364,23 +367,24 @@ Dado do motor (P-171), disponível sem IA (aparece já ao abrir o painel; Q-D6).
 **Aviso fixo** (`InlineNoticeComponent tone="info" dismissible=false`, fundo `--bg-canvas`, borda esq. 3px `--feedback-info-bg`), visível sempre que houver diagnóstico na tela e também no estado vazio, para o usuário saber antes de clicar:
 `Diagnóstico gerado por IA a partir de dados internos e notícias públicas; confira as fontes.`
 
-**Botões** (sempre os dois, lado a lado em ≥ 375 px; empilhados em 320 px; `min-height` 40 px desktop / 44 px mobile):
-- Primário `%button-primary`: `Gerar análise com IA` → com diagnóstico salvo vira `Gerar de novo`.
-- Secundário: `Análise aprofundada` + linha de ajuda 0.75rem `--text-secondary`: `Mais lenta e com custo maior; use quando a análise padrão não bastar.`
-- Durante qualquer geração: os dois `disabled` (P-176.1), sem esconder.
+**Botão único** (`min-height` 40 px desktop / 44 px mobile; **não existe "Análise aprofundada"**). Rótulo e habilitação vêm de `meta.ia` do GET:
+- `geraComIa = true`, sem salvo: `Gerar análise com IA`. Com `diagnosticoSalvo`: `Gerar de novo` (com `diagnosticoVencido`: `Atualizar`, ao lado do texto `Gerada há {N} dias`).
+- `geraComIa = false` (gate, orçamento, IA desligada/indisponível; `motivoTemplate`): `Gerar resumo automático`, com linha de ajuda 0.75rem `--text-secondary` por motivo (§10.6). O clique é permitido e devolve o resumo sem IA.
+- Desabilitado só por `podeGerar = false` (`SEM_VARIACAO`, `geracaoEmAndamento`) ou durante o POST (P-176.1); `Gerar de novo`/`Atualizar` também com `podeForcar = false`, com texto neutro por `aria-describedby`: `Já existe uma análise salva para esta janela.` Nada de valor, saldo ou "créditos restantes".
+- A tela **não calcula nem exibe** gasto; `meta.ia.orcamento.nivel` não gera texto próprio.
 
 | # | Estado | Condição | Visual e texto | Foco / anúncio |
 | :-: | :--- | :--- | :--- | :--- |
-| 1 | **Vazio — ainda não gerada** | GET sem `diagnosticoIa`; modo ≠ `SEM_VARIACAO` | Ícone de documento com linhas (SVG 24 px, `--text-secondary`) + título `Ainda não há análise com IA para esta janela` + texto `A IA lê os números acima, pesquisa notícias do período (clima, preço de matéria-prima, regras, concorrência) e aponta o que pode explicar a parte sem explicação. Cada pedido consome créditos de IA.` + botões | — |
+| 1 | **Vazio — ainda não gerada** | GET sem `diagnosticoIa`; modo ≠ `SEM_VARIACAO` | Ícone de documento com linhas (SVG 24 px, `--text-secondary`) + título `Ainda não há análise com IA para esta janela` + texto `A IA lê os números acima, pesquisa notícias do período (clima, preço de matéria-prima, regras, concorrência) e aponta o que pode explicar a parte sem explicação. O resultado fica salvo para esta janela.` + botão | — |
 | 2 | **Gerando** (~10–30 s) | POST em voo para a chave | Botões desabilitados, o primário com texto `Gerando…`. Área: skeleton do conteúdo (1 linha de 60% + 3 linhas do resumo + 3 itens de fator com selo) e a linha `role="status"`: `Lendo os números e pesquisando notícias do período. Costuma levar de 10 a 30 segundos.` + contador `{s} s` (`aria-hidden`, atualiza a cada segundo). **Sem barra de percentual** (o backend não informa progresso). Aos 30 s, troca o texto: `Está demorando mais que o normal. Pode fechar este painel: a análise continua enquanto a página estiver aberta.` | Anúncio só no início e aos 30 s (não a cada segundo) |
-| 3 | **Sucesso (recém-gerada)** | POST 200 com diagnóstico | Conteúdo (§7.1) + rodapé `Gerada agora · Análise {padrão\|aprofundada}`. Botão vira `Gerar de novo` | Foco no `h3`; anúncio `Análise com IA pronta.` |
-| 4 | **Salva (com data)** | GET com `diagnosticoIa` salvo, ou POST com `meta.reutilizado = true` | Conteúdo + rodapé `Gerada em {dd/MM/yyyy} às {HH:mm} · Análise {padrão\|aprofundada}`. Se `reutilizado`: `InlineNotice` info `Já havia uma análise salva para esta janela; mostramos a de {dd/MM}. Nenhum crédito foi usado.` | Anúncio `Análise salva de {dd/MM} exibida.` |
-| 5 | **Confirmação de regeneração** | Clique em `Gerar de novo` ou em `Análise aprofundada` com diagnóstico salvo (P-175.2/175.3) | **Confirmação inline** (não abre outro diálogo sobre o painel): a fileira de botões é substituída por uma caixa `--bg-surface`, borda 1px `--border-default`, borda esq. 3px `--feedback-warning-bg`, `role="group" aria-labelledby`: `Gerar de novo consome créditos de IA. Continuar?` (aprofundada: `A análise aprofundada consome mais créditos de IA e substitui a análise salva. Continuar?`) + `[Continuar]` primário + `[Cancelar]` secundário. O diagnóstico salvo continua visível acima | Foco no `Continuar`? **Não:** foco no texto da pergunta (`tabindex="-1"`) para evitar Enter acidental; `Esc` = Cancelar; ao cancelar, foco volta ao botão de origem |
-| 6 | **Orçamento esgotado** | POST 503 `TIA-004` `ORCAMENTO_ESGOTADO`, ou indicador no GET (Q-D7) | Botões `disabled` com `aria-describedby` apontando para a mensagem; caixa borda esq. 3px `--feedback-warning-bg`: `Limite mensal de análises com IA atingido. A parte numérica continua disponível.` + `O limite volta em 1º de {mês seguinte}.` Diagnóstico salvo, se houver, continua visível | Anúncio da mensagem |
-| 7 | **IA indisponível** | 503 `TIA-004` `IA_INDISPONIVEL`; ou 429 `LIMITE_DE_PEDIDOS` | Indisponível: `A análise com IA está fora do ar agora. A parte numérica continua disponível.` + `[Tentar de novo]`. Limite por minuto: `Muitos pedidos de análise em sequência. Aguarde um minuto e tente de novo.` com o botão reabilitado após 60 s (contador `aria-hidden`) | Anúncio da mensagem |
-| 8 | **Erro / fallback** | POST 200 com `diagnosticoIa = null` + aviso (P-183.3); rede; 500; timeout do cliente (120 s) | Caixa borda esq. 3px `--feedback-critical-bg`: `Não foi possível gerar a análise com IA agora. A parte numérica está disponível.` + `[Tentar de novo]` (mesmo POST, sem `force`). Nada de código técnico nem stacktrace | Foco no botão `Tentar de novo` |
+| 3 | **Sucesso (recém-gerada)** | POST 200 com `meta.origem = llm` ou `fallback` | Conteúdo (§7.1) + rodapé `Gerada agora`. Selo de origem (§7.2). Botão vira `Gerar de novo`. `fallback` não mostra aviso nem nome de modelo (só em "Detalhes técnicos") | Foco no `h3`; anúncio `Análise com IA pronta.` |
+| 4 | **Salva (com data)** | GET com `diagnosticoIa` salvo, ou POST com `meta.origem = cache` (`reutilizado`) | Conteúdo + selo `Análise salva` + rodapé `Gerada em {dd/MM/yyyy} às {HH:mm}`. Se veio do POST: `InlineNotice` info `Já havia uma análise salva para esta janela; mostramos a de {dd/MM}.` (sem mencionar crédito ou custo) | Anúncio `Análise salva de {dd/MM} exibida.` |
+| 5 | **Confirmação de regeneração** | Clique em `Gerar de novo`/`Atualizar` com diagnóstico salvo e `podeForcar = true` (P-175.2/175.3) | **Confirmação inline** (não abre outro diálogo): o botão é substituído por uma caixa `--bg-surface`, borda 1px `--border-default`, borda esq. 3px `--feedback-warning-bg`, `role="group" aria-labelledby`: `Gerar de novo substitui a análise salva desta janela. Continuar?` + `[Continuar]` primário + `[Cancelar]` secundário. Sem menção a créditos. O diagnóstico salvo continua visível | Foco no texto da pergunta (`tabindex="-1"`) para evitar Enter acidental; `Esc` = Cancelar; ao cancelar, foco volta ao botão de origem |
+| 6 | **Resumo automático (IA indisponível / orçamento esgotado / IA desligada / gate)** | POST **200** com `meta.origem = template` (`motivoTemplate`); ou GET com `geraComIa = false` | Não é erro. Exibe `data.resumoAutomatico` (texto puro) sob o selo `Resumo automático (sem IA)` e a nota neutra por `motivoTemplate` (§10.6); sem fatores, fontes nem hipóteses. Tom `info`, borda esq. `--feedback-neutral-bg`. **Nunca culpa o usuário** e não fala de limite, saldo ou valor. A parte numérica segue visível | Anúncio `Resumo automático exibido.` |
+| 7 | **Limite de pedidos (429 `TIA-004`)** | `motivo = LIMITE_DE_PEDIDOS` (2/min) ou `LIMITE_DIARIO` (10/dia; `force` 3/dia) | Caixa borda esq. 3px `--feedback-warning-bg`. `LIMITE_DE_PEDIDOS`: `Muitos pedidos de análise em sequência. Aguarde um minuto e tente de novo.`, botão reabilitado após `Retry-After` (contador `aria-hidden`). `LIMITE_DIARIO`: `Você chegou ao limite de análises por hoje. A parte numérica continua disponível e o limite renova amanhã.` (sem contador, botão desabilitado até a data; sem `Retry-After` em segundos na tela). Salvo, se houver, continua visível | Anúncio da mensagem |
+| 8 | **Erro** | Rede; 500; timeout do cliente (120 s); `TIA-001` no POST | Caixa borda esq. 3px `--feedback-critical-bg`: `Não foi possível gerar a análise agora. A parte numérica está disponível.` + `[Tentar de novo]` (mesmo POST, sem `force`). Nada de código técnico nem stacktrace. (Falha da IA com 200 + `IA_FALHOU` não é este estado: cai no estado 6.) | Foco no botão `Tentar de novo` |
 
-**Sem variação relevante (`SEM_VARIACAO`):** o bloco não mostra botões; texto `Não há variação relevante para analisar nesta janela (menos de {limiar}). Escolha outra janela acima.` (P-152; limiar de `meta.parametros`).
+**Sem variação relevante (`SEM_VARIACAO`):** o bloco não mostra botão; texto `Não há variação relevante para analisar nesta janela (menos de {limiar}). Escolha outra janela acima.` (P-152; limiar de `meta.parametros`).
 **Modo `QUALITATIVO`:** antes dos botões, linha `Com base pequena, a IA aponta sinais e notícias, sem estimar valores.`
 
 ### 7.1 Conteúdo do diagnóstico
@@ -409,8 +413,8 @@ Dado do motor (P-171), disponível sem IA (aparece já ao abrir o painel; Q-D6).
  Próximos passos sugeridos                                                        (h4)
  1. Comparar o preço com o item 4012 no relatório de Canibalização.
  2. ...
- Gerada em 22/11/2026 às 14:05 · Análise padrão
- [Gerar de novo]  [Análise aprofundada]
+ [Análise salva]  Gerada em 22/11/2026 às 14:05
+ [Gerar de novo]
 ```
 
 - **Resumo:** `<p>` em texto puro (interpolação Angular, nunca `[innerHTML]`; P-184.5), máx. 800 caracteres. Os números do texto já chegam substituídos pelo backend (P-182.1).
@@ -419,12 +423,28 @@ Dado do motor (P-171), disponível sem IA (aparece já ao abrir o painel; Q-D6).
 - **Hipóteses separadas das evidências (D-10):** contêiner próprio, depois dos fatores, com borda **tracejada** 1px `--border-strong`, fundo `--bg-canvas`, título `h4` `Hipóteses sem fonte confirmada ({n})` e texto introdutório 0.75rem `--text-muted`: `A IA levantou, mas não achou fonte válida para o período. Não trate como causa.` Itens sem selo de confiança, com o motivo (§10.3). Separação por posição, borda, fundo e título — não só por cor.
 - **Recomendações:** `<ol>`, título `Próximos passos sugeridos`, até 5.
 - **`impactoEmOutrosProdutos`** não é repetido aqui: já está na §6.9 (parte numérica).
-- **Rodapé de metadados:** 0.75rem `--text-secondary`: data/hora, `Análise padrão` / `Análise aprofundada`. Modelo (`meta.modelo`) só em `title`/`<details>` "Detalhes técnicos" (não é informação de negócio).
+- **Rodapé de metadados:** 0.75rem `--text-secondary`: data/hora e selo de origem (§7.2); sem tipo de análise. Modelo (`meta.modelo`) só em `title`/`<details>` "Detalhes técnicos" (não é informação de negócio).
 - **Sem fatores válidos** (todos viraram hipótese): título `Fatores com evidência (0)` + `A IA não encontrou fator com fonte válida. Veja as hipóteses abaixo e a cascata acima.`
 
 ---
 
-## 8. Estados da parte numérica
+### 7.2 Selo de origem (`meta.origem`; o GET com salvo equivale a `cache`)
+
+Microselo de contorno (`--border-default`, texto `--text-secondary`, 0.75rem) ao lado do `h3`, sempre texto, sem cor própria:
+
+| `origem` | Rótulo | Observação |
+| :--- | :--- | :--- |
+| `llm` | `Gerada por IA` | Recém-gerada |
+| `fallback` | `Gerada por IA` | Mesmo rótulo do `llm`; o usuário não precisa saber qual modelo (nome só em "Detalhes técnicos") |
+| `cache` | `Análise salva` | Mais a data no rodapé; custo zero, sem mencioná-lo |
+| `template` | `Resumo automático (sem IA)` | Sem aviso fixo de "gerado por IA" (não há IA); o aviso fixo só aparece com `llm`/`fallback`/`cache` |
+
+### 7.3 Detalhes de conteúdo derivados do contrato 1.1.0
+
+- **`explicacao` do fator** (≤ 160 caracteres, texto da IA sem números): linha 2 de cada fator, antes de `Dado interno · ver na cascata ↑` e das fontes. Números do fator vêm de `parcelaEstimada`/cascata, nunca do texto.
+- **Contagens `"<3"`** (`clientesMigrados`, `clientesPerdidosQtd`; LGPD): exibir `menos de 3 clientes` (célula compacta `<3` com `sr-only` `menos de 3 clientes`); valor em R$ correspondente, quando `null`, como `—`. Nunca somar nem converter `"<3"` em número; a tela não tenta inferir identidades. Tipo `number | '<3'` tratado por função pura em `insight-view.ts`.
+- **Fonte com `dataPublicacao = null`** (`SEM_DATA`, só em hipóteses): na linha da fonte, no lugar da data, `sem data de publicação` (`--text-secondary`); nunca em fator aceito. A hipótese mostra o motivo `Fonte sem data de publicação.` (§10.3).
+- **Hipótese com `SKU_FORA_DO_PACOTE`:** texto `Citou um produto fora da análise; ignorado.`
 
 | Estado | Visual |
 | :--- | :--- |
@@ -439,13 +459,13 @@ Dado do motor (P-171), disponível sem IA (aparece já ao abrir o painel; Q-D6).
 
 ## 9. Matriz dos 8 estados interativos (controles do F7)
 
-| Estado | "Por que?" | Seletor de janela | Botões de IA | Disclosures (`[›]`, "Mostrar todos") | Links (fonte, Canibalização) |
+| Estado | "Por que?" | Seletor de janela | Botão de IA | Disclosures (`[›]`, "Mostrar todos") | Links (fonte, Canibalização) |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | Default | contorno `--border-default`, texto `--brand-primary` | `SegmentedControl` padrão | primário sólido / secundário contorno | 40×40, `--text-secondary` | `--brand-primary`, sublinhado 1px |
 | Hover | fundo `--brand-primary-subtle`, borda `--brand-primary` | do componente | primário `--brand-primary-hover`; secundário fundo `--bg-subtle` | fundo `--bg-subtle` | sublinhado 2px |
 | Focus-visible | anel 2px `--border-focus`, offset 2px | idem | idem | idem | idem |
 | Active | fundo `--bg-muted` | `--brand-primary-active` | `--brand-primary-active` | — | — |
-| Disabled | — (sempre ativo) | durante GET | durante geração, orçamento esgotado, limite por minuto, `SEM_VARIACAO` (oculto); `cursor: not-allowed`, opacidade 0.55, motivo por `aria-describedby` | — | — |
+| Disabled | — (sempre ativo) | durante GET | durante geração, `geracaoEmAndamento`, `podeForcar = false`, `LIMITE_DE_PEDIDOS` (até `Retry-After`), `LIMITE_DIARIO`, `SEM_VARIACAO` (oculto); orçamento esgotado **não** desabilita (gera resumo automático); `cursor: not-allowed`, opacidade 0.55, motivo neutro por `aria-describedby` | — | — |
 | Loading | — | — | `Gerando…` + skeleton do bloco | — | — |
 | Error | — | — | caixa de erro + `Tentar de novo` | — | — |
 | Success | linha `.is-explaining` enquanto aberto | opção ativa `--brand-primary` | rótulo vira `Gerar de novo` | `aria-expanded="true"`, chevron 90° | — |
@@ -501,9 +521,19 @@ Confiança: `Alta`, `Média`, `Baixa`, com `title` e legenda `<details>` `Como l
 | `TIA-002` | Este produto não está mais no catálogo ativo. |
 | `TIA-003` (GET) | Não há base de vendas suficiente para diagnosticar esta janela. Escolha outra janela. |
 | `TIA-003` (POST) | Não há variação relevante para analisar. |
-| `TIA-004` | por `motivo`, §7 estados 6 e 7 |
+| `TIA-004` (429) | por `motivo` (`LIMITE_DE_PEDIDOS`, `LIMITE_DIARIO`), §7 estado 7. Nunca é 503 nem fala de orçamento |
+| `TIA-005` (aviso) | §6.4 |
+| `TIA-006` / `TIA-007` | Só rota interna; a tela não os trata |
 | `ANL-001` | A base de vendas está indisponível agora. Tente de novo em alguns minutos. |
 | Rede / 500 | Não foi possível carregar o diagnóstico. Verifique a conexão e tente de novo. |
+
+### 10.6 Notas do resumo automático (`motivoTemplate`; tom neutro, sem culpar o usuário, sem custo)
+
+| `motivoTemplate` | Nota (também ajuda do botão `Gerar resumo automático`) |
+| :--- | :--- |
+| `GATE_VARIACAO` / `GATE_VALOR_BAIXO` | `A variação é pequena demais para uma análise com IA; veja o resumo automático.` |
+| `GATE_RESIDUO_BAIXO` | `Os dados internos já explicam quase tudo; a IA não foi necessária.` |
+| `ORCAMENTO_ESGOTADO` / `IA_DESLIGADA` / `IA_INDISPONIVEL` | `A análise com IA não está disponível agora. Mostramos o resumo automático; a parte numérica está completa.` |
 
 ### 10.5 Regiões vivas
 
@@ -518,8 +548,8 @@ Confiança: `Alta`, `Média`, `Baixa`, com `title` e legenda `<details>` `Como l
 3. Grupo afim: `vMercado`, `participacaoPre`, `participacaoCur`, `deltaParticipacaoPp`, variações separadas mesmo/outro fornecedor com contagem, e cada afim com sua célula da Tendência **no formato `TrendCell`**, `sameSupplier`, `ganhouClientesDeA`, `clientesMigrados`, `receitaMigrada`.
 4. `impactoEmOutrosProdutos`, `totalInterno`, `totalConcorrentes` **no GET** (não só dentro do diagnóstico de IA).
 5. `meta.parametros`: `minExplainableVariationPct`, `affineGroupMinScore` (para a copy não fixar 2% e 50%).
-6. `meta.ia` no GET: `{ disponivel, motivo?, geracaoEmAndamento }` para os botões já nascerem desabilitados quando o orçamento acabou ou há geração em voo (inclusive iniciada em outra aba).
-7. Diagnóstico salvo: `geradoEm` (ISO com hora), `tipoAnalise`, `modelo`; fontes com `url`, `titulo`, `dataPublicacao`; `hipotesesNaoConfirmadas[].motivo`.
+6. `meta.ia` no GET (contrato 1.1.0): `podeGerar`, `motivoBloqueio`, `geraComIa`, `motivoTemplate`, `diagnosticoSalvo`, `diagnosticoSalvoEm`, `diagnosticoVencido`, `podeForcar`, `geracaoEmAndamento`, `orcamento.nivel` (a tela **não** exibe o nível nem qualquer valor de custo; §4.4 do contrato).
+7. POST: `meta.origem` (`llm`/`cache`/`template`/`fallback`), `meta.motivoTemplate`, `meta.reutilizado`, `data.resumoAutomatico`, `meta.avisos` (`IA_FALHOU`, `SEM_BUSCA_EXTERNA`). Diagnóstico: `geradoEm`, `modelo` (só detalhes técnicos), `fatores[].explicacao`/`rotulo`, `fontes[]` com `url`, `dominio`, `titulo`, `dataPublicacao` (anulável), `hipotesesNaoConfirmadas[].motivo`. Contagens `clientesMigrados`/`clientesPerdidosQtd` como `number | "<3"`. Erro `429 TIA-004` com `error.motivo`. **Removidos:** `deep`, `tipoAnalise`, `escalonadoAutomaticamente`, `DIAGNOSTICO_DESATUALIZADO`.
 8. Enum fechado dos motivos de `NAO_AVALIADO`/`SEM_EFEITO` (§10.2).
 
 ---
@@ -554,6 +584,6 @@ Confiança: `Alta`, `Média`, `Baixa`, com `title` e legenda `<details>` `Como l
 | Q-D4 | Extrair o focus trap do `price-equilibrium-drawer` para `shared/a11y/dialog-focus.ts` mexe em código da F6 | Aceitar a extração (sem mudança de comportamento, coberta pelos testes do drawer) |
 | Q-D5 | `MECHANISM_VISUAL_META` está no store da página de Canibalização | Mover para `analytics/utils/cannibalization-mechanism.ts` |
 | Q-D6 | `impactoEmOutrosProdutos` vem no GET? | Sim (é do motor, P-171); se vier só no POST, o bloco passa para dentro da IA |
-| Q-D7 | O GET informa orçamento esgotado / geração em voo (`meta.ia`)? | Sim; sem isso, o estado 6 só aparece depois do primeiro clique |
+| Q-D7 | O GET informa orçamento esgotado / geração em voo (`meta.ia`)? | **Resolvida (contrato 1.1.0):** `geraComIa`/`motivoTemplate`/`geracaoEmAndamento`; orçamento esgotado vira resumo automático (200), sem expor gasto |
 | Q-D8 | Janela da Tendência (1/3/6/12 meses) × período da Canibalização (30/60/90 dias) | Link sempre com `periodo=90` e nota de que os números podem diferir |
 | Q-D9 | Pipes duplicados (`sales-trend/utils/pt-br-format.ts` e `analytics/utils/pt-br-format.ts`) | Não consolidar na F7; usar os da Tendência e só `signedBrl`/`brl` da F6. Consolidação como refatoração T7 à parte |
