@@ -307,6 +307,45 @@ def filter_eligible_launches(
     return filtered
 
 
+def compute_sales_impact_maps(
+    monthly_sales_df: Optional[pd.DataFrame],
+    sku_to_supplier: Mapping[int, str],
+) -> Tuple[Dict[int, float], Dict[str, float]]:
+    """
+    Calcula em memória dois mapas de impacto comercial a partir do histórico mensal:
+    - `product_avg_monthly[sku]`: média mensal líquida de unidades vendidas do produto.
+    - `supplier_avg_monthly[supplier_norm]`: média mensal líquida de unidades vendidas da marca
+      (soma mensal média da marca na loja, refletindo o peso real de cada fornecedor:
+      ex.: Integralmedica > Max Titanium > Probiotica > Pronabol).
+    """
+    if monthly_sales_df is None or monthly_sales_df.empty:
+        return {}, {}
+
+    work = monthly_sales_df[["sku", "sale_year", "sale_month", "net_quantity"]].copy()
+    work["net_quantity"] = work["net_quantity"].astype(float).clip(lower=0.0)
+
+    # Média mensal por SKU
+    prod_avg_series = work.groupby("sku")["net_quantity"].mean()
+    product_avg_monthly: Dict[int, float] = {
+        int(sku): round(float(val), 2) for sku, val in prod_avg_series.items()
+    }
+
+    # Volume médio mensal total por fornecedor (soma dos SKUs por ano/mês -> média mensal da marca)
+    work["_supplier"] = work["sku"].map(
+        lambda s: str(sku_to_supplier.get(int(s), "")).strip().casefold()
+    )
+    work_sup = work[work["_supplier"] != ""]
+    if work_sup.empty:
+        return product_avg_monthly, {}
+
+    sup_monthly = work_sup.groupby(["_supplier", "sale_year", "sale_month"])["net_quantity"].sum()
+    sup_avg_series = sup_monthly.groupby(level=0).mean()
+    supplier_avg_monthly: Dict[str, float] = {
+        str(sup): round(float(val), 2) for sup, val in sup_avg_series.items()
+    }
+    return product_avg_monthly, supplier_avg_monthly
+
+
 def select_similars_from_affinities(
     affinity_matches: Sequence[Mapping[str, Any]],
     launches_df: pd.DataFrame,
@@ -314,6 +353,8 @@ def select_similars_from_affinities(
     preco_venda_previsto: float,
     monthly_sales_df: Optional[pd.DataFrame] = None,
     top_k: int = TOP_K_SIMILARS,
+    product_avg_monthly: Optional[Mapping[int, float]] = None,
+    supplier_avg_monthly: Optional[Mapping[str, float]] = None,
 ) -> List[SimilarProductMatch]:
     """
     Seleciona até `top_k` produtos de referência a partir das afinidades semânticas
@@ -397,10 +438,22 @@ def select_similars_from_affinities(
             )
         )
 
+    prod_sales = product_avg_monthly or {}
+    sup_sales = supplier_avg_monthly or {}
+
+    def _impact_tiebreak(m: SimilarProductMatch) -> Tuple[float, float]:
+        p_avg = float(prod_sales.get(m.sku, 0.0))
+        if p_avg <= 0.0 and m.quantidades_primeiros_meses:
+            p_avg = sum(m.quantidades_primeiros_meses) / len(m.quantidades_primeiros_meses)
+        s_avg = float(sup_sales.get(m.fornecedor.strip().casefold(), 0.0))
+        return (p_avg, s_avg)
+
     matches.sort(
         key=lambda m: (
-            -m.score_final,
-            -m.affinity_score,
+            -round(m.score_final, 3),
+            -round(m.affinity_score, 3),
+            -_impact_tiebreak(m)[1],  # impacto médio mensal da marca (Integral > Max > Probiotica...)
+            -_impact_tiebreak(m)[0],  # média mensal de vendas do produto
             -m.score_preco,
             -m.primeira_venda.toordinal(),
             m.sku,
@@ -568,13 +621,18 @@ def compute_cannibalization_risk(
     affinity_matches: Sequence[Mapping[str, Any]],
     target_fornecedor: str,
     threshold: float = DEFAULT_CANNIBALIZATION_AFFINITY_THRESHOLD,
+    product_avg_monthly: Optional[Mapping[int, float]] = None,
+    supplier_avg_monthly: Optional[Mapping[str, float]] = None,
 ) -> CannibalizationRiskResult:
     """
     Avalia o risco preventivo de canibalização do novo lançamento sobre produtos ativos
     do portfólio (mesmo fornecedor e concorrentes de outros fornecedores), usando o mesmo
     limiar de afinidade semântica da F6 (`DEFAULT_CANNIBALIZATION_AFFINITY_THRESHOLD = 0.50`).
+    Desempata produtos de mesma afinidade pelo impacto real de vendas (média mensal da marca e do produto).
     """
     target_sup_norm = target_fornecedor.strip().casefold()
+    prod_sales = product_avg_monthly or {}
+    sup_sales = supplier_avg_monthly or {}
     at_risk: List[CannibalizationRiskProduct] = []
 
     for item in affinity_matches:
@@ -593,7 +651,13 @@ def compute_cannibalization_risk(
             )
         )
 
-    at_risk.sort(key=lambda p: (-p.affinity_score, p.sku))
+    def _risk_sort_key(p: CannibalizationRiskProduct) -> Tuple[float, float, float, str]:
+        sku_int = int(p.sku) if p.sku.isdigit() else -1
+        p_avg = float(prod_sales.get(sku_int, 0.0))
+        s_avg = float(sup_sales.get(p.fornecedor.strip().casefold(), 0.0))
+        return (-round(p.affinity_score, 3), -s_avg, -p_avg, p.sku)
+
+    at_risk.sort(key=_risk_sort_key)
     affected_count = len(at_risk)
     same_sup_count = sum(1 for p in at_risk if p.same_supplier)
     cross_sup_count = affected_count - same_sup_count

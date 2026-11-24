@@ -700,6 +700,7 @@ from src.modules.analytics.domain.new_product import (
     compute_conservative_curve,
     compute_mature_ceiling,
     compute_reference_price_range,
+    compute_sales_impact_maps,
     evaluate_financial_viability,
     filter_eligible_launches,
     find_similars,
@@ -932,14 +933,27 @@ def forecast_new_product(request: NewProductForecastRequest) -> NewProductForeca
         if str(m.get("sku") or "").strip().isdigit()
     }
 
+    monthly_sales_df = _get_monthly_sales_df_safe() if not use_strict_tipo else None
+    sku_to_supplier: dict[int, str] = {}
+    if monthly_sales_df is not None and not monthly_sales_df.empty:
+        try:
+            catalog_snap = analytics_cache.get_catalog()
+            sku_to_supplier = {int(sku): entry.supplier for sku, entry in catalog_snap.entries.items()}
+        except Exception:
+            sku_to_supplier = {}
+    product_avg_monthly, supplier_avg_monthly = compute_sales_impact_maps(
+        monthly_sales_df, sku_to_supplier
+    )
+
     if not use_strict_tipo and affinity_matches:
-        monthly_sales_df = _get_monthly_sales_df_safe()
         similars = select_similars_from_affinities(
             affinity_matches=affinity_matches,
             launches_df=eligible_df,
             fornecedor=canonical_fornecedor,
             preco_venda_previsto=request.preco_venda_previsto,
             monthly_sales_df=monthly_sales_df,
+            product_avg_monthly=product_avg_monthly,
+            supplier_avg_monthly=supplier_avg_monthly,
         )
     else:
         similars = find_similars(
@@ -1076,6 +1090,8 @@ def forecast_new_product(request: NewProductForecastRequest) -> NewProductForeca
     cannib_res = compute_cannibalization_risk(
         affinity_matches=affinity_matches,
         target_fornecedor=canonical_fornecedor,
+        product_avg_monthly=product_avg_monthly,
+        supplier_avg_monthly=supplier_avg_monthly,
     )
     cannibalization_risk = NewProductCannibalizationRisk(
         risk_level=cannib_res.risk_level,
