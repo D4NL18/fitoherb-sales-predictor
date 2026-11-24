@@ -104,7 +104,11 @@
                 <h5 class="cannibal-description">{{ cannibal.description }}</h5>
                 @if (isDetailedCannibalizer(cannibal)) {
                   <span class="cannibal-submeta">
-                    {{ cannibal.category }} · {{ cannibal.supplier }}
+                    Fornecedor: {{ cannibal.supplier }} · {{ cannibal.category }}
+                  </span>
+                } @else if (cannibal.supplier) {
+                  <span class="cannibal-submeta">
+                    Fornecedor: {{ cannibal.supplier }}
                   </span>
                 }
               </div>

@@ -295,6 +295,9 @@
               >
                 @if (item.topCannibal; as top) {
                   <div class="cannibal-name" [title]="top.description">{{ top.description }}</div>
+                  @if (top.supplier) {
+                    <div class="product-meta">Fornecedor: {{ top.supplier }}</div>
+                  }
                   <div class="cannibal-meta tabular-nums">
                     <span>
                       {{ top.migratedClients | ptDecimal:0 }}
@@ -373,6 +376,9 @@
             <div class="card-cannibal-block">
               <span class="card-metric-label">Principal canibalizador:</span>
               <div class="cannibal-name">{{ top.description }}</div>
+              @if (top.supplier) {
+                <div class="product-meta">Fornecedor: {{ top.supplier }}</div>
+              }
               <div class="cannibal-meta tabular-nums">
                 <span>
                   {{ top.migratedClients | ptDecimal:0 }}

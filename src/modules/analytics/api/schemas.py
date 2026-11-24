@@ -894,6 +894,7 @@ class CannibalizerSummaryDTO(CamelModel):
 
     sku: str = Field(description="SKU do produto canibalizador.")
     description: str = Field(description="Descrição do produto canibalizador.")
+    supplier: str = Field(default="", description="Fornecedor do produto canibalizador.")
     migrated_clients: int = Field(description="Quantidade líquida de clientes migrados (A -> B).")
     migrated_revenue: float = Field(description="Faturamento líquido migrado em R$.")
     share_of_cannibalization_pct: float = Field(description="Participação percentual deste canibalizador na vítima.")

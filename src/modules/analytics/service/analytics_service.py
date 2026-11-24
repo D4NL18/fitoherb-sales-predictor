@@ -1343,6 +1343,7 @@ def _to_cannibalizer_summary_dto(item: CannibalizerEvaluation) -> CannibalizerSu
     return CannibalizerSummaryDTO(
         sku=item.sku,
         description=item.description,
+        supplier=item.supplier,
         migrated_clients=item.migrated_clients,
         migrated_revenue=item.migrated_revenue,
         share_of_cannibalization_pct=item.share_of_cannibalization_pct,

@@ -39,6 +39,7 @@ export interface CannibalizationKpis {
 export interface CannibalizerSummary {
   sku: string;
   description: string;
+  supplier?: string;
   migratedClients: number;
   migratedRevenue: number;
   shareOfCannibalizationPct: number;
