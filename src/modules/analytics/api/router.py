@@ -527,3 +527,79 @@ def get_substitution(
         min_jaccard=min_jaccard,
         limit=limit,
     )
+
+
+@analytics_router.get(
+    "/affinity/{sku}",
+    summary="Produtos com maior afinidade semântica (ordem decrescente)",
+    description=(
+        "Retorna a lista em ordem decrescente de produtos mais afins ao SKU informado, "
+        "calculada sobre catálogo ERP + galeria pública do fitoherb.com.br (sem viés de fornecedor). "
+        "Reutilizável pela Canibalização e pela previsão de Produto Novo."
+    ),
+)
+def get_product_affinity(
+    sku: SkuPath,
+    top_k: int = Query(
+        default=20,
+        ge=1,
+        le=50,
+        alias="topK",
+        description="Quantidade máxima de produtos afins retornados (1 a 50).",
+    ),
+):
+    from fastapi import HTTPException
+    from src.modules.analytics.api import mappers
+    from src.modules.analytics.service import product_affinity_service
+
+    result = product_affinity_service.get_product_affinities(sku=str(sku), top_k=top_k)
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail="SKU não encontrado no índice de afinidade ou índice ainda não sincronizado.",
+        )
+    return {
+        "data": {
+            "sku": result["sku"],
+            "description": result["description"],
+            "supplier": result["supplier"],
+            "category": result["category"],
+            "galleryMatched": result["galleryMatched"],
+            "affinities": result["affinities"],
+        },
+        "meta": {
+            "timestamp": mappers.utc_timestamp(),
+            "version": "1.1.0",
+            "totalFound": len(result["affinities"]),
+            "indexMeta": result["meta"],
+        },
+    }
+
+
+@analytics_router.post(
+    "/affinity/sync",
+    summary="Dispara sincronização incremental do índice de afinidade (mesma rotina do cron 00:00)",
+    description=(
+        "Sincroniza catálogo ativo do ERP com a galeria pública do fitoherb.com.br, "
+        "recalculando apenas SKUs novos/alterados e removendo produtos desativados."
+    ),
+)
+def trigger_product_affinity_sync(
+    force: bool = Query(
+        default=False,
+        description="Se true, força reconstrução completa mesmo sem mudanças no hash.",
+    ),
+):
+    from src.modules.analytics.api import mappers
+    from src.modules.analytics.service import product_affinity_service
+
+    summary = product_affinity_service.sync_product_affinity_index(force=force)
+    if summary.get("recomputed"):
+        analytics_service.reset_cannibalization_report_cache()
+    return {
+        "data": summary,
+        "meta": {
+            "timestamp": mappers.utc_timestamp(),
+            "version": "1.1.0",
+        },
+    }

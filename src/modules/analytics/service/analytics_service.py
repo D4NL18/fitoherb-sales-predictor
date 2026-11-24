@@ -1297,6 +1297,8 @@ from src.modules.analytics.domain.cannibalization_report import (
     compute_window_boundaries,
 )
 
+from src.modules.analytics.service import product_affinity_service
+
 _CAN_REPORT_CACHE_LOCK = threading.Lock()
 _CAN_REPORT_SNAPSHOT_CACHE: dict = {}
 
@@ -1333,7 +1335,8 @@ def _get_cannibalization_migration_snapshot_cached(
             mid_date=boundaries.mid_date,
             reference_date=boundaries.reference_date,
         )
-        snapshot = build_migration_snapshot(raw_rows, catalog)
+        affinity_map = product_affinity_service.get_affinity_lookup_map()
+        snapshot = build_migration_snapshot(raw_rows, catalog, affinity_map=affinity_map)
         del raw_rows
         _CAN_REPORT_SNAPSHOT_CACHE[cache_key] = (time.monotonic(), snapshot)
         return snapshot, boundaries

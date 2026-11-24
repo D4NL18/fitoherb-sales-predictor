@@ -582,6 +582,7 @@ def extract_product_family_tokens(
 def compute_directional_migration(
     customer_sku_rows: Iterable[Union[Mapping[str, object], Sequence[object]]],
     catalog: Mapping[str, Mapping[str, object]],
+    affinity_map: Optional[Mapping[str, Mapping[str, float]]] = None,
 ) -> MigrationSnapshot:
     """
     Constrói o snapshot agregado de migração direcional líquida a partir das linhas
@@ -589,7 +590,9 @@ def compute_directional_migration(
 
     - P-128.2: Trunca saldos líquidos negativos de `(cliente, SKU, período)` em 0.0.
     - P-130: Conservação de fluxo por cliente entre produtos substitutos da mesma família
-      (agnóstico de fornecedor — mesmo peso para qualquer fornecedor, sem dupla contagem).
+      (agnóstico de fornecedor — mesmo peso para qualquer fornecedor, sem dupla contagem),
+      combinando o índice de afinidade semântica (`affinity_map`, quando disponível) com
+      os tokens nucleares de produto.
     - P-131: Desconto de fluxo reverso (`net_rev`, `net_clients`).
     - LGPD-CAN-04: Descarta `by_cli` explicitamente (`del by_cli`) antes de retornar.
     """
@@ -635,7 +638,7 @@ def compute_directional_migration(
             acc[2] += cur_qty
             acc[3] += cur_rev
 
-        if not tokens_by_sku.get(sku_str):
+        if not tokens_by_sku.get(sku_str) and not (affinity_map and affinity_map.get(sku_str)):
             continue
 
         cust_id = int(raw_cust)
@@ -673,21 +676,28 @@ def compute_directional_migration(
         tentative: List[Tuple[str, str, float, float]] = []
         incoming_by_gain: Dict[str, float] = {}
         for sku_a, loss_a in losses:
-            tok_a = tokens_by_sku.get(sku_a)
-            if not tok_a:
+            tok_a = tokens_by_sku.get(sku_a, frozenset())
+            aff_a = affinity_map.get(sku_a) if affinity_map else None
+            if not tok_a and not aff_a:
                 continue
-            compat_gains = [
-                (sku_b, gain_b)
-                for sku_b, gain_b in gains
-                if tok_a & tokens_by_sku.get(sku_b, frozenset())
-            ]
+
+            compat_gains: List[Tuple[str, float, float]] = []
+            for sku_b, gain_b in gains:
+                aff_score = float(aff_a.get(sku_b, 0.0)) if aff_a else 0.0
+                has_token_match = bool(tok_a and (tok_a & tokens_by_sku.get(sku_b, frozenset())))
+                if aff_score > 0.0 or has_token_match:
+                    # Quando há score semântico do índice (gallery + ERP), pondera pelo score;
+                    # caso contrário usa peso uniforme 1.0 entre fornecedores.
+                    pair_affinity = aff_score if aff_score > 0.0 else (0.35 if aff_a else 1.0)
+                    compat_gains.append((sku_b, gain_b, gain_b * pair_affinity))
+
             if not compat_gains:
                 continue
-            total_compat_gain = sum(g for _, g in compat_gains)
-            if total_compat_gain <= 0.0:
+            total_weighted_gain = sum(wg for _, _, wg in compat_gains)
+            if total_weighted_gain <= 0.0:
                 continue
-            for sku_b, gain_b in compat_gains:
-                weight = loss_a * (gain_b / total_compat_gain)
+            for sku_b, gain_b, weighted_gain in compat_gains:
+                weight = loss_a * (weighted_gain / total_weighted_gain)
                 tentative.append((sku_a, sku_b, weight, gain_b))
                 incoming_by_gain[sku_b] = incoming_by_gain.get(sku_b, 0.0) + weight
 
