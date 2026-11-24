@@ -205,20 +205,103 @@
     </aside>
   </section>
 
-  <!-- 5. Lista Top-10 Lançamentos Similares -->
+  <!-- 4b. Faixa de Preço de Referência & Risco de Canibalização (Motor Compartilhado de Afinidade) -->
+  @if (data().referencePriceRange || data().cannibalizationRisk) {
+    <section class="affinity-insights-grid" aria-label="Referência de preço e risco de canibalização">
+      @if (data().referencePriceRange; as refPrice) {
+        <article class="insight-card" aria-labelledby="np-ref-price-heading">
+          <div class="insight-header">
+            <h3 id="np-ref-price-heading" class="section-heading">Faixa de Preço de Referência</h3>
+            @if (pricePositionBadge(); as badge) {
+              <span class="tag" [class]="badge.tagClass">
+                <span class="tag-dot" aria-hidden="true"></span>
+                <span>{{ badge.label }}</span>
+              </span>
+            }
+          </div>
+          <p class="insight-note">
+            Calculada sobre {{ refPrice.sampleSize }} produto(s) afim(ns) ativo(s) no catálogo (ponderada por afinidade).
+          </p>
+          <dl class="ref-price-grid">
+            <div>
+              <dt>Mínimo</dt>
+              <dd class="mono-cell">{{ refPrice.minPrice | brl }}</dd>
+            </div>
+            <div>
+              <dt>Média Ponderada</dt>
+              <dd class="mono-cell ref-price-highlight">{{ refPrice.weightedAvgPrice | brl }}</dd>
+            </div>
+            <div>
+              <dt>Mediana</dt>
+              <dd class="mono-cell">{{ refPrice.medianPrice | brl }}</dd>
+            </div>
+            <div>
+              <dt>Máximo</dt>
+              <dd class="mono-cell">{{ refPrice.maxPrice | brl }}</dd>
+            </div>
+          </dl>
+        </article>
+      }
+
+      @if (data().cannibalizationRisk; as risk) {
+        <article class="insight-card" aria-labelledby="np-cannib-heading">
+          <div class="insight-header">
+            <h3 id="np-cannib-heading" class="section-heading">Risco de Canibalização no Portfólio</h3>
+            @if (cannibalizationBadge(); as badge) {
+              <span class="tag" [class]="badge.tagClass">
+                <span class="tag-dot" aria-hidden="true"></span>
+                <span>{{ badge.label }}</span>
+              </span>
+            }
+          </div>
+          <p class="insight-note">{{ risk.summary }}</p>
+
+          <div class="cannib-metrics-row">
+            <span class="cannib-pill">
+              <strong class="mono-cell">{{ risk.affectedSkuCount }}</strong> produto(s) com afinidade ≥ 50%
+            </span>
+            <span class="cannib-pill">
+              Mesmo fornecedor: <strong class="mono-cell">{{ risk.sameSupplierAffectedCount }}</strong>
+            </span>
+            <span class="cannib-pill">
+              Outros fornecedores: <strong class="mono-cell">{{ risk.crossSupplierAffectedCount }}</strong>
+            </span>
+          </div>
+
+          @if (risk.topAtRiskProducts.length > 0) {
+            <ul class="cannib-risk-list" aria-label="Produtos existentes mais expostos à canibalização">
+              @for (item of risk.topAtRiskProducts; track item.sku) {
+                <li class="cannib-risk-item">
+                  <div class="cannib-item-main">
+                    <span class="cannib-item-name">{{ item.descricao }}</span>
+                    <span class="cannib-item-meta">
+                      {{ item.fornecedor }} · {{ item.precoAtual | brl }}
+                    </span>
+                  </div>
+                  <span class="cannib-item-score mono-cell">{{ item.affinityScore | ptPercent: 1 }}</span>
+                </li>
+              }
+            </ul>
+          }
+        </article>
+      }
+    </section>
+  }
+
+  <!-- 5. Lista Top-10 Produtos de Referência (Afinidade Semântica Compartilhada) -->
   <section class="similars-panel" aria-labelledby="np-similars-heading">
     <div class="similars-header">
-      <h3 id="np-similars-heading" class="section-heading">Lançamentos Similares Utilizados</h3>
+      <h3 id="np-similars-heading" class="section-heading">Produtos de Referência Utilizados</h3>
       <p class="section-note">
-        Top {{ data().similarsUsed.length }} lançamentos mais próximos do catálogo — incluindo concorrentes de
-        outros fornecedores (Descrição TF-IDF 50%, Log-Preço 40% e Fornecedor 10%; devoluções já abatidas).
+        Top {{ data().similarsUsed.length }} produtos compatíveis do catálogo via Índice de Afinidade Semântica —
+        incluindo concorrentes de outros fornecedores (Afinidade 50%, Log-Preço 40% e Fornecedor 10%; devoluções já abatidas).
       </p>
     </div>
 
     <div class="table-scroll desktop-only-table">
       <table class="similars-ledger">
         <caption class="sr-only">
-          Produtos similares usados como referência, com preço histórico, quantidades líquidas M1 a M3 e score de similaridade.
+          Produtos similares usados como referência, com fornecedor, preço atual, afinidade semântica e quantidades líquidas M1 a M3.
         </caption>
         <thead>
           <tr>
@@ -226,7 +309,8 @@
             <th scope="col">Fornecedor</th>
             <th scope="col" class="num-col">Preço</th>
             <th scope="col" class="num-col">Líquido M1 / M2 / M3</th>
-            <th scope="col">Similaridade</th>
+            <th scope="col">Afinidade</th>
+            <th scope="col">Score Final</th>
             <th scope="col" class="action-col">Ação</th>
           </tr>
         </thead>
@@ -248,11 +332,14 @@
               </td>
               <td>
                 <div class="score-cell">
-                  <span class="mono-cell">{{ sim.scoreFinal | ptPercent: 1 }}</span>
+                  <span class="mono-cell">{{ resolveAffinity(sim) | ptPercent: 1 }}</span>
                   <div class="score-bar-track" aria-hidden="true">
-                    <div class="score-bar-fill" [style.width.%]="sim.scoreFinal * 100"></div>
+                    <div class="score-bar-fill" [style.width.%]="resolveAffinity(sim) * 100"></div>
                   </div>
                 </div>
+              </td>
+              <td>
+                <span class="mono-cell">{{ sim.scoreFinal | ptPercent: 1 }}</span>
               </td>
               <td class="action-col">
                 <button

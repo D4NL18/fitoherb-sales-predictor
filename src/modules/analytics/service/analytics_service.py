@@ -674,6 +674,8 @@ from src.modules.analytics.api.schemas import (
     AnalyticsMeta,
     MonthlyForecastItem,
     NewProductAggregatedTotals,
+    NewProductCannibalizationRisk,
+    NewProductCannibalizationRiskProduct,
     NewProductFinancialViability,
     NewProductForecastData,
     NewProductForecastRequest,
@@ -681,6 +683,7 @@ from src.modules.analytics.api.schemas import (
     NewProductMarketCeiling,
     NewProductOptionsData,
     NewProductOptionsResponse,
+    NewProductReferencePriceRange,
     SimilarProductItem,
 )
 from src.modules.analytics.domain.exceptions import (
@@ -693,14 +696,18 @@ from src.modules.analytics.domain.new_product import (
     SeasonalityProvider,
     SeasonalityResult as NewProductSeasonalityResult,
     apply_seasonality_and_clamp,
+    compute_cannibalization_risk,
     compute_conservative_curve,
     compute_mature_ceiling,
+    compute_reference_price_range,
     evaluate_financial_viability,
     filter_eligible_launches,
     find_similars,
+    select_similars_from_affinities,
 )
 from src.modules.analytics.domain.seasonality import get_seasonality_index
 from src.modules.analytics.repository.errors import AnalyticsDataSourceError
+from src.modules.analytics.service import product_affinity_service
 
 
 def _get_new_product_options() -> dict:
@@ -726,6 +733,30 @@ def _get_all_new_product_candidates_df():
 def _get_all_mature_product_distribution_df():
     """Wrapper de cache para produtos maduros de todo o catálogo (substituível em testes)."""
     return analytics_cache.get_all_mature_product_distribution()
+
+
+def _get_monthly_sales_df_safe():
+    """Wrapper seguro de vendas mensais para apoio de cold start quando há poucos lançamentos recentes."""
+    try:
+        return analytics_cache.get_monthly_sales()
+    except Exception:
+        return None
+
+
+def _find_affinity_similars_for_new_product(
+    name: str,
+    description: str = "",
+    category: str = "",
+    top_k: int = 30,
+) -> list[dict]:
+    """Wrapper para o motor compartilhado de afinidade (substituível em testes)."""
+    return product_affinity_service.find_similar_for_new_product(
+        name=name,
+        description=description,
+        category=category,
+        top_k=top_k,
+        auto_sync=True,
+    )
 
 
 class _F1CategorySeasonalityProvider(SeasonalityProvider):
@@ -886,16 +917,46 @@ def forecast_new_product(request: NewProductForecastRequest) -> NewProductForeca
     ref_date = analytics_cache.business_date(analytics_cache._utc_now())
     eligible_df = filter_eligible_launches(candidates_df, reference_date=ref_date)
 
-    similars = find_similars(
-        candidates_df=eligible_df,
-        tipo=canonical_tipo if use_strict_tipo else None,
-        fornecedor=canonical_fornecedor,
-        descricao=request.descricao,
-        preco_venda_previsto=request.preco_venda_previsto,
+    affinity_matches = _find_affinity_similars_for_new_product(
+        name=request.descricao,
+        description=request.descricao,
+        category=canonical_tipo or "",
+        top_k=30,
     )
+    affinity_scores_by_sku = {
+        int(str(m["sku"]).strip()): float(m.get("affinityScore") or 0.0)
+        for m in affinity_matches
+        if str(m.get("sku") or "").strip().isdigit()
+    }
+
+    if not use_strict_tipo and affinity_matches:
+        monthly_sales_df = _get_monthly_sales_df_safe()
+        similars = select_similars_from_affinities(
+            affinity_matches=affinity_matches,
+            launches_df=eligible_df,
+            fornecedor=canonical_fornecedor,
+            preco_venda_previsto=request.preco_venda_previsto,
+            monthly_sales_df=monthly_sales_df,
+        )
+    else:
+        similars = find_similars(
+            candidates_df=eligible_df,
+            tipo=canonical_tipo if use_strict_tipo else None,
+            fornecedor=canonical_fornecedor,
+            descricao=request.descricao,
+            preco_venda_previsto=request.preco_venda_previsto,
+            affinity_scores=affinity_scores_by_sku,
+        )
+
     base_curve = compute_conservative_curve(similars, horizon_months=request.horizon_months)
 
-    seasonality_provider = _F1CategorySeasonalityProvider([s.sku for s in similars])
+    seasonality_skus = list(
+        dict.fromkeys(
+            [s.sku for s in similars]
+            + [sku for sku in affinity_scores_by_sku.keys()][:15]
+        )
+    )
+    seasonality_provider = _F1CategorySeasonalityProvider(seasonality_skus)
     monthly_items: list[MonthlyForecastItem] = []
     statuses: list[str] = []
 
@@ -973,7 +1034,7 @@ def forecast_new_product(request: NewProductForecastRequest) -> NewProductForeca
         mature_df,
         tipo=canonical_tipo if use_strict_tipo else None,
         fornecedor=canonical_fornecedor,
-        descricao=request.descricao,
+        similar_skus=list(affinity_scores_by_sku.keys()) or [s.sku for s in similars],
     )
     ceiling_scope = (
         f"do tipo {canonical_tipo}"
@@ -988,6 +1049,51 @@ def forecast_new_product(request: NewProductForecastRequest) -> NewProductForeca
         ),
     )
 
+    ref_price_res = compute_reference_price_range(
+        affinity_matches=affinity_matches
+        or [
+            {"currentPrice": s.preco_historico, "affinityScore": max(0.01, s.affinity_score or s.score_final)}
+            for s in similars
+        ],
+        preco_venda_previsto=request.preco_venda_previsto,
+    )
+    reference_price_range = (
+        NewProductReferencePriceRange(
+            min_price=ref_price_res.min_price,
+            weighted_avg_price=ref_price_res.weighted_avg_price,
+            median_price=ref_price_res.median_price,
+            max_price=ref_price_res.max_price,
+            price_position=ref_price_res.price_position,
+            sample_size=ref_price_res.sample_size,
+        )
+        if ref_price_res is not None
+        else None
+    )
+
+    cannib_res = compute_cannibalization_risk(
+        affinity_matches=affinity_matches,
+        target_fornecedor=canonical_fornecedor,
+    )
+    cannibalization_risk = NewProductCannibalizationRisk(
+        risk_level=cannib_res.risk_level,
+        affected_sku_count=cannib_res.affected_sku_count,
+        same_supplier_affected_count=cannib_res.same_supplier_affected_count,
+        cross_supplier_affected_count=cannib_res.cross_supplier_affected_count,
+        estimated_overlap_pct=cannib_res.estimated_overlap_pct,
+        summary=cannib_res.summary,
+        top_at_risk_products=[
+            NewProductCannibalizationRiskProduct(
+                sku=p.sku,
+                descricao=p.descricao,
+                fornecedor=p.fornecedor,
+                preco_atual=p.preco_atual,
+                affinity_score=p.affinity_score,
+                same_supplier=p.same_supplier,
+            )
+            for p in cannib_res.top_at_risk_products
+        ],
+    )
+
     similars_items = [
         SimilarProductItem(
             sku=str(s.sku),
@@ -999,6 +1105,7 @@ def forecast_new_product(request: NewProductForecastRequest) -> NewProductForeca
             score_fornecedor=round(s.score_fornecedor, 4),
             score_preco=round(s.score_preco, 4),
             score_tfidf=round(s.score_tfidf, 4),
+            affinity_score=round(s.affinity_score or s.score_tfidf, 4),
             quantidades_primeiros_meses=list(s.quantidades_primeiros_meses),
         )
         for s in similars
@@ -1011,10 +1118,12 @@ def forecast_new_product(request: NewProductForecastRequest) -> NewProductForeca
         aggregated_totals=aggregated,
         financial_viability=financial_viability,
         market_ceiling=market_ceiling,
+        reference_price_range=reference_price_range,
+        cannibalization_risk=cannibalization_risk,
         similars_used=similars_items,
         methodology_notice=(
-            "Estimativa calculada sob critério conservador (Percentil 25 dos similares com haircut de 0,70). "
-            "Historicamente, mais de 80% dos lançamentos reais superam estes volumes."
+            "Estimativa calculada sob critério conservador (Percentil 25 ponderado pela afinidade semântica "
+            "com haircut de 0,70). Historicamente, mais de 80% dos lançamentos reais superam estes volumes."
         ),
     )
 

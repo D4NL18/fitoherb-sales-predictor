@@ -1,29 +1,30 @@
 """
-Motor estatístico de Viabilidade de Produto Novo (F2; P-139 a P-149; ADR-008).
+Motor estatístico de Viabilidade de Produto Novo (F2 / Cold Start; P-139 a P-149; ADR-008).
 
 Cálculo puro em memória, sem I/O e sem dependência de HTTP:
-- Filtro temporal de lançamentos reais (primeira venda >= 2025-04-01 e >= 3 meses completos).
-- Similaridade híbrida multicritério (tipo estrito, fornecedor 0.25, log-preço 0.35, TF-IDF 0.40).
-- Curva inicial dos primeiros 3 meses líquida de devoluções (saldo negativo truncado em 0).
+- Consome os similares semânticos produzidos pelo motor compartilhado `product_affinity`
+  (agnóstico de fornecedor e com travas estruturais de compatibilidade — sem duplicar NLP/TF-IDF).
+- Curva inicial dos primeiros 3 meses líquida de devoluções (saldo negativo truncado em 0),
+  ponderada por `affinityScore`.
 - Previsão conservadora P25 * 0.70 com trava inviolável <= P25 e modulação sazonal [0.90, 1.10].
-- Teto maduro P75 sobre produtos pré-existentes (< 2025-04-01) e avaliação financeira de margem.
+- Faixa de preço de referência, risco de canibalização no portfólio ativo (inclusive concorrentes),
+  teto maduro P75 sobre produtos pré-existentes (< 2025-04-01) e avaliação financeira de margem.
 """
 from __future__ import annotations
 
 import math
-import re
-import unicodedata
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import date, timedelta
-from typing import Dict, List, NamedTuple, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, NamedTuple, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
 
 from src.modules.analytics.domain.exceptions import NewProductInsufficientSimilarsError
+from src.modules.analytics.domain.product_affinity import (
+    DEFAULT_CANNIBALIZATION_AFFINITY_THRESHOLD,
+)
 
 # ---------------------------------------------------------------------------
 # Constantes Imutáveis do Domínio (P-139 a P-149)
@@ -37,7 +38,8 @@ TOP_K_SIMILARS = 10
 MIN_SIMILARS = 3
 WEIGHT_SUPPLIER = 0.10
 WEIGHT_PRICE = 0.40
-WEIGHT_TFIDF = 0.50
+WEIGHT_AFFINITY = 0.50
+WEIGHT_TFIDF = WEIGHT_AFFINITY  # alias retrocompatível para testes de contrato existentes
 NEW_PRODUCT_HAIRCUT = 0.70
 MIN_BACKTEST_SUCCESS_RATE = 0.80
 DEFAULT_HORIZON_MONTHS = 3
@@ -45,23 +47,9 @@ MAX_HORIZON_MONTHS = 3
 SEASONALITY_MIN_FACTOR = 0.90
 SEASONALITY_MAX_FACTOR = 1.10
 CACHE_TTL_HOURS = 6
-
-_PT_BR_STOPWORDS = frozenset(
-    {
-        "a", "ao", "aos", "as", "com", "da", "das", "de", "do", "dos",
-        "e", "em", "na", "nas", "no", "nos", "o", "os", "ou", "para",
-        "por", "que", "se", "sem", "um", "uma", "umas", "uns",
-    }
-)
-_PACKAGING_TERMS = frozenset(
-    {
-        "un", "und", "unidade", "unidades", "cx", "caixa", "pct", "pacote",
-        "frasco", "fr", "vidro", "pote", "bisnaga", "ampola",
-        "ml", "mg", "g", "kg", "l", "lt",
-    }
-)
-_MEASURE_UNIT_RE = re.compile(r"\b\d+(?:[.,]\d+)?\s*(?:ml|mg|g|kg|l|lt|un|und|cx|pct)\b")
-_NON_ALNUM_RE = re.compile(r"[^a-z0-9\s]+")
+HIGH_CANNIBALIZATION_AFFINITY = 0.75
+MODERATE_CANNIBALIZATION_CLUSTER_SCORE = 0.60
+HIGH_CANNIBALIZATION_CLUSTER_COUNT = 3
 
 
 # ---------------------------------------------------------------------------
@@ -98,6 +86,7 @@ class SimilarProductMatch:
     score_preco: float
     score_tfidf: float
     quantidades_primeiros_meses: Tuple[int, ...]
+    affinity_score: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -125,6 +114,43 @@ class FinancialViabilityResult:
 
 
 @dataclass(frozen=True)
+class ReferencePriceRangeResult:
+    """Faixa de preço de referência dos produtos afins no catálogo ativo."""
+
+    min_price: float
+    weighted_avg_price: float
+    median_price: float
+    max_price: float
+    price_position: str  # ABAIXO | NA_FAIXA | ACIMA
+    sample_size: int
+
+
+@dataclass(frozen=True)
+class CannibalizationRiskProduct:
+    """Item ativo do portfólio exposto a risco de canibalização pelo lançamento."""
+
+    sku: str
+    descricao: str
+    fornecedor: str
+    preco_atual: float
+    affinity_score: float
+    same_supplier: bool
+
+
+@dataclass(frozen=True)
+class CannibalizationRiskResult:
+    """Avaliação preventiva de risco de canibalização no portfólio ativo (F6 -> F2)."""
+
+    risk_level: str  # ALTO | MODERADO | BAIXO
+    affected_sku_count: int
+    same_supplier_affected_count: int
+    cross_supplier_affected_count: int
+    estimated_overlap_pct: float
+    summary: str
+    top_at_risk_products: Tuple[CannibalizationRiskProduct, ...]
+
+
+@dataclass(frozen=True)
 class BacktestReport:
     """Resultado do backtest temporal leave-one-out de calibração do haircut (P-145.5)."""
 
@@ -146,25 +172,6 @@ def _to_date(value: object) -> date:
     return pd.to_datetime(value).date()
 
 
-def _strip_accents(text: str) -> str:
-    """Remove diacríticos Unicode mantendo caracteres ASCII base."""
-    normalized = unicodedata.normalize("NFD", text)
-    return "".join(ch for ch in normalized if unicodedata.category(ch) != "Mn")
-
-
-def preprocess_description(text: str) -> str:
-    """Normaliza descrição em pt-BR removendo acentos, pontuação, stop words e embalagens (P-142.4)."""
-    cleaned = _strip_accents(str(text or "").lower())
-    cleaned = _MEASURE_UNIT_RE.sub(" ", cleaned)
-    cleaned = _NON_ALNUM_RE.sub(" ", cleaned)
-    tokens = [
-        tok
-        for tok in cleaned.split()
-        if tok not in _PT_BR_STOPWORDS and tok not in _PACKAGING_TERMS
-    ]
-    return " ".join(tokens)
-
-
 def _add_months(year: int, month: int, delta: int) -> Tuple[int, int]:
     """Soma `delta` meses a `(year, month)` retornando `(novo_ano, novo_mes)`."""
     total = (year * 12 + (month - 1)) + delta
@@ -177,27 +184,97 @@ def _last_closed_year_month(reference_date: date) -> Tuple[int, int]:
     return last_closed.year, last_closed.month
 
 
-def _compute_tfidf_scores(target_desc: str, candidate_descs: Sequence[str]) -> np.ndarray:
-    """Calcula similaridade cosseno TF-IDF (n-grams 1..2) entre alvo e candidatos."""
-    if not candidate_descs:
-        return np.array([], dtype=float)
-    processed_target = preprocess_description(target_desc)
-    processed_candidates = [preprocess_description(d) for d in candidate_descs]
-    if not processed_target.strip():
-        return np.zeros(len(candidate_descs), dtype=float)
+def _weighted_percentile(values: Sequence[float], weights: Sequence[float], q: float) -> float:
+    """
+    Calcula o percentil `q` (0..100) ponderado por `weights` (affinityScore).
+    Quando todos os pesos são nulos ou há 1 valor, delega para `np.percentile`.
+    """
+    arr = np.asarray(values, dtype=float)
+    if arr.size == 0:
+        return 0.0
+    if arr.size == 1:
+        return float(arr[0])
 
-    corpus = [processed_target, *processed_candidates]
-    if all(not doc.strip() for doc in corpus):
-        return np.zeros(len(candidate_descs), dtype=float)
+    w = np.asarray(weights, dtype=float)
+    if w.size != arr.size or float(np.sum(w)) <= 0.0:
+        return float(np.percentile(arr, q))
 
-    try:
-        vectorizer = TfidfVectorizer(ngram_range=(1, 2), min_df=1)
-        matrix = vectorizer.fit_transform(corpus)
-    except ValueError:
-        return np.zeros(len(candidate_descs), dtype=float)
+    order = np.argsort(arr)
+    sorted_vals = arr[order]
+    sorted_w = w[order]
+    cum_w = np.cumsum(sorted_w)
+    total_w = float(cum_w[-1])
+    # Centro de massa normalizado [0, 1] equivalente à interpolação linear de percentis
+    cdf = (cum_w - 0.5 * sorted_w) / total_w
+    target = max(0.0, min(1.0, float(q) / 100.0))
+    return float(np.interp(target, cdf, sorted_vals))
 
-    sims = cosine_similarity(matrix[0:1], matrix[1:]).flatten()
-    return np.clip(sims, 0.0, 1.0)
+
+def _price_similarity(target_price: float, candidate_price: float) -> float:
+    """Proximidade log-preço em [0, 1]: exp(-|ln(p_alvo) - ln(p_cand)|)."""
+    if target_price > 0 and candidate_price > 0:
+        return math.exp(-abs(math.log(target_price) - math.log(candidate_price)))
+    return 0.0
+
+
+def _build_launch_curve_by_sku(df: pd.DataFrame) -> Dict[int, dict]:
+    """Agrupa `df` de lançamentos por SKU extraindo curva líquida M1..M3."""
+    if df.empty:
+        return {}
+    result: Dict[int, dict] = {}
+    for sku_val, grp in df.groupby("sku", sort=False):
+        first_row = grp.iloc[0]
+        first_sale = _to_date(first_row["first_sale_date"])
+        month_map: Dict[Tuple[int, int], float] = {}
+        for row in grp.itertuples(index=False):
+            key = (int(row.sale_year), int(row.sale_month))
+            month_map[key] = month_map.get(key, 0.0) + float(row.net_quantity)
+
+        curve_3m: List[int] = []
+        for offset in range(MIN_LAUNCH_MONTHS):
+            ym = _add_months(first_sale.year, first_sale.month, offset)
+            raw_qty = month_map.get(ym, 0.0)
+            curve_3m.append(max(0, int(round(raw_qty))))
+
+        result[int(sku_val)] = {
+            "sku": int(sku_val),
+            "descricao": str(first_row["descricao"]),
+            "fornecedor": str(first_row["fornecedor"]),
+            "preco": float(first_row["preco"]),
+            "first_sale": first_sale,
+            "curve": tuple(curve_3m),
+        }
+    return result
+
+
+def _build_monthly_curve_by_sku(
+    monthly_df: Optional[pd.DataFrame],
+    allowed_skus: Sequence[int],
+) -> Dict[int, Tuple[date, Tuple[int, ...]]]:
+    """
+    Extrai curva de 3 meses para SKUs do portfólio ativo que possuem histórico em `monthly_df`,
+    usado como apoio quando < MIN_SIMILARS dos produtos afins foram lançados após 2025-04-01.
+    """
+    if monthly_df is None or monthly_df.empty or not allowed_skus:
+        return {}
+    allowed_set = {int(s) for s in allowed_skus}
+    sub = monthly_df[monthly_df["sku"].isin(allowed_set)]
+    if sub.empty:
+        return {}
+
+    curves: Dict[int, Tuple[date, Tuple[int, ...]]] = {}
+    for sku_val, grp in sub.groupby("sku", sort=False):
+        ordered = grp.sort_values(["sale_year", "sale_month"])
+        first_y = int(ordered.iloc[0]["sale_year"])
+        first_m = int(ordered.iloc[0]["sale_month"])
+        first_sale = date(first_y, first_m, 1)
+        # Usa os 3 meses mais recentes fechados do produto maduro como referência conservadora de giro
+        tail = ordered.tail(MIN_LAUNCH_MONTHS)
+        qtys = [max(0, int(round(float(q)))) for q in tail["net_quantity"].tolist()]
+        while len(qtys) < MIN_LAUNCH_MONTHS:
+            qtys.append(qtys[-1] if qtys else 0)
+        curves[int(sku_val)] = (first_sale, tuple(qtys[:MIN_LAUNCH_MONTHS]))
+    return curves
 
 
 # ---------------------------------------------------------------------------
@@ -230,6 +307,108 @@ def filter_eligible_launches(
     return filtered
 
 
+def select_similars_from_affinities(
+    affinity_matches: Sequence[Mapping[str, Any]],
+    launches_df: pd.DataFrame,
+    fornecedor: str,
+    preco_venda_previsto: float,
+    monthly_sales_df: Optional[pd.DataFrame] = None,
+    top_k: int = TOP_K_SIMILARS,
+) -> List[SimilarProductMatch]:
+    """
+    Seleciona até `top_k` produtos de referência a partir das afinidades semânticas
+    retornadas por `product_affinity_service.find_similar_for_new_product(...)`.
+
+    Prioriza lançamentos reais elegíveis (>= 2025-04-01); se houver menos que `MIN_SIMILARS`
+    lançamentos recentes entre os produtos afins, complementa com produtos ativos afins
+    presentes em `monthly_sales_df` para manter o cold start aderente ao produto.
+    Lança `NewProductInsufficientSimilarsError` (NEW-001) se houver < MIN_SIMILARS (3).
+    """
+    forn_norm = fornecedor.strip().casefold()
+    launch_by_sku = _build_launch_curve_by_sku(launches_df)
+
+    affinity_by_sku: Dict[int, Mapping[str, Any]] = {}
+    for item in affinity_matches:
+        try:
+            sku_int = int(str(item["sku"]).strip())
+        except (KeyError, ValueError, TypeError):
+            continue
+        affinity_by_sku[sku_int] = item
+
+    # 1) Lançamentos recentes que estão no conjunto de afinidades compatíveis
+    selected_entries: List[Tuple[dict, float]] = []
+    used_skus: set[int] = set()
+    for sku_int, aff_item in affinity_by_sku.items():
+        if sku_int in launch_by_sku:
+            selected_entries.append((launch_by_sku[sku_int], float(aff_item.get("affinityScore", 0.0))))
+            used_skus.add(sku_int)
+
+    # 2) Se menos que MIN_SIMILARS lançamentos recentes forem afins, complementa com SKUs afins maduros
+    if len(selected_entries) < MIN_SIMILARS and monthly_sales_df is not None and not monthly_sales_df.empty:
+        remaining_skus = [s for s in affinity_by_sku if s not in used_skus]
+        monthly_curves = _build_monthly_curve_by_sku(monthly_sales_df, remaining_skus)
+        for sku_int in remaining_skus:
+            if sku_int not in monthly_curves:
+                continue
+            aff_item = affinity_by_sku[sku_int]
+            first_sale, curve_3m = monthly_curves[sku_int]
+            selected_entries.append(
+                (
+                    {
+                        "sku": sku_int,
+                        "descricao": str(aff_item.get("description") or ""),
+                        "fornecedor": str(aff_item.get("supplier") or ""),
+                        "preco": float(aff_item.get("currentPrice") or 0.0),
+                        "first_sale": first_sale,
+                        "curve": curve_3m,
+                    },
+                    float(aff_item.get("affinityScore", 0.0)),
+                )
+            )
+            used_skus.add(sku_int)
+
+    if len(selected_entries) < MIN_SIMILARS:
+        raise NewProductInsufficientSimilarsError(count=len(selected_entries))
+
+    matches: List[SimilarProductMatch] = []
+    for item, aff_score in selected_entries:
+        s_aff = max(0.0, min(1.0, float(aff_score)))
+        s_forn = 1.0 if item["fornecedor"].strip().casefold() == forn_norm else 0.0
+        cand_price = float(item["preco"])
+        s_preco = _price_similarity(preco_venda_previsto, cand_price)
+        s_final = (
+            WEIGHT_SUPPLIER * s_forn
+            + WEIGHT_PRICE * s_preco
+            + WEIGHT_AFFINITY * s_aff
+        )
+        matches.append(
+            SimilarProductMatch(
+                sku=item["sku"],
+                descricao=item["descricao"],
+                fornecedor=item["fornecedor"],
+                primeira_venda=item["first_sale"],
+                preco_historico=round(cand_price, 2),
+                score_final=round(s_final, 6),
+                score_fornecedor=round(s_forn, 6),
+                score_preco=round(s_preco, 6),
+                score_tfidf=round(s_aff, 6),
+                quantidades_primeiros_meses=item["curve"],
+                affinity_score=round(s_aff, 4),
+            )
+        )
+
+    matches.sort(
+        key=lambda m: (
+            -m.score_final,
+            -m.affinity_score,
+            -m.score_preco,
+            -m.primeira_venda.toordinal(),
+            m.sku,
+        )
+    )
+    return matches[:top_k]
+
+
 def find_similars(
     candidates_df: pd.DataFrame,
     tipo: Optional[str],
@@ -237,14 +416,12 @@ def find_similars(
     descricao: str,
     preco_venda_previsto: float,
     top_k: int = TOP_K_SIMILARS,
+    affinity_scores: Optional[Mapping[int, float]] = None,
 ) -> List[SimilarProductMatch]:
     """
-    Seleciona até `top_k` lançamentos similares (P-142, P-143).
-    - Quando `tipo` é informado, restringe ao `tipo` estrito.
-    - Quando `tipo` é omitido, busca em todo o catálogo priorizando aderência semântica
-      (TF-IDF > 0 sempre que houver >= MIN_SIMILARS candidatos aderentes), evitando
-      comparar produtos sem relação (ex.: Whey vs Creatina) apenas por serem do mesmo fornecedor.
-    Lança `NewProductInsufficientSimilarsError` (NEW-001) se houver < MIN_SIMILARS (3).
+    Seleciona até `top_k` lançamentos similares (P-142, P-143) sem duplicar NLP/TF-IDF:
+    recebe opcionalmente `affinity_scores` calculados por `product_affinity_service`
+    (ou usa score neutro 0.0 quando chamado em modo puramente tabular/offline).
     """
     if candidates_df.empty:
         raise NewProductInsufficientSimilarsError(count=0)
@@ -262,74 +439,24 @@ def find_similars(
     if pool_df.empty:
         raise NewProductInsufficientSimilarsError(count=0)
 
-    grouped_items: List[dict] = []
-    for sku_val, grp in pool_df.groupby("sku", sort=False):
-        first_row = grp.iloc[0]
-        first_sale = _to_date(first_row["first_sale_date"])
-        month_map: Dict[Tuple[int, int], float] = {}
-        for row in grp.itertuples(index=False):
-            key = (int(row.sale_year), int(row.sale_month))
-            month_map[key] = month_map.get(key, 0.0) + float(row.net_quantity)
-
-        curve_3m: List[int] = []
-        for offset in range(MIN_LAUNCH_MONTHS):
-            ym = _add_months(first_sale.year, first_sale.month, offset)
-            raw_qty = month_map.get(ym, 0.0)
-            # P-144.2: saldo líquido negativo por devoluções é truncado em 0
-            curve_3m.append(max(0, int(round(raw_qty))))
-
-        grouped_items.append(
-            {
-                "sku": int(sku_val),
-                "descricao": str(first_row["descricao"]),
-                "fornecedor": str(first_row["fornecedor"]),
-                "preco": float(first_row["preco"]),
-                "first_sale": first_sale,
-                "curve": tuple(curve_3m),
-            }
-        )
-
-    if len(grouped_items) < MIN_SIMILARS:
-        raise NewProductInsufficientSimilarsError(count=len(grouped_items))
-
-    tfidf_scores = _compute_tfidf_scores(
-        descricao, [item["descricao"] for item in grouped_items]
-    )
-
-    # Quando buscando no catálogo amplo (sem linha estrita), exige aderência textual
-    # sempre que existirem ao menos MIN_SIMILARS lançamentos com TF-IDF > 0.
-    candidate_indices = list(range(len(grouped_items)))
-    if not tipo_norm:
-        semantic_indices = [idx for idx in candidate_indices if float(tfidf_scores[idx]) > 0.0]
-        if len(semantic_indices) >= MIN_SIMILARS:
-            candidate_indices = semantic_indices
-        else:
-            supplier_indices = [
-                idx
-                for idx in candidate_indices
-                if grouped_items[idx]["fornecedor"].strip().casefold() == forn_norm
-            ]
-            if len(supplier_indices) >= MIN_SIMILARS:
-                candidate_indices = supplier_indices
+    launch_by_sku = _build_launch_curve_by_sku(pool_df)
+    if len(launch_by_sku) < MIN_SIMILARS:
+        raise NewProductInsufficientSimilarsError(count=len(launch_by_sku))
 
     matches: List[SimilarProductMatch] = []
-    for idx in candidate_indices:
-        item = grouped_items[idx]
+    for sku_int, item in launch_by_sku.items():
+        s_aff = max(0.0, min(1.0, float((affinity_scores or {}).get(sku_int, 0.0))))
         s_forn = 1.0 if item["fornecedor"].strip().casefold() == forn_norm else 0.0
-        cand_price = item["preco"]
-        if preco_venda_previsto > 0 and cand_price > 0:
-            s_preco = math.exp(-abs(math.log(preco_venda_previsto) - math.log(cand_price)))
-        else:
-            s_preco = 0.0
-        s_tfidf = float(tfidf_scores[idx])
+        cand_price = float(item["preco"])
+        s_preco = _price_similarity(preco_venda_previsto, cand_price)
         s_final = (
             WEIGHT_SUPPLIER * s_forn
             + WEIGHT_PRICE * s_preco
-            + WEIGHT_TFIDF * s_tfidf
+            + WEIGHT_AFFINITY * s_aff
         )
         matches.append(
             SimilarProductMatch(
-                sku=item["sku"],
+                sku=sku_int,
                 descricao=item["descricao"],
                 fornecedor=item["fornecedor"],
                 primeira_venda=item["first_sale"],
@@ -337,12 +464,12 @@ def find_similars(
                 score_final=round(s_final, 6),
                 score_fornecedor=round(s_forn, 6),
                 score_preco=round(s_preco, 6),
-                score_tfidf=round(s_tfidf, 6),
+                score_tfidf=round(s_aff, 6),
                 quantidades_primeiros_meses=item["curve"],
+                affinity_score=round(s_aff, 4),
             )
         )
 
-    # P-143.1: desempate por score_preco e primeira venda mais recente
     matches.sort(
         key=lambda m: (
             -m.score_final,
@@ -359,20 +486,30 @@ def compute_conservative_curve(
     horizon_months: int = DEFAULT_HORIZON_MONTHS,
 ) -> List[ConservativeCurvePoint]:
     """
-    Calcula P10, P25, P50 e previsão conservadora (`P25 * 0.70`) para cada mês (P-145, P-147).
+    Calcula P10, P25, P50 e previsão conservadora (`P25 * 0.70`) para cada mês (P-145, P-147),
+    ponderando pela afinidade semântica (`affinity_score`) quando disponível.
     Garante matematicamente a trava inviolável `conservative_quantity <= similar_p25_quantity`.
     """
     if not similars:
         raise NewProductInsufficientSimilarsError(count=0)
 
     horizon = max(1, min(MAX_HORIZON_MONTHS, int(horizon_months)))
+    weights = [max(0.0, float(s.affinity_score or s.score_tfidf)) for s in similars]
+    use_weights = sum(weights) > 0.0
+
     curve: List[ConservativeCurvePoint] = []
     for m_idx in range(horizon):
         values = [max(0, s.quantidades_primeiros_meses[m_idx]) for s in similars]
-        p10 = max(0, int(round(float(np.percentile(values, 10)))))
-        p25_raw = float(np.percentile(values, 25))
+        if use_weights:
+            p10 = max(0, int(round(_weighted_percentile(values, weights, 10))))
+            p25_raw = _weighted_percentile(values, weights, 25)
+            p50 = max(0, int(round(_weighted_percentile(values, weights, 50))))
+        else:
+            p10 = max(0, int(round(float(np.percentile(values, 10)))))
+            p25_raw = float(np.percentile(values, 25))
+            p50 = max(0, int(round(float(np.percentile(values, 50)))))
+
         p25 = max(0, int(round(p25_raw)))
-        p50 = max(0, int(round(float(np.percentile(values, 50)))))
         conservative = max(0, int(round(p25_raw * NEW_PRODUCT_HAIRCUT)))
         conservative = min(conservative, p25)
         assert conservative <= p25  # P-145.3: trava de segurança inviolável
@@ -386,6 +523,121 @@ def compute_conservative_curve(
             )
         )
     return curve
+
+
+def compute_reference_price_range(
+    affinity_matches: Sequence[Mapping[str, Any]],
+    preco_venda_previsto: float,
+) -> Optional[ReferencePriceRangeResult]:
+    """
+    Calcula a faixa de preço de referência dos produtos afins ativos, ponderada por `affinityScore`.
+    """
+    priced = [
+        (float(item.get("currentPrice") or 0.0), max(0.01, float(item.get("affinityScore") or 0.0)))
+        for item in affinity_matches
+        if float(item.get("currentPrice") or 0.0) > 0.0
+    ]
+    if not priced:
+        return None
+
+    prices = [p for p, _ in priced]
+    weights = [w for _, w in priced]
+    min_p = round(min(prices), 2)
+    max_p = round(max(prices), 2)
+    median_p = round(float(np.median(prices)), 2)
+    weighted_avg = round(sum(p * w for p, w in priced) / sum(weights), 2)
+
+    if preco_venda_previsto < min_p * 0.95:
+        position = "ABAIXO"
+    elif preco_venda_previsto > max_p * 1.05:
+        position = "ACIMA"
+    else:
+        position = "NA_FAIXA"
+
+    return ReferencePriceRangeResult(
+        min_price=min_p,
+        weighted_avg_price=weighted_avg,
+        median_price=median_p,
+        max_price=max_p,
+        price_position=position,
+        sample_size=len(priced),
+    )
+
+
+def compute_cannibalization_risk(
+    affinity_matches: Sequence[Mapping[str, Any]],
+    target_fornecedor: str,
+    threshold: float = DEFAULT_CANNIBALIZATION_AFFINITY_THRESHOLD,
+) -> CannibalizationRiskResult:
+    """
+    Avalia o risco preventivo de canibalização do novo lançamento sobre produtos ativos
+    do portfólio (mesmo fornecedor e concorrentes de outros fornecedores), usando o mesmo
+    limiar de afinidade semântica da F6 (`DEFAULT_CANNIBALIZATION_AFFINITY_THRESHOLD = 0.50`).
+    """
+    target_sup_norm = target_fornecedor.strip().casefold()
+    at_risk: List[CannibalizationRiskProduct] = []
+
+    for item in affinity_matches:
+        score = float(item.get("affinityScore") or 0.0)
+        if score < threshold:
+            continue
+        sup = str(item.get("supplier") or "").strip()
+        at_risk.append(
+            CannibalizationRiskProduct(
+                sku=str(item.get("sku") or ""),
+                descricao=str(item.get("description") or "").strip(),
+                fornecedor=sup,
+                preco_atual=round(float(item.get("currentPrice") or 0.0), 2),
+                affinity_score=round(score, 4),
+                same_supplier=bool(target_sup_norm and sup.casefold() == target_sup_norm),
+            )
+        )
+
+    at_risk.sort(key=lambda p: (-p.affinity_score, p.sku))
+    affected_count = len(at_risk)
+    same_sup_count = sum(1 for p in at_risk if p.same_supplier)
+    cross_sup_count = affected_count - same_sup_count
+
+    if affected_count == 0:
+        return CannibalizationRiskResult(
+            risk_level="BAIXO",
+            affected_sku_count=0,
+            same_supplier_affected_count=0,
+            cross_supplier_affected_count=0,
+            estimated_overlap_pct=0.0,
+            summary=(
+                "Baixo risco de canibalização: nenhum produto ativo do portfólio apresenta "
+                "afinidade semântica >= 50% com este lançamento."
+            ),
+            top_at_risk_products=(),
+        )
+
+    top_scores = [p.affinity_score for p in at_risk[:3]]
+    estimated_overlap_pct = round((sum(top_scores) / len(top_scores)) * 100.0, 1)
+    high_cluster = sum(1 for p in at_risk if p.affinity_score >= MODERATE_CANNIBALIZATION_CLUSTER_SCORE)
+
+    if at_risk[0].affinity_score >= HIGH_CANNIBALIZATION_AFFINITY or high_cluster >= HIGH_CANNIBALIZATION_CLUSTER_COUNT:
+        risk_level = "ALTO"
+        level_label = "Alto risco de canibalização"
+    else:
+        risk_level = "MODERADO"
+        level_label = "Risco moderado de canibalização"
+
+    summary = (
+        f"{level_label}: {affected_count} produto(s) ativo(s) no portfólio "
+        f"({same_sup_count} do mesmo fornecedor e {cross_sup_count} de outros fornecedores) "
+        "apresentam afinidade semântica >= 50% e podem sofrer migração de demanda."
+    )
+
+    return CannibalizationRiskResult(
+        risk_level=risk_level,
+        affected_sku_count=affected_count,
+        same_supplier_affected_count=same_sup_count,
+        cross_supplier_affected_count=cross_sup_count,
+        estimated_overlap_pct=estimated_overlap_pct,
+        summary=summary,
+        top_at_risk_products=tuple(at_risk[:5]),
+    )
 
 
 def apply_seasonality_and_clamp(
@@ -423,14 +675,14 @@ def compute_mature_ceiling(
     mature_df: pd.DataFrame,
     tipo: Optional[str] = None,
     fornecedor: Optional[str] = None,
-    descricao: Optional[str] = None,
+    similar_skus: Optional[Sequence[int]] = None,
 ) -> int:
     """
     Calcula o Teto Maduro de Referência (`tetoMaduroP75`, P-147) sobre produtos com
     primeira venda anterior a LAUNCH_CUTOFF_DATE (2025-04-01).
     - Se `tipo` for informado, restringe ao mesmo `tipo`.
-    - Se `tipo` for omitido, prioriza produtos maduros semanticamente aderentes à `descricao`
-      (TF-IDF > 0 quando houver >= MIN_SIMILARS SKUs), com fallback para `fornecedor`.
+    - Se `similar_skus` (do índice de afinidade) forem informados, prioriza esses SKUs maduros.
+    - Fallback para `fornecedor` quando disponível.
     """
     if mature_df.empty:
         return 0
@@ -451,16 +703,11 @@ def compute_mature_ceiling(
 
     if not tipo_norm:
         filtered_work = None
-        if descricao and "descricao" in work.columns and "sku" in work.columns:
-            sku_desc = work.drop_duplicates(subset=["sku"])[["sku", "descricao"]]
-            scores = _compute_tfidf_scores(descricao, sku_desc["descricao"].astype(str).tolist())
-            matched_skus = set(
-                sku_desc["sku"].iloc[idx]
-                for idx, sc in enumerate(scores)
-                if float(sc) > 0.0
-            )
-            if len(matched_skus) >= MIN_SIMILARS:
-                filtered_work = work[work["sku"].isin(matched_skus)]
+        if similar_skus and "sku" in work.columns:
+            sku_set = {int(s) for s in similar_skus}
+            matched = work[work["sku"].isin(sku_set)]
+            if not matched.empty:
+                filtered_work = matched
 
         if filtered_work is None and fornecedor and "fornecedor" in work.columns:
             forn_norm = fornecedor.strip().casefold()
@@ -480,9 +727,7 @@ def evaluate_financial_viability(
     custo_unitario: Optional[float],
     margem_minima_desejada: Optional[float],
 ) -> FinancialViabilityResult:
-    """
-    Calcula margem bruta unitária, percentual e parecer de viabilidade (P-148).
-    """
+    """Calcula margem bruta unitária, percentual e parecer de viabilidade (P-148)."""
     if custo_unitario is None:
         return FinancialViabilityResult(
             preco_venda=round(float(preco_venda), 2),

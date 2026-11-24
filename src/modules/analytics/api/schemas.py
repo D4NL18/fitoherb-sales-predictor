@@ -774,8 +774,55 @@ class SimilarProductItem(CamelModel):
     score_final: float = Field(description="Score composto de similaridade [0..1].")
     score_fornecedor: float = Field(description="Score parcial de fornecedor [0..1].")
     score_preco: float = Field(description="Score parcial de proximidade log-preço [0..1].")
-    score_tfidf: float = Field(description="Score parcial de similaridade textual TF-IDF [0..1].")
+    score_tfidf: float = Field(description="Score parcial de afinidade semântica [0..1].")
+    affinity_score: float = Field(
+        default=0.0,
+        description="Score de afinidade semântica do motor compartilhado [0..1].",
+    )
     quantidades_primeiros_meses: List[int] = Field(description="Quantidades líquidas nos primeiros 3 meses.")
+
+
+NewProductPricePositionLiteral = Literal["ABAIXO", "NA_FAIXA", "ACIMA"]
+NewProductCannibalizationRiskLevelLiteral = Literal["ALTO", "MODERADO", "BAIXO"]
+
+
+class NewProductReferencePriceRange(CamelModel):
+    """Faixa de preço de referência dos produtos afins ativos ponderada por afinidade."""
+
+    min_price: float = Field(description="Menor preço entre os produtos afins (R$).")
+    weighted_avg_price: float = Field(description="Preço médio ponderado pela afinidade semântica (R$).")
+    median_price: float = Field(description="Preço mediano dos produtos afins (R$).")
+    max_price: float = Field(description="Maior preço entre os produtos afins (R$).")
+    price_position: NewProductPricePositionLiteral = Field(
+        description="Posicionamento do preço previsto frente à faixa de referência."
+    )
+    sample_size: int = Field(description="Quantidade de produtos afins com preço válido.")
+
+
+class NewProductCannibalizationRiskProduct(CamelModel):
+    """Produto existente do portfólio exposto a risco de canibalização pelo novo lançamento."""
+
+    sku: str = Field(description="Código SKU do produto existente.")
+    descricao: str = Field(description="Descrição do produto existente.")
+    fornecedor: str = Field(description="Fornecedor do produto existente.")
+    preco_atual: float = Field(description="Preço atual de venda (R$).")
+    affinity_score: float = Field(description="Afinidade semântica com o lançamento [0..1].")
+    same_supplier: bool = Field(description="Indica se pertence ao mesmo fornecedor do lançamento.")
+
+
+class NewProductCannibalizationRisk(CamelModel):
+    """Avaliação preventiva de risco de canibalização sobre o portfólio ativo."""
+
+    risk_level: NewProductCannibalizationRiskLevelLiteral = Field(description="Nível de risco: ALTO, MODERADO ou BAIXO.")
+    affected_sku_count: int = Field(description="Total de produtos ativos com afinidade >= 50%.")
+    same_supplier_affected_count: int = Field(description="Produtos sobrepostos do mesmo fornecedor.")
+    cross_supplier_affected_count: int = Field(description="Produtos sobrepostos de outros fornecedores.")
+    estimated_overlap_pct: float = Field(description="Índice estimado de sobreposição semântica (%).")
+    summary: str = Field(description="Resumo executivo do risco de canibalização.")
+    top_at_risk_products: List[NewProductCannibalizationRiskProduct] = Field(
+        default_factory=list,
+        description="Principais produtos existentes expostos à migração de demanda.",
+    )
 
 
 class NewProductForecastData(CamelModel):
@@ -789,6 +836,14 @@ class NewProductForecastData(CamelModel):
     aggregated_totals: NewProductAggregatedTotals = Field(description="Totais agregados no horizonte.")
     financial_viability: NewProductFinancialViability = Field(description="Análise financeira de margem.")
     market_ceiling: NewProductMarketCeiling = Field(description="Teto maduro de referência (P75).")
+    reference_price_range: Optional[NewProductReferencePriceRange] = Field(
+        default=None,
+        description="Faixa de preço de referência dos produtos afins ativos.",
+    )
+    cannibalization_risk: Optional[NewProductCannibalizationRisk] = Field(
+        default=None,
+        description="Avaliação preventiva de risco de canibalização sobre o portfólio ativo.",
+    )
     similars_used: List[SimilarProductItem] = Field(description="TOP-10 similares utilizados.")
     methodology_notice: str = Field(description="Aviso metodológico conservador.")
 

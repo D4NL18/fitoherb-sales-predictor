@@ -25,6 +25,7 @@ from src.modules.analytics.domain.product_affinity import (
     DEFAULT_TOP_K_AFFINITIES,
     MIN_STORED_AFFINITY_SCORE,
     _collect_all_supplier_tokens,
+    _pair_compatibility_multiplier,
     build_affinity_document,
     build_sku_compatibility_profile,
     compute_affinity_matrix,
@@ -341,36 +342,79 @@ def find_similar_for_new_product(
     category: str = "",
     top_k: int = 10,
     index_path: Path = DEFAULT_INDEX_PATH,
+    auto_sync: bool = False,
+    min_score: float = MIN_STORED_AFFINITY_SCORE,
 ) -> List[Dict[str, Any]]:
     """
-    API de serviço compartilhada para a worktree de Produto Novo (cold start):
-    retorna os `top_k` produtos ativos mais afins a um produto candidato novo.
+    API de serviço compartilhada para Produto Novo (cold start):
+    retorna os `top_k` produtos ativos mais afins a um produto candidato novo,
+    aplicando as mesmas travas estruturais de compatibilidade (`build_sku_compatibility_profile`
+    + `_pair_compatibility_multiplier`) usadas na matriz de canibalização.
     """
     index = get_loaded_affinity_index(index_path)
+    if index is None and auto_sync:
+        try:
+            sync_product_affinity_index(index_path=index_path)
+            index = get_loaded_affinity_index(index_path)
+        except Exception as exc:
+            logger.warning(
+                "Fallback gracioso no cold start: falha ao sincronizar índice de afinidade (%s).",
+                type(exc).__name__,
+            )
+            return []
     if index is None:
         return []
+
     skus_meta = index.get("skus") or {}
     indexed_docs = {sku: str(meta.get("doc") or "") for sku, meta in skus_meta.items()}
     supplier_tokens = _collect_all_supplier_tokens(skus_meta)
-    matches = find_similar_products_for_new_item(
+    pool_k = max(int(top_k) * 5, 50)
+    raw_matches = find_similar_products_for_new_item(
         name=name,
         description=description,
         category=category,
         indexed_documents=indexed_docs,
         supplier_tokens=supplier_tokens,
-        top_k=top_k,
+        top_k=pool_k,
+        min_score=min_score,
     )
+    if not raw_matches:
+        return []
+
+    candidate_fn = detect_primary_function(name, description)
+    candidate_profile = build_sku_compatibility_profile(
+        description=name,
+        primary_function=candidate_fn,
+        supplier_tokens=supplier_tokens,
+    )
+
     enriched: List[Dict[str, Any]] = []
-    for m in matches:
-        meta = skus_meta.get(m["sku"]) or {}
+    for m in raw_matches:
+        sku_str = str(m["sku"])
+        meta = skus_meta.get(sku_str) or {}
+        cand_desc = str(meta.get("description") or "")
+        cand_fn = str(meta.get("primary_function") or "") or detect_primary_function(cand_desc)
+        cand_profile = build_sku_compatibility_profile(
+            description=cand_desc,
+            primary_function=cand_fn,
+            supplier_tokens=supplier_tokens,
+        )
+        mult = _pair_compatibility_multiplier(candidate_profile, cand_profile)
+        if mult <= 0.0:
+            continue
+        adjusted_score = round(float(m["score"]) * mult, 4)
+        if adjusted_score < min_score:
+            continue
         enriched.append(
             {
-                "sku": m["sku"],
-                "description": meta.get("description", ""),
-                "supplier": meta.get("supplier", ""),
-                "category": meta.get("category", ""),
+                "sku": sku_str,
+                "description": cand_desc,
+                "supplier": str(meta.get("supplier") or ""),
+                "category": str(meta.get("category") or ""),
                 "currentPrice": float(meta.get("current_price") or 0.0),
-                "affinityScore": float(m["score"]),
+                "affinityScore": adjusted_score,
             }
         )
-    return enriched
+
+    enriched.sort(key=lambda item: (-float(item["affinityScore"]), str(item["sku"])))
+    return enriched[: max(1, int(top_k))]

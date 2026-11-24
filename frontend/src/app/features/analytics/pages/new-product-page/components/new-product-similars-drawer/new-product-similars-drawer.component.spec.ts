@@ -45,7 +45,7 @@ describe('NewProductSimilarsDrawerComponent', () => {
     expect(dialog?.getAttribute('aria-modal')).toBe('true');
 
     const text = dialog?.textContent ?? '';
-    expect(text).toContain('Descrição / Texto TF-IDF (peso 50%)');
+    expect(text).toContain('Afinidade Semântica (peso 50%)');
     expect(text).toContain('Proximidade Log-Preço (peso 40%)');
     expect(text).toContain('Mesmo Fornecedor (peso 10%)');
     expect(text).toContain('Mesmo fornecedor');

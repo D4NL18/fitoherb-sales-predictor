@@ -113,6 +113,36 @@ def _setup_new_product_mocks(monkeypatch):
         "_get_mature_product_distribution_df",
         lambda tipo: mature_df[mature_df["tipo"] == tipo].copy(),
     )
+    monkeypatch.setattr(
+        analytics_service,
+        "_find_affinity_similars_for_new_product",
+        lambda name, description="", category="", top_k=30: [
+            {
+                "sku": "1042",
+                "description": "Tintura de Passiflora Incarnata 50ml",
+                "supplier": "FITOHERB LABORATORIOS",
+                "category": "Tinturas",
+                "currentPrice": 39.90,
+                "affinityScore": 0.82,
+            },
+            {
+                "sku": "1089",
+                "description": "Tintura Mae de Valeriana Officinalis 50ml",
+                "supplier": "FITOHERB LABORATORIOS",
+                "category": "Tinturas",
+                "currentPrice": 44.00,
+                "affinityScore": 0.76,
+            },
+            {
+                "sku": "1150",
+                "description": "Tintura de Camomila Matricaria 50ml Gotas",
+                "supplier": "HERBAL BRASIL DISTRIBUICAO",
+                "category": "Tinturas",
+                "currentPrice": 38.00,
+                "affinityScore": 0.68,
+            },
+        ],
+    )
 
 
 def _valid_payload(**overrides) -> dict:
@@ -165,6 +195,13 @@ def test_forecast_success_full_payload():
     assert data["financialViability"]["margemBrutaUnitaria"] == pytest.approx(23.40, abs=0.01)
     assert data["marketCeiling"]["tetoMaduroP75"] > 0
     assert len(data["similarsUsed"]) == 3
+    assert data["similarsUsed"][0]["affinityScore"] > 0
+    assert data["referencePriceRange"]["minPrice"] == pytest.approx(38.00)
+    assert data["referencePriceRange"]["maxPrice"] == pytest.approx(44.00)
+    assert data["cannibalizationRisk"]["riskLevel"] == "ALTO"
+    assert data["cannibalizationRisk"]["affectedSkuCount"] == 3
+    assert data["cannibalizationRisk"]["sameSupplierAffectedCount"] == 2
+    assert data["cannibalizationRisk"]["crossSupplierAffectedCount"] == 1
     assert "conservador" in data["methodologyNotice"].lower()
 
 

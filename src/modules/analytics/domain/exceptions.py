@@ -278,6 +278,10 @@ class NewProductDatabaseUnavailableError(NewProductDomainException):
             code="NEW-005",
             message="Serviço de análise de produtos temporariamente indisponível. Tente novamente em instantes.",
             status_code=503,
+            fields=(),
+        )
+
+
 class CannibalizationEventNotFoundError(AnalyticsDomainException):
     """CAN-002: Evento especificado não localizado ou sem histórico transacional."""
 

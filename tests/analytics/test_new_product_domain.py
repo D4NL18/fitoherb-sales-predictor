@@ -251,6 +251,7 @@ def test_similarity_score_weights():
         fornecedor=target["fornecedor"],
         descricao=target["descricao"],
         preco_venda_previsto=target["preco_venda_previsto"],
+        affinity_scores={3001: 1.0, 3002: 1.0, 3003: 0.0},
     )
 
     # Assert
@@ -618,3 +619,108 @@ def test_backtest_calibration():
     # Assert
     assert report.total_evaluated >= 8
     assert report.success_rate >= MIN_BACKTEST_SUCCESS_RATE
+
+
+def test_select_similars_from_affinities_and_risk_and_price_range():
+    """Reutiliza matches do product_affinity_service para similares, faixa de preço e risco de canibalização."""
+    from src.modules.analytics.domain.new_product import (
+        compute_cannibalization_risk,
+        compute_reference_price_range,
+        select_similars_from_affinities,
+    )
+
+    affinity_matches = [
+        {
+            "sku": "112225",
+            "description": "WHEY 100% PURE 900 GRS GELATO DI LATTE SACO",
+            "supplier": "INTEGRALMEDICA",
+            "category": "LINHA INTEGRALMEDICA",
+            "currentPrice": 219.90,
+            "affinityScore": 0.88,
+        },
+        {
+            "sku": "770152",
+            "description": "100% WHEY DOUBLE TASTY POTE 900G BAUNILHA",
+            "supplier": "MAX TITANIUM",
+            "category": "LINHA MAX TITANIUM",
+            "currentPrice": 149.90,
+            "affinityScore": 0.72,
+        },
+        {
+            "sku": "840130",
+            "description": "WHEY DOUBLE POTE 900G COOKIES",
+            "supplier": "FITOWAY",
+            "category": "LINHA FITOWAY",
+            "currentPrice": 129.90,
+            "affinityScore": 0.61,
+        },
+    ]
+
+    launches = pd.concat(
+        [
+            _make_launch_df(112225, "LINHA INTEGRALMEDICA", "INTEGRALMEDICA", "WHEY 100% PURE 900 GRS GELATO DI LATTE SACO", 219.90, date(2025, 6, 1), [25, 30, 28]),
+            _make_launch_df(770152, "LINHA MAX TITANIUM", "MAX TITANIUM", "100% WHEY DOUBLE TASTY POTE 900G BAUNILHA", 149.90, date(2025, 6, 2), [12, 12, 24]),
+            _make_launch_df(840130, "LINHA FITOWAY", "FITOWAY", "WHEY DOUBLE POTE 900G COOKIES", 129.90, date(2025, 7, 1), [8, 10, 9]),
+        ],
+        ignore_index=True,
+    )
+
+    similars = select_similars_from_affinities(
+        affinity_matches=affinity_matches,
+        launches_df=launches,
+        fornecedor="MAX TITANIUM",
+        preco_venda_previsto=220.0,
+    )
+    assert len(similars) == 3
+    # Produto de maior afinidade + preço quase idêntico (Integralmedica) vence em #1
+    assert similars[0].sku == 112225
+    assert similars[0].affinity_score == pytest.approx(0.88, abs=1e-4)
+
+    curve = compute_conservative_curve(similars, horizon_months=3)
+    assert all(p.conservative_quantity <= p.similar_p25_quantity for p in curve)
+
+    price_range = compute_reference_price_range(affinity_matches, preco_venda_previsto=220.0)
+    assert price_range is not None
+    assert price_range.min_price == pytest.approx(129.90)
+    assert price_range.max_price == pytest.approx(219.90)
+    assert price_range.price_position == "NA_FAIXA"
+    assert price_range.sample_size == 3
+
+    risk = compute_cannibalization_risk(affinity_matches, target_fornecedor="MAX TITANIUM")
+    assert risk.risk_level == "ALTO"
+    assert risk.affected_sku_count == 3
+    assert risk.same_supplier_affected_count == 1
+    assert risk.cross_supplier_affected_count == 2
+    assert len(risk.top_at_risk_products) == 3
+
+
+def test_find_similar_for_new_product_applies_compatibility_guards(tmp_path):
+    """product_affinity_service.find_similar_for_new_product bloqueia barra proteica e pré-treino ao buscar Whey em pó."""
+    from src.modules.analytics.service import product_affinity_service as aff_svc
+
+    fake_catalog = {
+        "1001": {"description": "WHEY 100% PURE POTE 900G BAUNILHA", "supplier": "INTEGRALMEDICA", "category": "LINHA INTEGRALMEDICA", "current_price": 219.90, "active": True},
+        "1002": {"description": "100% WHEY PROTEIN POTE 900G CHOCOLATE", "supplier": "MAX TITANIUM", "category": "LINHA MAX TITANIUM", "current_price": 179.90, "active": True},
+        "1003": {"description": "WHEY BAR 12X45G COOKIES", "supplier": "BLACK SKULL", "category": "LINHA BLACK SKULL", "current_price": 89.90, "active": True},
+        "1004": {"description": "HORUS PRE WORKOUT 150G CITRUS", "supplier": "MAX TITANIUM", "category": "LINHA MAX TITANIUM", "current_price": 79.90, "active": True},
+    }
+    index_file = tmp_path / "product_affinity_index.json"
+    aff_svc.reset_product_affinity_memory_cache()
+    aff_svc.sync_product_affinity_index(
+        force=True,
+        index_path=index_file,
+        catalog_loader=lambda: fake_catalog,
+        gallery_loader=lambda: [],
+    )
+    results = aff_svc.find_similar_for_new_product(
+        name="WHEY 100% POTE 900G GELATO",
+        description="WHEY 100% POTE 900G GELATO",
+        top_k=10,
+        index_path=index_file,
+    )
+    aff_svc.reset_product_affinity_memory_cache()
+
+    returned_skus = {item["sku"] for item in results}
+    assert "1001" in returned_skus or "1002" in returned_skus
+    assert "1003" not in returned_skus  # barra proteica bloqueada pela trava estrutural
+    assert "1004" not in returned_skus  # pré-treino bloqueado pela trava estrutural

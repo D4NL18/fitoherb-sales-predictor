@@ -74,11 +74,11 @@
           <div class="score-breakdown">
             <div class="score-row">
               <div class="score-row-label">
-                <span>Descrição / Texto TF-IDF (peso 50%)</span>
-                <strong class="mono-val">{{ item.scoreTfidf | ptPercent: 1 }}</strong>
+                <span>Afinidade Semântica (peso 50%)</span>
+                <strong class="mono-val">{{ (item.affinityScore ?? item.scoreTfidf) | ptPercent: 1 }}</strong>
               </div>
               <div class="score-track" aria-hidden="true">
-                <div class="score-fill" [style.width.%]="item.scoreTfidf * 100"></div>
+                <div class="score-fill" [style.width.%]="(item.affinityScore ?? item.scoreTfidf) * 100"></div>
               </div>
             </div>
 

@@ -68,3 +68,16 @@
 - **`reviewer`:** **APROVADO** — Clean Code, SOLID, LGPD-05 (sem eco de valores/stacktraces), `is_readonly_query`, invariante `Q <= P25`, `OnPush`, `switchMap` + `takeUntilDestroyed()`, zero `any`.
 - **`ux_reviewer`:** **APROVADO** — Fidelidade integral ao Design Plan Papel & Tinta, WCAG 2.1 AA, gráfico SVG colorblind-safe + tabela ledger, bloco `Teto Maduro (P75)` segregado, Drawer acessível com `[attr.inert]` e restauração de foco, responsividade `< 640px`.
 - **Status:** **CONCLUÍDO E APROVADO**
+
+
+---
+
+## 4. Integração com Motor Compartilhado de Afinidade Semântica (Merge `main` / PR #13)
+
+- **Triagem (`/o`):** Categoria A (Evolução de Feature Backend + Frontend). Bypass justificado para `product_owner`, `analyst`, `dba`, `privacy_officer` (sem PII) e `designer` (mantém Papel & Tinta).
+- **Merge `origin/main` (`76759bb`):** incorporados Canibalização (F6) + Índice de Afinidade Semântica (`product_affinity.py` e `product_affinity_service.py`), resolvendo os 10 conflitos aditivos de rotas/schemas/exceções/utilitários.
+- **Reutilização sem duplicação de NLP/TF-IDF:**
+  - `src/modules/analytics/service/product_affinity_service.py`: `find_similar_for_new_product(...)` agora aplica `detect_primary_function` + `build_sku_compatibility_profile` + `_pair_compatibility_multiplier` sobre o produto candidato novo vs catálogo ativo, com `auto_sync=True` / fallback gracioso quando o índice em disco ainda não existir.
+  - `src/modules/analytics/domain/new_product.py`: removida toda lógica duplicada de TF-IDF/stopwords; adicionados `select_similars_from_affinities`, percentis conservadores ponderados por `affinityScore` (mantendo trava `Q <= P25`), `compute_reference_price_range` e `compute_cannibalization_risk`.
+  - `src/modules/analytics/service/analytics_service.py` & `schemas.py`: `POST /api/v1/analytics/new-product/forecast` consome `product_affinity_service.find_similar_for_new_product(...)` e retorna `referencePriceRange`, `cannibalizationRisk` e `affinityScore` por item de referência.
+  - **Frontend Angular 18:** exibe Faixa de Preço de Referência, Risco de Canibalização no Portfólio (mesmo fornecedor vs outros fornecedores) e coluna `Afinidade` (%) na tabela de Produtos de Referência e no Drawer de explicabilidade.

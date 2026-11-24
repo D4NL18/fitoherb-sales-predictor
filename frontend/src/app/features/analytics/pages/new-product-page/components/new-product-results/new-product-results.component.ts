@@ -91,6 +91,34 @@ export class NewProductResultsComponent {
     };
   });
 
+  protected readonly pricePositionBadge = computed(() => {
+    const ref = this.data().referencePriceRange;
+    if (!ref) return null;
+    if (ref.pricePosition === 'ABAIXO') {
+      return { tagClass: 'tag-info', label: 'Abaixo da faixa de mercado' };
+    }
+    if (ref.pricePosition === 'ACIMA') {
+      return { tagClass: 'tag-warning', label: 'Acima da faixa de mercado' };
+    }
+    return { tagClass: 'tag-positive', label: 'Na faixa de mercado' };
+  });
+
+  protected readonly cannibalizationBadge = computed(() => {
+    const risk = this.data().cannibalizationRisk;
+    if (!risk) return null;
+    if (risk.riskLevel === 'ALTO') {
+      return { tagClass: 'tag-warning', label: 'Risco Alto' };
+    }
+    if (risk.riskLevel === 'MODERADO') {
+      return { tagClass: 'tag-info', label: 'Risco Moderado' };
+    }
+    return { tagClass: 'tag-positive', label: 'Risco Baixo' };
+  });
+
+  protected resolveAffinity(sim: SimilarProductItem): number {
+    return sim.affinityScore ?? sim.scoreTfidf;
+  }
+
   protected formatMonthLabel(month: number, calendarMonth?: number): string {
     if (!calendarMonth) return `M${month}`;
     const abbr = MONTH_ABBR[calendarMonth];

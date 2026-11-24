@@ -398,3 +398,127 @@
     min-height: 44px;
   }
 }
+
+.affinity-insights-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1rem;
+}
+
+.insight-card {
+  background: var(--bg-surface, #ffffff);
+  border: 1px solid var(--border-default, #ded9ce);
+  border-radius: var(--radius-sm, 6px);
+  padding: 1.125rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.insight-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.insight-note {
+  margin: 0;
+  font-size: 0.86rem;
+  line-height: 1.45;
+  color: var(--text-secondary, #475569);
+}
+
+.ref-price-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin: 0;
+
+  div {
+    background: var(--bg-subtle, #f7f4ee);
+    border: 1px solid var(--border-subtle, #e9e4d9);
+    border-radius: var(--radius-xs, 4px);
+    padding: 0.55rem 0.7rem;
+  }
+
+  dt {
+    font-size: 0.74rem;
+    color: var(--text-secondary, #475569);
+    margin-bottom: 0.2rem;
+  }
+
+  dd {
+    margin: 0;
+    font-size: 0.96rem;
+    font-weight: 600;
+    color: var(--text-primary, #17201b);
+  }
+
+  .ref-price-highlight {
+    color: var(--brand-primary, #1b4332);
+  }
+}
+
+.cannib-metrics-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.cannib-pill {
+  font-size: 0.78rem;
+  padding: 0.25rem 0.55rem;
+  border-radius: var(--radius-xs, 4px);
+  background: var(--bg-subtle, #f7f4ee);
+  border: 1px solid var(--border-subtle, #e9e4d9);
+  color: var(--text-primary, #17201b);
+}
+
+.cannib-risk-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.cannib-risk-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: var(--radius-xs, 4px);
+  background: var(--bg-subtle, #f7f4ee);
+  border: 1px solid var(--border-subtle, #e9e4d9);
+}
+
+.cannib-item-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.cannib-item-name {
+  font-size: 0.83rem;
+  font-weight: 600;
+  color: var(--text-primary, #17201b);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cannib-item-meta {
+  font-size: 0.75rem;
+  color: var(--text-secondary, #475569);
+}
+
+.cannib-item-score {
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: var(--brand-primary, #1b4332);
+  flex-shrink: 0;
+}

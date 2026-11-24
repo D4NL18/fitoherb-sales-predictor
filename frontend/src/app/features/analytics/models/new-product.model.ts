@@ -71,7 +71,39 @@ export interface SimilarProductItem {
   scoreFornecedor: number;
   scorePreco: number;
   scoreTfidf: number;
+  affinityScore?: number;
   quantidadesPrimeirosMeses: number[];
+}
+
+export type NewProductPricePosition = 'ABAIXO' | 'NA_FAIXA' | 'ACIMA';
+export type NewProductCannibalizationRiskLevel = 'ALTO' | 'MODERADO' | 'BAIXO';
+
+export interface ReferencePriceRange {
+  minPrice: number;
+  weightedAvgPrice: number;
+  medianPrice: number;
+  maxPrice: number;
+  pricePosition: NewProductPricePosition;
+  sampleSize: number;
+}
+
+export interface CannibalizationRiskProduct {
+  sku: string;
+  descricao: string;
+  fornecedor: string;
+  precoAtual: number;
+  affinityScore: number;
+  sameSupplier: boolean;
+}
+
+export interface CannibalizationRisk {
+  riskLevel: NewProductCannibalizationRiskLevel;
+  affectedSkuCount: number;
+  sameSupplierAffectedCount: number;
+  crossSupplierAffectedCount: number;
+  estimatedOverlapPct: number;
+  summary: string;
+  topAtRiskProducts: CannibalizationRiskProduct[];
 }
 
 export interface NewProductForecastData {
@@ -81,6 +113,8 @@ export interface NewProductForecastData {
   aggregatedTotals: AggregatedTotals;
   financialViability: FinancialViability;
   marketCeiling: MarketCeiling;
+  referencePriceRange?: ReferencePriceRange | null;
+  cannibalizationRisk?: CannibalizationRisk | null;
   similarsUsed: SimilarProductItem[];
   methodologyNotice: string;
 }
