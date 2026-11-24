@@ -27,6 +27,7 @@ from src.modules.analytics.domain.cannibalization_report import (
     _CANONICAL_SYNONYMS,
     _PRODUCT_TOKEN_STOPWORDS,
     _QUANTITY_UNIT_RE,
+    _collapse_dotted_acronyms,
     _strip_accents,
     extract_product_family_tokens,
 )
@@ -36,9 +37,29 @@ from src.modules.analytics.domain.cannibalization_report import (
 # ---------------------------------------------------------------------------
 
 DEFAULT_TOP_K_AFFINITIES: int = 25
-MIN_STORED_AFFINITY_SCORE: float = 0.15
-DEFAULT_CANNIBALIZATION_AFFINITY_THRESHOLD: float = 0.25
-GALLERY_MATCH_MIN_SCORE: float = 0.35
+MIN_STORED_AFFINITY_SCORE: float = 0.25
+DEFAULT_CANNIBALIZATION_AFFINITY_THRESHOLD: float = 0.45
+GALLERY_MATCH_MIN_SCORE: float = 0.45
+
+# Famílias funcionais primárias mutuamente exclusivas: um pré-treino (mesmo contendo
+# creatina/cafeína na fórmula) não tem o mesmo objetivo comercial de uma creatina pura
+# ou de um whey protein, portanto não deve ser pareado como canibalizador direto.
+_PRIMARY_FUNCTION_MARKERS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
+    (
+        "pretreino",
+        ("pretreino", "pre treino", "pre-treino", "bope", "horus", "egide", "bone crusher", "evora", "panic", "haze", "diabo verde", "venom", "psychotic"),
+    ),
+    ("creatina", ("creatina", "creapure")),
+    ("whey", ("whey", "nutriwhey", "iso whey", "proteina do soro")),
+    ("hipercalorico", ("hipercalorico", "mass", "creamass", "hiper mass", "sinister mass")),
+    ("omega", ("omega", "omegafor", "oleo de peixe")),
+    ("colageno", ("colageno", "colagentek", "verisol")),
+    ("glutamina", ("glutamina", "glutamin")),
+    ("bcaa", ("bcaa",)),
+    ("pastaamendoim", ("pasta de amendoim", "pasta amendoim", "pastaamendoim")),
+    ("termogenico", ("termogenico", "kimera", "thermo", "lipo")),
+    ("barraproteina", ("barra de proteina", "protein bar", "barraproteina", "crisp bar", "protein crisp")),
+)
 
 _ALNUM_WORD_RE = re.compile(r"[a-z0-9]{2,}")
 _ALPHA_WORD_RE = re.compile(r"[a-z]{3,}")
@@ -87,7 +108,7 @@ _UNIT_NORMALIZE_RE = re.compile(r"\b(\d+(?:[.,]\d+)?)\s*(grs|gr|g|kg|mg|mcg|ml|c
 
 
 def _norm_tokens(text: str) -> FrozenSet[str]:
-    clean = _strip_accents(str(text or "").lower())
+    clean = _collapse_dotted_acronyms(_strip_accents(str(text or "").lower()))
     def _canon_unit(m: re.Match) -> str:
         num = m.group(1).replace(",", ".")
         unit = m.group(2)
@@ -100,6 +121,23 @@ def _norm_tokens(text: str) -> FrozenSet[str]:
         return f"{num}{unit}"
     clean = _UNIT_NORMALIZE_RE.sub(_canon_unit, clean)
     return frozenset(_ALNUM_WORD_RE.findall(clean))
+
+
+def detect_primary_function(name: str, gallery_description: str = "") -> Optional[str]:
+    """
+    Detecta o objetivo funcional primário do produto a partir do nome comercial
+    (e, se o nome for sigla/fantasia como `B.O.P.E.`, da primeira frase da descrição).
+    Garante que pré-treinos não sejam confundidos com creatinas puras mesmo contendo creatina na fórmula.
+    """
+    norm_name = _collapse_dotted_acronyms(_strip_accents(str(name or "").lower()))
+    for func_id, markers in _PRIMARY_FUNCTION_MARKERS:
+        if any(m in norm_name for m in markers):
+            return func_id
+    # Fallback conservador: apenas pré-treino explícito na abertura da descrição
+    norm_desc_head = _collapse_dotted_acronyms(_strip_accents(str(gallery_description or "")[:180].lower()))
+    if any(m in norm_desc_head for m in ("pre-treino", "pre treino", "pretreino")):
+        return "pretreino"
+    return None
 
 
 def _collect_all_supplier_tokens(
@@ -127,28 +165,31 @@ def match_catalog_with_gallery(
     if not gallery_items:
         return {}
 
-    by_supplier_key: Dict[str, List[Tuple[Mapping[str, Any], FrozenSet[str]]]] = {}
-    all_indexed: List[Tuple[Mapping[str, Any], str, FrozenSet[str]]] = []
+    by_supplier_key: Dict[str, List[Tuple[Mapping[str, Any], FrozenSet[str], FrozenSet[str]]]] = {}
+    supplier_tokens = _collect_all_supplier_tokens(catalog, gallery_items)
 
     for item in gallery_items:
         sup_key = _norm_alnum_key(item.get("supplier_name", ""))
-        name_tokens = _norm_tokens(item.get("name", ""))
-        if not name_tokens:
+        name_raw = str(item.get("name") or "")
+        name_tokens = _norm_tokens(name_raw)
+        core_name_tokens = extract_product_family_tokens(name_raw, supplier_tokens)
+        if not name_tokens or not core_name_tokens:
             continue
-        by_supplier_key.setdefault(sup_key, []).append((item, name_tokens))
-        all_indexed.append((item, sup_key, name_tokens))
+        by_supplier_key.setdefault(sup_key, []).append((item, name_tokens, core_name_tokens))
 
     matched: Dict[str, Dict[str, Any]] = {}
     for sku_str, entry in catalog.items():
         if not entry.get("active", True):
             continue
         erp_sup_key = _norm_alnum_key(entry.get("supplier", ""))
-        erp_tokens = _norm_tokens(entry.get("description", ""))
-        if not erp_tokens:
+        erp_desc = str(entry.get("description") or "")
+        erp_tokens = _norm_tokens(erp_desc)
+        erp_core = extract_product_family_tokens(erp_desc, supplier_tokens)
+        if not erp_tokens or not erp_core:
             continue
 
         # Candidatos do mesmo fornecedor (exato ou por prefixo/substring de nome comercial)
-        candidates: List[Tuple[Mapping[str, Any], FrozenSet[str]]] = list(
+        candidates: List[Tuple[Mapping[str, Any], FrozenSet[str], FrozenSet[str]]] = list(
             by_supplier_key.get(erp_sup_key, ())
         )
         if not candidates and erp_sup_key:
@@ -161,14 +202,18 @@ def match_catalog_with_gallery(
 
         best_item: Optional[Mapping[str, Any]] = None
         best_score = 0.0
-        for g_item, g_tokens in candidates:
-            inter = len(erp_tokens & g_tokens)
-            if inter == 0:
+        for g_item, g_tokens, g_core in candidates:
+            # Trava obrigatória: deve compartilhar ao menos 1 token substantivo de nome
+            # (impede falso match baseado apenas em gramatura "300g" ou sabor "limao").
+            core_inter = len(erp_core & g_core)
+            if core_inter == 0:
                 continue
+            inter = len(erp_tokens & g_tokens)
             union = len(erp_tokens | g_tokens)
             jaccard = inter / union
             erp_recall = inter / len(erp_tokens)
-            score = 0.55 * jaccard + 0.45 * erp_recall
+            core_recall = core_inter / len(erp_core)
+            score = 0.40 * jaccard + 0.30 * erp_recall + 0.30 * core_recall
             if score > best_score:
                 best_score = score
                 best_item = g_item
@@ -227,7 +272,14 @@ def build_affinity_document(
         pres_words.extend(w for w in _ALPHA_WORD_RE.findall(p_norm) if w not in supplier_tokens)
 
     core_combined = sorted(set(core_erp) | set(core_gal))
-    core_part = " ".join(core_combined)
+    primary_fn = detect_primary_function(name, gallery_description)
+    if primary_fn:
+        # Quando o produto pertence a uma função primária clara (ex.: creatina, pretreino, whey, omega),
+        # usa a função primária como núcleo canônico para que sub-marcas/nomes fantasia (B.O.P.E., Horus,
+        # Égide, 7Belo, Turbo) de fornecedores diferentes tenham afinidade alta entre si e zero ruído.
+        core_part = primary_fn
+    else:
+        core_part = " ".join(core_combined)
     rich_parts: List[str] = []
     if desc_words:
         rich_parts.append(" ".join(desc_words[:120]))
@@ -310,7 +362,9 @@ def _vectorize_documents(documents: Sequence[str]):
     x_core = normalize(core_vec.fit_transform(cores), norm="l2", axis=1)
     x_desc_word = normalize(desc_word_vec.fit_transform(riches), norm="l2", axis=1)
     x_desc_char = normalize(desc_char_vec.fit_transform(riches), norm="l2", axis=1)
-    combined = hstack([x_core * 0.60, x_desc_word * 0.30, x_desc_char * 0.10]).tocsr()
+    # Peso estrito: 75% identidade funcional principal + 25% descrição/ativos (evita que ingredientes
+    # secundários como creatina dentro de um pré-treino gerem afinidade artificial alta).
+    combined = hstack([x_core * 0.75, x_desc_word * 0.18, x_desc_char * 0.07]).tocsr()
     return normalize(combined, norm="l2", axis=1), (core_vec, desc_word_vec, desc_char_vec)
 
 
@@ -318,10 +372,14 @@ def compute_affinity_matrix(
     sku_documents: Mapping[str, str],
     top_k: int = DEFAULT_TOP_K_AFFINITIES,
     min_score: float = MIN_STORED_AFFINITY_SCORE,
+    sku_primary_functions: Optional[Mapping[str, Optional[str]]] = None,
 ) -> Dict[str, List[Dict[str, Any]]]:
     """
     Calcula a similaridade de cosseno entre todos os SKUs ativos e retorna, para cada SKU,
     a lista em ordem decrescente de afinidade (`[{"sku": ..., "score": ...}]`).
+
+    Quando `sku_primary_functions` é informado, pares com funções primárias distintas
+    (ex.: `pretreino` vs `creatina`) são bloqueados (score 0).
     """
     valid_items = [(sku, doc) for sku, doc in sorted(sku_documents.items()) if doc.strip()]
     if len(valid_items) < 2:
@@ -334,12 +392,26 @@ def compute_affinity_matrix(
     sim_matrix = (matrix @ matrix.T).toarray()
     np.fill_diagonal(sim_matrix, -1.0)
 
+    funcs = [
+        (sku_primary_functions.get(sku) if sku_primary_functions else None)
+        for sku in skus
+    ]
+
     affinities: Dict[str, List[Dict[str, Any]]] = {sku: [] for sku in sku_documents}
     n = len(skus)
     k = min(top_k, n - 1)
 
     for i, sku in enumerate(skus):
         row = sim_matrix[i]
+        func_i = funcs[i]
+        if func_i is not None:
+            # Bloqueia pares cuja função primária declarada seja diferente (ex.: pré-treino vs creatina)
+            row = row.copy()
+            for j in range(n):
+                func_j = funcs[j]
+                if func_j is not None and func_j != func_i:
+                    row[j] = -1.0
+
         if k < n - 1:
             top_idx = np.argpartition(row, -k)[-k:]
             top_idx = top_idx[np.argsort(-row[top_idx])]
@@ -392,7 +464,7 @@ def find_similar_products_for_new_item(
     q_core = normalize(core_vec.transform(q_cores), norm="l2", axis=1)
     q_word = normalize(desc_word_vec.transform(q_riches), norm="l2", axis=1)
     q_char = normalize(desc_char_vec.transform(q_riches), norm="l2", axis=1)
-    q_vec = normalize(hstack([q_core * 0.60, q_word * 0.30, q_char * 0.10]).tocsr(), norm="l2", axis=1)
+    q_vec = normalize(hstack([q_core * 0.75, q_word * 0.18, q_char * 0.07]).tocsr(), norm="l2", axis=1)
 
     scores = (matrix @ q_vec.T).toarray().ravel()
     order = np.argsort(-scores)[:top_k]

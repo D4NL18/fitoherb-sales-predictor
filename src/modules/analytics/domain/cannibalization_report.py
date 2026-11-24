@@ -475,6 +475,7 @@ _QUANTITY_UNIT_RE = re.compile(
     r"\b\d+[.,]?\d*\s*(x\s*\d+[.,]?\d*)?\s*"
     r"(g|gr|grs|kg|mg|mcg|ml|l|ui|caps|cap|comp|un|unid|saches|sache|gotas|gota)?\b"
 )
+_DOTTED_ACRONYM_RE = re.compile(r"\b(?:[a-z]\.){2,}[a-z]?\.?")
 _WORD_RE = re.compile(r"[a-z]{3,}")
 
 _PRODUCT_TOKEN_STOPWORDS: FrozenSet[str] = frozenset(
@@ -494,6 +495,7 @@ _PRODUCT_TOKEN_STOPWORDS: FrozenSet[str] = frozenset(
         "canela", "menta", "hortela", "neutro", "neutra", "natural", "cookies", "brigadeiro", "caramelo", "cafe",
         "cappuccino", "pacoca", "doce", "leite", "avela", "pistache", "cramberry", "cranberry", "acai", "guarana",
         "framboesa", "cereja", "kiwi", "manga", "limonada", "suico", "belga", "branco", "preto", "amargo", "salgado",
+        "fruit", "punch", "pink", "lemonade", "cotton", "candy", "iced", "ice", "green", "apple", "berry", "citrus",
         "tradicional", "original", "sabor", "zero", "acucar", "lactose", "gluten", "vegano", "vegana", "integral",
         # qualificadores de marketing / genéricos
         "pura", "puro", "pure", "turbo", "hardcore", "ultra", "super", "plus", "max", "pro", "top", "gold", "black",
@@ -560,6 +562,11 @@ def _collect_supplier_tokens(catalog: Mapping[str, Mapping[str, object]]) -> Fro
     return frozenset(tokens)
 
 
+def _collapse_dotted_acronyms(text: str) -> str:
+    """Converte siglas pontuadas como `b.o.p.e.` ou `b.c.a.a.` em `bope` / `bcaa`."""
+    return _DOTTED_ACRONYM_RE.sub(lambda m: m.group(0).replace(".", ""), text)
+
+
 def extract_product_family_tokens(
     description: str,
     supplier_tokens: FrozenSet[str] = frozenset(),
@@ -568,7 +575,7 @@ def extract_product_family_tokens(
     Extrai os tokens nucleares de família de produto a partir da descrição comercial,
     descartando marca/fornecedor, gramatura/embalagem, sabor e adjetivos genéricos.
     """
-    text = _strip_accents(str(description or "").lower())
+    text = _collapse_dotted_acronyms(_strip_accents(str(description or "").lower()))
     for src, dst in _CANONICAL_SYNONYMS:
         if src in text:
             text = text.replace(src, dst)
@@ -683,13 +690,14 @@ def compute_directional_migration(
 
             compat_gains: List[Tuple[str, float, float]] = []
             for sku_b, gain_b in gains:
-                aff_score = float(aff_a.get(sku_b, 0.0)) if aff_a else 0.0
-                has_token_match = bool(tok_a and (tok_a & tokens_by_sku.get(sku_b, frozenset())))
-                if aff_score > 0.0 or has_token_match:
-                    # Quando há score semântico do índice (gallery + ERP), pondera pelo score;
-                    # caso contrário usa peso uniforme 1.0 entre fornecedores.
-                    pair_affinity = aff_score if aff_score > 0.0 else (0.35 if aff_a else 1.0)
-                    compat_gains.append((sku_b, gain_b, gain_b * pair_affinity))
+                if affinity_map is not None:
+                    aff_score = float(aff_a.get(sku_b, 0.0)) if aff_a else 0.0
+                    if aff_score > 0.0:
+                        compat_gains.append((sku_b, gain_b, gain_b * aff_score))
+                else:
+                    has_token_match = bool(tok_a and (tok_a & tokens_by_sku.get(sku_b, frozenset())))
+                    if has_token_match:
+                        compat_gains.append((sku_b, gain_b, gain_b))
 
             if not compat_gains:
                 continue

@@ -29,6 +29,7 @@ from src.modules.analytics.domain.product_affinity import (
     compute_affinity_matrix,
     compute_content_hash,
     compute_incremental_diff,
+    detect_primary_function,
     find_similar_products_for_new_item,
     match_catalog_with_gallery,
 )
@@ -162,9 +163,14 @@ def sync_product_affinity_index(
         content_hash = compute_content_hash(doc_text)
         current_docs[sku_str] = doc_text
         current_hashes[sku_str] = content_hash
+        primary_fn = detect_primary_function(
+            str(entry.get("description") or ""),
+            str(g_info.get("gallery_description") or ""),
+        )
         current_skus_meta[sku_str] = {
             "content_hash": content_hash,
             "doc": doc_text,
+            "primary_function": primary_fn or "",
             "description": str(entry.get("description") or "").strip(),
             "supplier": str(entry.get("supplier") or "").strip(),
             "category": str(entry.get("category") or "").strip(),
@@ -202,10 +208,15 @@ def sync_product_affinity_index(
                     merged_skus[sku_str] = meta_new
 
             docs_for_matrix = {sku: str(meta.get("doc") or "") for sku, meta in merged_skus.items()}
+            funcs_for_matrix = {
+                sku: (str(meta.get("primary_function") or "") or None)
+                for sku, meta in merged_skus.items()
+            }
             affinities = compute_affinity_matrix(
                 sku_documents=docs_for_matrix,
                 top_k=top_k,
                 min_score=MIN_STORED_AFFINITY_SCORE,
+                sku_primary_functions=funcs_for_matrix,
             )
 
             elapsed_ms = int((time.perf_counter() - started) * 1000)

@@ -256,3 +256,101 @@ def test_cannibalization_uses_semantic_affinity_across_different_product_names()
 def test_seconds_until_next_midnight_calculation():
     ref = datetime(2026, 11, 24, 23, 30, 0)
     assert aff_svc.seconds_until_next_midnight(ref) == pytest.approx(1800.0, abs=1e-3)
+
+
+def test_pretreino_with_creatina_in_formula_never_matches_pure_creatina(tmp_path: Path):
+    """
+    Regressão B.O.P.E.:
+    - `B.O.P.E. 300G LIMAO` (pré-treino da Black Skull) NÃO pode casar na gallery com `Creatina Turbo 300g`
+      apenas por compartilharem `300g`.
+    - Mesmo que a descrição do pré-treino cite creatina na fórmula, pré-treino e creatina pura
+      têm funções primárias distintas e não podem gerar afinidade/canibalização entre si.
+    - Já dois pré-treinos de fornecedores diferentes (B.O.P.E. vs Horus) DEVEM ter alta afinidade.
+    """
+    catalog = {
+        "810117": {
+            "sku": "810117",
+            "description": "B.O.P.E. 300G LIMAO",
+            "category": "LINHA BLACK SKULL",
+            "supplier": "BLACK SKULL",
+            "active": True,
+            "current_price": 75.0,
+            "last_cost": 40.0,
+            "current_stock": 50,
+        },
+        "770500": {
+            "sku": "770500",
+            "description": "HORUS 300G LIMAO",
+            "category": "LINHA MAX TITANIUM",
+            "supplier": "MAX TITANIUM",
+            "active": True,
+            "current_price": 89.0,
+            "last_cost": 50.0,
+            "current_stock": 60,
+        },
+        "810095": {
+            "sku": "810095",
+            "description": "CREATINA TURBO 300G",
+            "category": "LINHA BLACK SKULL",
+            "supplier": "BLACK SKULL",
+            "active": True,
+            "current_price": 29.9,
+            "last_cost": 18.0,
+            "current_stock": 200,
+        },
+        "660073": {
+            "sku": "660073",
+            "description": "CREATINA 300G",
+            "category": "LINHA VITAFOR",
+            "supplier": "VITAFOR",
+            "active": True,
+            "current_price": 70.0,
+            "last_cost": 40.0,
+            "current_stock": 90,
+        },
+    }
+    gallery = [
+        {
+            "name": "Creatina Turbo 300g",
+            "description": "Creatina monohidratada combinada com maltodextrina para ganho de forca.",
+            "category_name": "Nutrição Esportiva",
+            "supplier_name": "Black Skull",
+            "slug": "creatina-turbo-300g-black-skull",
+            "flavours": [],
+            "presentation": ["300g"],
+        },
+        {
+            "name": "B.O.P.E. 300g",
+            "description": "Pre-treino formulado com creatina, taurina, arginina e cafeina para energia e foco.",
+            "category_name": "Nutrição Esportiva",
+            "supplier_name": "Black Skull",
+            "slug": "bope-300g-black-skull",
+            "flavours": ["Limão"],
+            "presentation": ["300g"],
+        },
+        {
+            "name": "Horus 300g",
+            "description": "Pre-treino com beta alanina, arginina, taurina e cafeina para desempenho intenso.",
+            "category_name": "Nutrição Esportiva",
+            "supplier_name": "Max Titanium",
+            "slug": "horus-300g-max-titanium",
+            "flavours": ["Limão"],
+            "presentation": ["300g"],
+        },
+    ]
+
+    index_path = tmp_path / "bope_affinity.json"
+    aff_svc.reset_product_affinity_memory_cache()
+    aff_svc.sync_product_affinity_index(
+        index_path=index_path,
+        catalog_loader=lambda: catalog,
+        gallery_loader=lambda: gallery,
+    )
+
+    bope_aff = aff_svc.get_product_affinities("810117", top_k=10, index_path=index_path)
+    assert bope_aff is not None
+    bope_neighbors = {item["sku"] for item in bope_aff["affinities"]}
+    # Pré-treino B.O.P.E. casa com Horus (outro pré-treino de outro fornecedor), NUNCA com Creatina!
+    assert "770500" in bope_neighbors
+    assert "810095" not in bope_neighbors
+    assert "660073" not in bope_neighbors
