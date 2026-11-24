@@ -1,7 +1,7 @@
-# ADR-007: Arquitetura e Modelagem Estatística da Canibalização e Substituição de Produtos (Fase F6)
+# ADR-007: Arquitetura v2 — Relatório Global de Canibalização por Migração de Clientes e Equilíbrio de Preço (Fase F6)
 
-> **Status:** Proposto (Aguardando Checkpoint da Etapa 2)  
-> **Data:** 2026-11-12  
+> **Status:** Aprovado para Implementação (Pivô v2)  
+> **Data:** 2026-11-23  
 > **Autores:** Arquiteto (`architect.md`) & Especialista em IA (`ai_specialist.md`)  
 > **Localização Mandatória:** `.agents/docs/adr/ADR-007-canibalizacao.md`  
 > **Módulo:** `src/modules/analytics/` (`domain/cannibalization.py`)  
@@ -9,177 +9,151 @@
 
 | Campo | Valor |
 | :--- | :--- |
-| **Feature** | Canibalização e Substituição de Produtos (Fase F6) |
+| **Feature** | Relatório Global de Canibalização por Migração de Clientes e Equilíbrio de Preço (F6 v2) |
 | **Regras de Negócio** | `.agents/docs/business_rules/analytics-canibalizacao.md` (`P-128` a `P-138`) |
-| **Contrato de API** | `.agents/docs/api_contracts/analytics-canibalizacao.md` (Envelope `data`/`meta`, prefixo `CAN-XXX`) |
+| **Contrato de API** | `.agents/docs/api_contracts/analytics-canibalizacao.md` (`version: "1.1.0"`, prefixo `CAN-XXX`) |
 | **Checklist Técnico** | `.agents/docs/tasks/analytics-canibalizacao.md` |
-| **Design Plan** | `.agents/docs/design/plans/analytics-canibalizacao.md` |
-| **Parecer de Privacidade** | `.agents/docs/privacy/analytics-canibalizacao.md` (Bypass de RIPD / Minimização) |
-| **Integração Externa** | Interface `CrossElasticityProvider` para conexão futura com Fase F5 (Elasticidade) |
+| **Parecer LGPD** | `.agents/docs/privacy/analytics-canibalizacao.md` (`LGPD-CAN-01..08`, Bypass de RIPD) |
 
 ---
 
-## 1. Contexto do Problema e Motivação
+## 1. Contexto e Motivação do Pivô v2
 
-1. **Problema de Negócio (Promoções Ilusórias vs Ganho Real):**
-   Na distribuição de produtos fitoterápicos, suplementos e chás, ações comerciais como descontos agressivos, introdução de novos formatos de embalagem ou lançamentos frequentemente provocam aumento expressivo de vendas no SKU alvo, mas à custa da retração de outros itens de alta margem da mesma categoria. Sem uma ferramenta analítica, a gestão comercial comemora recordes de volume que, na realidade, erodem a rentabilidade líquida da empresa.
-
-2. **Desafios Metodológicos e Limitações da Base:**
-   - **Isolamento de Sazonalidade Sem a Fase F1:** A Fase F6 está programada para execução antes da Fase F1 (Sazonalidade). Uma simples comparação "antes vs depois" atribuiria erroneamente variações sazonais de categoria (ex.: aumento geral de chás no inverno ou queda em feriados) à promoção do produto alvo.
-   - **Histórico Limitado (~23 meses):** A base cobre de janeiro/2025 a novembro/2026. Modelos econométricos pesados de séries temporais não convergem com robustez nesse horizonte.
-   - **Risco de Falsas Descobertas (Múltiplos Testes):** Comparar um produto alvo contra 50 a 100 itens da mesma categoria gera alta probabilidade de falsos positivos pelo acaso se forem usados testes de hipótese ingênuos.
-   - **Catálogo ERP Legado:** O ERP não possui taxonomia taxonômica profunda (apenas campo texto `Tipo` e `Fornecedor`).
-   - **Orçamento de Recursos no Cloud Run (2Gi):** As operações de mineração e ajuste estatístico não podem carregar bases transacionais brutas no Python nem consumir picos de memória excessivos.
+Na v1 (baseada em evento DiD isolado por SKU), o usuário precisava adivinhar previamente qual SKU sofreu promoção/reajuste para então consultar o impacto. Na prática comercial da Fitoherb, a necessidade real é **proativa e global**:
+1. **Descobrir automaticamente** quais produtos do portfólio estão perdendo faturamento por canibalização (`%` e `R$`).
+2. **Identificar com evidência comportamental direta** quais produtos da mesma categoria (`Tipo`) estão capturando os clientes de cada vítima — sem depender de eventos cadastrados em `Cod Promocao`.
+3. **Orientar a decisão de preço** com números prontos (`suggestedVictimPrice`, `suggestedCannibalPrice`) para o time comercial equilibrar o gap de preço e estancar a destruição de margem.
 
 ---
 
-## 2. Decisões Arquiteturais e Estatísticas
+## 2. Arquitetura de Componentes (v2)
 
 ```
-                    ┌──────────────────────────────────────────────┐
-                    │          FastAPI Router /analytics/          │
-                    │   GET /cannibalization/{sku}                 │
-                    │   GET /substitution/{sku}                    │
-                    └──────────────────────┬───────────────────────┘
-                                           │
-                                           ▼
-                    ┌──────────────────────────────────────────────┐
-                    │               AnalyticsService               │
-                    │      (Cache em memória, lock, TTL 6h)        │
-                    └───────┬──────────────────────────────┬───────┘
-                            │                              │
-                            ▼                              ▼
-      ┌───────────────────────────────────┐  ┌───────────────────────────────────┐
-      │   SalesRepository (SQL Server)    │  │   Domain: CannibalizationEngine   │
-      │  - monthly_sales (líquido D4)     │  │  - P-128: Jaccard Candidates      │
-      │  - promo_calendar (T0 do evento)  │  │  - P-131: Categorial Control Group│
-      │  - active_catalog (custo/preço)   │  │  - P-132: Difference-in-Diffs     │
-      │  - Somente leitura & sem CONCAT   │  │  - P-133: FDR Benjamini-Hochberg  │
-      └───────────────────────────────────┘  │  - P-134: Classification Taxonomy │
-                                             │  - P-135: Net Impact Calculator   │
-                                             └─────────────────┬─────────────────┘
-                                                               │ (Consumo Gracioso)
-                                                               ▼
-                                             ┌───────────────────────────────────┐
-                                             │     CrossElasticityProvider       │
-                                             │   (Interface abstrata com F5)     │
-                                             │   [Ativa quando F5 for entregue]  │
-                                             └───────────────────────────────────┘
+            ┌───────────────────────────────────────────────────────────┐
+            │            FastAPI Router (/api/v1/analytics)             │
+            │  GET /cannibalization/report                              │
+            │  GET /cannibalization/report/{sku}                        │
+            └─────────────────────────────┬─────────────────────────────┘
+                                          │
+                                          ▼
+            ┌───────────────────────────────────────────────────────────┐
+            │                    AnalyticsService                       │
+            │  - Cache TTL 6h por (windowDays, referenceDate)           │
+            │  - asyncio.Lock contra thundering herd                    │
+            │  - Filtros dinâmicos (category/supplier/mechanism/search) │
+            └──────────────┬─────────────────────────────┬──────────────┘
+                           │                             │
+                           ▼                             ▼
+┌─────────────────────────────────────────┐  ┌──────────────────────────────────────────┐
+│     SalesRepository (SQL Server)        │  │   Domain: cannibalization.py (puro)      │
+│ - fetch_cannibalization_catalog()       │  │ - P-130: Migração Direcional Bruta       │
+│ - fetch_customer_sku_window_sales(      │  │   (by_cli em memória + del by_cli)       │
+│     pre_start, mid, ref)                │  │ - P-131: Fluxo Líquido (A->B - B->A)     │
+│ - Subquery SELECT (sem WITH/CONCAT)     │  │ - P-132: R$ e % Canibalizado + KPIs      │
+│ - Devoluções abatidas (LIKE 'DEVOLU%')  │  │ - P-133/134: Gap, Margem e Mecanismo     │
+│ - fetchmany(50_000), bind params `?`    │  │ - P-135: Motor de Equilíbrio de Preço    │
+└─────────────────────────────────────────┘  └──────────────────────────────────────────┘
 ```
 
-### DA-01 — Quase-Experimento de Diferença em Diferenças (DiD) com Grupo de Controle Categorial
-
-Para solucionar o isolamento causal sem requerer os índices sazonais de F1, adotamos a abordagem quasi-experimental de **Diferença em Diferenças (DiD)**:
-- **Grupo de Tratamento ($i$):** Conjunto de candidatos a substitutos do produto alvo $T$.
-- **Grupo de Controle ($C$):** Conjunto de produtos da mesma categoria (`Tipo`) que **não** sofreram alterações de preço ($|\Delta P\%| < 3\%$), **não** participaram de promoções na janela e não possuem correlação comportamental extrema com o alvo.
-- **Premissa de Trajetória Paralela:** Na ausência da intervenção no produto alvo, o grupo de candidatos teria seguido a mesma taxa média de variação da categoria:
-  $$g_{ctrl} = \frac{\sum_{k \in C} V_k^{Pos}}{\sum_{k \in C} V_k^{Pre}}$$
-- **Volume Contrafactual e Efeito Causal Estimado:**
-  $$\hat{V}_i^{Pos} = V_i^{Pre} \times g_{ctrl}$$
-  $$\Delta V_i = V_i^{Pos} - \hat{V}_i^{Pos}$$
-Esta formulação neutraliza instantaneamente qualquer choque de demanda exógeno, inflação, sazonalidade setorial ou variações de dias úteis entre os períodos.
-
 ---
 
-### DA-02 — Seleção Híbrida de Substitutos (Semântica de Categoria + Jaccard de Compradores)
+## 3. Decisões Arquiteturais (DA-01 a DA-07)
 
-Diante da ausência de ontologias de produtos refinadas no ERP, a identificação dos substitutos potenciais opera de forma híbrida e em dois níveis:
-1. **Filtro Categorial:** Restringe a busca inicial a produtos com o mesmo atributo `Tipo` (`P-128.1`).
-2. **Similaridade Comportamental (Índice de Jaccard):**
-   Calcula-se a sobreposição de carteira de clientes nos últimos 365 dias:
-   $$J(A, B) = \frac{|Clientes(A) \cap Clientes(B)|}{|Clientes(A) \cup Clientes(B)|}$$
-   Candidatos são validados se $J(A, B) \ge 0.15$ ou se compartilham $\ge 5$ clientes compradores habituais (`P-128.3`).
-3. **Poda de Complexidade:** Os candidatos são ordenados por Jaccard e limitados aos Top 20 itens mais similares (`MAX_CANDIDATE_SUBSTITUTES = 20`), garantindo que o cômputo estatístico rode em tempo inferior a 150ms.
+### DA-01 — Migração Direcional Líquida com Conservação de Fluxo (Substitui DiD + Jaccard)
 
----
+- **Problema do Jaccard puro:** Mede apenas co-compra simultânea (não distingue complemento de canibalização nem direção do fluxo).
+- **Solução v2 (`P-130`, `P-131`):** Para cada cliente $c$ dentro de cada categoria `Tipo`:
+  - Mede-se a queda de receita $L_{c,A} = \max(0, R_{c,A}^{PRE} - R_{c,A}^{CUR})$ e o ganho $G_{c,B} = \max(0, R_{c,B}^{CUR} - R_{c,B}^{PRE})$.
+  - Aloca-se proporcionalmente o fluxo migrável $F_{c,T} = \min(L_{c,T}, G_{c,T})$:
+    $$M_c(A \to B) = F_{c,T} \times \frac{L_{c,A}}{L_{c,T}} \times \frac{G_{c,B}}{G_{c,T}}$$
+    Isso elimina dupla contagem quando um cliente reduz 1 item e aumenta 3 itens na mesma categoria.
+  - Desconta-se o fluxo reverso:
+    $$\text{netRev}(A \to B) = \max(0, \text{grossRev}(A \to B) - \text{grossRev}(B \to A))$$
+    $$\text{netClients}(A \to B) = \max(0, N_{\text{gross}}(A \to B) - N_{\text{gross}}(B \to A))$$
+  - Exige-se `netClients >= minMigratedClients` (padrão `3`), `preRevenue >= R$ 500` e `revenueDropPct >= minDropPct` (padrão `5%`), eliminando ruído estatístico de pequenos volumes.
 
-### DA-03 — Modelagem Estatística: Bootstrap / Teste-t e Controle de Descoberta Falsa (FDR Benjamini-Hochberg)
+### DA-02 — Motor Determinístico de Equilíbrio de Preço (`P-133`, `P-134`, `P-135`)
 
-Para evitar que ruído transacional aleatório em dezenas de SKUs seja apresentado como canibalização:
-1. **Significância Local:** Calcula-se o erro padrão da diferença em diferenças através da dispersão temporal das vendas semanais no período pré/pós, obtendo-se o valor-p bicaudal ($p_i$) sob a hipótese nula $H_0: \Delta V_i = 0$.
-2. **Correção para Testes Múltiplos:** Aplica-se o procedimento de Benjamini-Hochberg com taxa de falso descobrimento fixada em $\alpha = 0.05$:
-   - Ordenam-se os $m$ testes: $p_{(1)} \le p_{(2)} \le \dots \le p_{(m)}$.
-   - Define-se o corte: $k = \max \left\{ j : p_{(j)} \le \frac{j}{m} \alpha \right\}$.
-   - Itens com $p_{(j)} \le p_{(k)}$ são estatisticamente significativos.
-3. **Filtro de Relevância Econômica:** Variações com magnitude absoluta inferior a 5 unidades ($|\Delta V_i| < 5$) são reclassificadas automaticamente como `SEM_EFEITO`, mesmo que alcancem significância estatística, protegendo o usuário de alarmismos irrelevantes.
+- Compara $P_A$ vs $P_B$, calcula `priceGapPct = (P_A - P_B) / P_B * 100` e margem unitária (com fallback `COST_FALLBACK_RATIO = 0.60` se `Pc.Ultimo Custo` for ausente ou inconsistente).
+- Classifica cada par em:
+  - `PRECO_MENOR_DESTROI_MARGEM` (`priceGapPct > 3%` e $M_{u,B} < M_{u,A}$)
+  - `PRECO_MENOR_MARGEM_PRESERVADA` (`priceGapPct > 3%` e $M_{u,B} \ge M_{u,A}$)
+  - `MIGRACAO_POR_VALOR` (`priceGapPct <= 3%`)
+- Calcula `suggestedVictimPrice` e `suggestedCannibalPrice` para fechar ~40% do gap $\Delta P = P_A - P_B$, com duas travas de segurança financeira:
+  1. **Piso de margem da vítima:** $P_{\text{floor},A} = C_{ef,A} / (1 - 0.20)$ (mínimo 20% de contribuição).
+  2. **Teto de reajuste no canibalizador:** $P_{\text{cap},B} = P_B \times 1.12$ (máximo +12% para evitar ruptura de demanda).
 
----
+### DA-03 — Query SQL Única em Subquery (Compatibilidade `is_readonly_query` e SQL Server Legado)
 
-### DA-04 — Consolidação Financeira do Efeito Líquido e Diagnóstico Comercial
-
-A feature não se limita a métricas operacionais; ela consolida a saúde financeira da decisão comercial:
-- **$\Delta$ Volume Líquido:** $\Delta V_{liq} = \Delta V_{alvo} + \sum_{i} \Delta V_i$
-- **$\Delta$ Receita Líquida:** $\Delta R_{liq} = \Delta R_{alvo} + \sum_{i} (\Delta V_i \times \bar{P}_i^{Pos})$
-- **$\Delta$ Margem Líquida:** $\Delta M_{liq} = \Delta M_{alvo} + \sum_{i} (\Delta V_i \times M_{u, i})$, onde $M_{u, i} = Pc.Venda_i - Custo_i$. Se o custo for ausente, aplica-se o fallback de 60% de custo ($M_u = 40\%$).
-- **Veredito Executivo:**
-  - `VALEU_A_PENA`: $\Delta M_{liq} > 0$ (ganho real de rentabilidade).
-  - `ILUSAO_DE_VOLUME`: $\Delta V_{liq} > 0$, mas $\Delta M_{liq} \le 0$ (vendeu mais caixas, porém perdeu dinheiro ao canibalizar itens mais nobres).
-  - `PREJUIZO_TOTAL`: $\Delta V_{liq} \le 0$ e $\Delta M_{liq} \le 0$ (fracasso da ação comercial).
-
----
-
-### DA-05 — Design da Interface de Integração Desacoplada com F5 (Elasticidade)
-
-A Fase F6 foi concebida para operar autonomamente, mas preparada para incorporar a elasticidade cruzada assim que a Fase F5 for entregue.
-- **Protocolo de Integração em Python:**
-  ```python
-  class CrossElasticityProvider(Protocol):
-      async def get_cross_elasticity(self, target_sku: str, substitute_sku: str) -> Optional[float]:
-          ...
+- `is_readonly_query` exige que a SQL inicie com `SELECT` (proíbe `WITH` CTE). Além disso, `CONCAT` é proibido no SQL Server legado.
+- **Query canônica (`fetch_customer_sku_window_sales`):**
+  ```sql
+  SELECT
+      base.customer_code,
+      base.sku,
+      SUM(CASE WHEN base.period_flag = 0 THEN base.net_qty ELSE 0 END) AS pre_qty,
+      SUM(CASE WHEN base.period_flag = 0 THEN base.net_rev ELSE 0 END) AS pre_rev,
+      SUM(CASE WHEN base.period_flag = 1 THEN base.net_qty ELSE 0 END) AS cur_qty,
+      SUM(CASE WHEN base.period_flag = 1 THEN base.net_rev ELSE 0 END) AS cur_rev
+  FROM (
+      SELECT
+          [Cod Cliente] AS customer_code,
+          [Cod Produto] AS sku,
+          CASE WHEN [Data] >= ? THEN 1 ELSE 0 END AS period_flag,
+          SUM([Qtd Venda]) AS net_qty,
+          SUM([Valor Venda]) AS net_rev
+      FROM Externo01.Vendas
+      WHERE ([Operação] = 'VENDA' OR [Operação] LIKE 'DEVOLU%')
+        AND [Data] >= ?
+        AND [Data] < ?
+        AND [Cod Cliente] IS NOT NULL
+        AND [Cod Produto] IS NOT NULL
+      GROUP BY [Cod Cliente], [Cod Produto], CASE WHEN [Data] >= ? THEN 1 ELSE 0 END
+  ) AS base
+  GROUP BY base.customer_code, base.sku
+  HAVING SUM(CASE WHEN base.period_flag = 0 THEN base.net_rev ELSE 0 END) > 0
+      OR SUM(CASE WHEN base.period_flag = 1 THEN base.net_rev ELSE 0 END) > 0
   ```
-- **Decomposição do Choque:**
-  Com $\epsilon_{ji} = \frac{\% \Delta Q_j}{\% \Delta P_i}$:
-  $$\Delta V_{j, preco} = V_j^{Pre} \times \left( \epsilon_{ji} \times \frac{\Delta P_i}{P_i^{Pre}} \right)$$
-  $$\Delta V_{j, visibilidade} = \Delta V_j - \Delta V_{j, preco}$$
-- **Degradação Graciosa:** Enquanto F5 não estiver disponível, o `NullCrossElasticityProvider` injeta `null` nos campos analíticos de elasticidade e atribui `statusElasticidade = "NAO_INTEGRADO"`, sem impactar o cálculo do DiD ou quebrar a resposta.
+- **Bind params `?`:** `(mid_date, pre_start_date, reference_date, mid_date)`.
+- **Memória Cloud Run (2Gi):** Leitura em streaming com `cursor.fetchmany(50_000)` evitando `fetchall()` de toda a tabela.
+
+### DA-04 — Governança LGPD em Memória Volátil (`LGPD-CAN-01..06`)
+
+- O dicionário `by_cli: dict[int, dict[str, tuple[float, float]]]` existe exclusivamente durante a execução da função de domínio que agrega os fluxos `(A -> B)` por categoria.
+- Imediatamente após consolidar as matrizes de pares agregados `(victim_sku, cannibal_sku)` e totais por SKU, executa-se **`del by_cli`** antes de retornar o resultado ao serviço ou gravar no `AnalyticsCache`.
+- Zero `Cod Cliente` em DTOs, cache ou logs.
+
+### DA-05 — Estratégia de Cache (TTL 6h por `windowDays`)
+
+- O cálculo pesado (query SQL + agregação de clientes `by_cli` -> matriz líquida de pares e totais por SKU) depende apenas de `(windowDays, referenceDate)`.
+- O `AnalyticsCache` armazena o snapshot agregado de pares e totais de SKU por chave `cannibalization_v2:{windowDays}:{referenceDate}` com TTL de **6 horas** e `asyncio.Lock`.
+- Variações de `minDropPct`, `minMigratedClients` e filtros (`category`, `supplier`, `mechanism`, `search`) são aplicadas em memória em `< 5 ms` sobre o snapshot cacheado (sem reconsultar o SQL Server e sem manter `by_cli` em cache).
+
+### DA-06 — Separação de Rotas v2 (`/report` e `/report/{sku}`)
+
+- `GET /api/v1/analytics/cannibalization/report`: visão global consolidada com KPIs, filtros disponíveis (`availableCategories`, `availableSuppliers`) e lista de vítimas com `topCannibal` e resumo de `cannibalizers[]`.
+- `GET /api/v1/analytics/cannibalization/report/{sku}`: drill-down completo da vítima com todos os canibalizadores (até 10) e recomendações detalhadas de equilíbrio de preço.
+- Envelopes `data`/`meta` com `meta.version = "1.1.0"`, estritamente em `camelCase`.
+
+### DA-07 — Bypasses Formalizados
+
+- **DBA:** Bypass total — somente leitura em `Externo01.Vendas` e `Externo01.Produto`, sem migrations.
+- **Privacy Officer:** Mantido Bypass de RIPD de `privacy/analytics-canibalizacao.md` sob estrito cumprimento de `LGPD-CAN-01..08` (`del by_cli`).
 
 ---
 
-### DA-06 — Agregações no Banco de Dados (SQL Server), Devoluções e Cache
+## 4. Alternativas Descartadas
 
-- **Imunidade a OOM:** Nenhuma linha bruta de transação é transmitida da base. O repositório consome o agregado `monthly_sales` e `promo_calendar` (§2.5).
-- **Tratamento de Devoluções (D4):** As devoluções são filtradas com `[Operação] LIKE 'DEVOLU%'` e abatidas das vendas.
-- **Sem `CONCAT`:** Toda concatenação é feita com operador `+` e `CAST`.
-- **Cache Thread-Safe:** Padrão `AnalyticsCache` com bloqueio concorrente (`asyncio.Lock`) e TTL de 6 horas, impedindo múltiplas execuções simultâneas de DiD para o mesmo SKU.
-
----
-
-### DA-07 — Padronização de Erros Autocontidos (`CAN-XXX`) e Envelope de Resposta
-
-- As exceções herdam de `AnalyticsDomainException` e são tratadas pelo handler centralizado de erros do módulo `analytics`.
-- Códigos: `CAN-001` (404), `CAN-002` (422), `CAN-003` (422), `CAN-004` (400), `CAN-005` (500).
-- Envelope padrão `{ "data": ..., "meta": ... }` com atributos exclusivamente em `camelCase`.
+| Alternativa | Motivo do Descarte |
+| :--- | :--- |
+| **DiD isolado por evento (v1)** | Exigia escolha manual de SKU e existência de `Cod Promocao` explícito; não entregava visão global de quais produtos estão sendo canibalizados hoje. |
+| **CTE `WITH base AS (...)`** | Rejeitada pelo validador `is_readonly_query` que exige instrução iniciando por `SELECT`. |
+| **Cachear `by_cli` para re-filtrar** | Violação direta de `LGPD-CAN-04` e `LGPD-CAN-05` (proibição de manter `Cod Cliente` em cache). Cachear a matriz agregada `(A, B)` resolve performance com 100% de privacidade. |
+| **Migração entre categorias diferentes** | Introduz correlações espúrias entre linhas não substitutas (ex.: chá vs cosmético). Restringir ao mesmo `Tipo` garante substitutibilidade real. |
 
 ---
 
-### DA-08 — Formalização dos Bypasses da Etapa 2
+## 5. Trade-offs e Mitigações
 
-- **DBA (Bypass Total):** A feature atua exclusivamente sobre views e tabelas legadas já existentes (`Externo01.Vendas`, `Externo01.Produto`), sem criar tabelas, índices ou migrations.
-- **Privacy Officer (Bypass de RIPD / Minimização Estrita):** As consultas de canibalização e substituição operam no nível de SKU. Os códigos de cliente (`Cod Cliente`) são processados apenas como identificadores efêmeros para cálculo de interseção de Jaccard e imediatamente descartados, sem exposição em endpoints ou logs. Formaliza-se parecer de conformidade dispensando RIPD.
-
----
-
-## 3. Alternativas Consideradas e Descartadas
-
-| Opção | Descrição | Motivo do Descarte |
-| :--- | :--- | :--- |
-| **A1: Regressão OLS Simples (Sem Controle)** | Regredir vendas dos substitutos contra dummy de evento sem grupo de controle. | **Descartada:** Sofre de viés catastrófico por confundir tendências sazonais e feriados com o efeito da promoção. |
-| **A2: Aguardar Conclusão de F1 (Sazonalidade)** | Pausar F6 até que F1 calcule e disponibilize os índices sazonais de todos os produtos. | **Descartada:** Atrasa desnecessariamente o roadmap. O grupo de controle categorial atua como proxy perfeito da sazonalidade compartilhada. |
-| **A3: Correlação de Pearson Temporal Simples** | Definir substitutos apenas pela correlação temporal negativa entre séries de vendas. | **Descartada:** Gera dezenas de relações espúrias entre produtos que não têm qualquer relação de consumo. O filtro Jaccard garante fundamentação comportamental de compradores reais. |
-| **A4: Correção de Bonferroni para Testes Múltiplos** | Dividir $\alpha$ pelo número total de candidatos ($\alpha / m$). | **Descartada:** Excessivamente conservadora, provocando alto índice de falsos negativos (erro Tipo II) e ocultando casos reais de canibalização moderada. A abordagem Benjamini-Hochberg (FDR) equilibra precisão e sensibilidade. |
-
----
-
-## 4. Consequências e Trade-offs
-
-### Pontos Positivos:
-- **Independência de F1:** A esteira de analytics ganha agilidade sem perder rigor causal.
-- **Transparência Gerencial:** O comitê comercial visualiza claramente o efeito em margem de contribuição (R$), evitando prejuízos ocultos.
-- **Segurança Operacional:** Processamento leve baseado em agregados SQL, blindando o Cloud Run contra picos de memória e OOM.
-- **Design Extensível:** A estrutura modular recebe a Fase F5 sem qualquer ruptura de contrato de API.
-
-### Trade-offs e Mitigações:
-- *Categorias Muito Pequenas:* Produtos em categorias com menos de 5 SKUs estáveis não conseguem formar o grupo de controle estrito.
-  *Mitigação:* Implementado algoritmo de fallback para produtos do mesmo Fornecedor ou portfólio geral (`P-131.4`), sinalizado via metadados.
-- *Janelas de Análise de Lançamentos Recentes:* Novos produtos com menos de 3 meses não podem ser avaliados.
-  *Mitigação:* Trava determinística com erro semântico amigável `CAN-003`, orientando o usuário sobre a maturidade do produto.
+- **Cold Cache (~1–3s na 1ª consulta de uma janela):** Mitigado por cache de 6h por `windowDays` + `asyncio.Lock` e Skeleton Loader com aviso de 4s no Frontend.
+- **Produtos sem `Pc.Ultimo Custo` cadastrado:** Mitigado por fallback determinístico de 60% (`costFallbackUsed: true`) sinalizado explicitamente na API e na UI.
