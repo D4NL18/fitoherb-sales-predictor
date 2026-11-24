@@ -26,6 +26,8 @@ from src.modules.analytics.domain.product_affinity import (
     MIN_STORED_AFFINITY_SCORE,
     _collect_all_supplier_tokens,
     _pair_compatibility_multiplier,
+    _split_doc_channels,
+    _vectorize_documents,
     build_affinity_document,
     build_sku_compatibility_profile,
     compute_affinity_matrix,
@@ -35,6 +37,9 @@ from src.modules.analytics.domain.product_affinity import (
     find_similar_products_for_new_item,
     match_catalog_with_gallery,
 )
+from scipy.sparse import hstack
+from sklearn.preprocessing import normalize
+import numpy as np
 from src.modules.analytics.repository import gallery_client, sales_repository
 
 logger = logging.getLogger(__name__)
@@ -44,6 +49,7 @@ DEFAULT_INDEX_PATH: Path = _REPO_ROOT / "data" / "cache" / "product_affinity_ind
 
 _AFFINITY_LOCK = threading.Lock()
 _LOADED_INDEX: Optional[Dict[str, Any]] = None
+_QUERY_VECTOR_CACHE: Optional[Dict[str, Any]] = None
 
 
 def _utc_now_iso() -> str:
@@ -82,9 +88,45 @@ def _save_index_atomic(payload: Dict[str, Any], index_path: Path = DEFAULT_INDEX
 
 def reset_product_affinity_memory_cache() -> None:
     """Limpa o cache em memória (apoio a testes)."""
-    global _LOADED_INDEX
+    global _LOADED_INDEX, _QUERY_VECTOR_CACHE
     with _AFFINITY_LOCK:
         _LOADED_INDEX = None
+        _QUERY_VECTOR_CACHE = None
+
+
+def _get_or_build_query_vector_cache(index: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """
+    Cacheia em memória a matriz TF-IDF vetorizada e os tokens de fornecedor do índice carregado,
+    evitando refazer `fit_transform` em ~2.000 produtos a cada simulação de Produto Novo (< 30ms/req).
+    """
+    global _QUERY_VECTOR_CACHE
+    index_key = (id(index), str((index.get("meta") or {}).get("last_sync_at") or ""), len(index.get("skus") or {}))
+    cached = _QUERY_VECTOR_CACHE
+    if cached is not None and cached.get("key") == index_key:
+        return cached
+
+    skus_meta = index.get("skus") or {}
+    valid_items = [
+        (str(sku), str(meta.get("doc") or ""))
+        for sku, meta in sorted(skus_meta.items())
+        if isinstance(meta, dict) and str(meta.get("doc") or "").strip()
+    ]
+    if not valid_items:
+        return None
+
+    skus = [sku for sku, _ in valid_items]
+    docs = [doc for _, doc in valid_items]
+    matrix, vectorizers = _vectorize_documents(docs)
+    supplier_tokens = _collect_all_supplier_tokens(skus_meta)
+    built = {
+        "key": index_key,
+        "skus": skus,
+        "matrix": matrix,
+        "vectorizers": vectorizers,
+        "supplier_tokens": supplier_tokens,
+    }
+    _QUERY_VECTOR_CACHE = built
+    return built
 
 
 def get_loaded_affinity_index(index_path: Path = DEFAULT_INDEX_PATH) -> Optional[Dict[str, Any]]:
@@ -366,18 +408,42 @@ def find_similar_for_new_product(
         return []
 
     skus_meta = index.get("skus") or {}
-    indexed_docs = {sku: str(meta.get("doc") or "") for sku, meta in skus_meta.items()}
-    supplier_tokens = _collect_all_supplier_tokens(skus_meta)
-    pool_k = max(int(top_k) * 5, 50)
-    raw_matches = find_similar_products_for_new_item(
+    vec_cache = _get_or_build_query_vector_cache(index)
+    if vec_cache is None:
+        return []
+
+    supplier_tokens = vec_cache["supplier_tokens"]
+    query_doc = build_affinity_document(
         name=name,
-        description=description,
-        category=category,
-        indexed_documents=indexed_docs,
+        gallery_name=name,
+        gallery_description=description,
+        gallery_category=category,
         supplier_tokens=supplier_tokens,
-        top_k=pool_k,
-        min_score=min_score,
     )
+    if not query_doc:
+        return []
+
+    core_vec, desc_word_vec, desc_char_vec = vec_cache["vectorizers"]
+    q_cores, q_riches = _split_doc_channels([query_doc])
+    q_core = normalize(core_vec.transform(q_cores), norm="l2", axis=1)
+    q_word = normalize(desc_word_vec.transform(q_riches), norm="l2", axis=1)
+    q_char = normalize(desc_char_vec.transform(q_riches), norm="l2", axis=1)
+    q_vec = normalize(hstack([q_core * 0.80, q_word * 0.15, q_char * 0.05]).tocsr(), norm="l2", axis=1)
+
+    scores = (vec_cache["matrix"] @ q_vec.T).toarray().ravel()
+    pool_k = min(len(scores), max(int(top_k) * 5, 50))
+    if pool_k < len(scores):
+        top_idx = np.argpartition(scores, -pool_k)[-pool_k:]
+        order = top_idx[np.argsort(-scores[top_idx])]
+    else:
+        order = np.argsort(-scores)
+
+    skus = vec_cache["skus"]
+    raw_matches = [
+        {"sku": skus[int(idx)], "score": round(float(scores[int(idx)]), 4)}
+        for idx in order
+        if float(scores[int(idx)]) >= min_score
+    ]
     if not raw_matches:
         return []
 

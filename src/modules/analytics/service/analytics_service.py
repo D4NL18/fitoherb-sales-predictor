@@ -763,10 +763,11 @@ class _F1CategorySeasonalityProvider(SeasonalityProvider):
     """Adaptador desacoplado que consulta `get_seasonality_index` (F1) sobre os SKUs da categoria."""
 
     def __init__(self, similar_skus: list[int]) -> None:
-        self._similar_skus = similar_skus
+        self._similar_skus = similar_skus[:10]
         self._loaded = False
         self._monthly_df = None
         self._catalog_dict: dict = {}
+        self._sku_results: dict = {}
 
     def _ensure_f1_data(self) -> bool:
         if self._loaded:
@@ -798,11 +799,13 @@ class _F1CategorySeasonalityProvider(SeasonalityProvider):
         valid_indices: list[float] = []
         confidences: list[str] = []
         for sku in self._similar_skus:
-            try:
-                res = get_seasonality_index(sku, self._monthly_df, self._catalog_dict)
-            except Exception:
-                continue
-            if not res.elegivel:
+            if sku not in self._sku_results:
+                try:
+                    self._sku_results[sku] = get_seasonality_index(sku, self._monthly_df, self._catalog_dict)
+                except Exception:
+                    self._sku_results[sku] = None
+            res = self._sku_results[sku]
+            if res is None or not res.elegivel:
                 continue
             point = next((p for p in res.serie_mensal if p.mes == month), None)
             if point is not None and point.confianca in ("ALTA", "MEDIA"):
