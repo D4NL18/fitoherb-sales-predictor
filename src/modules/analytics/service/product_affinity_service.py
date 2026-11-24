@@ -33,6 +33,7 @@ from src.modules.analytics.domain.product_affinity import (
     compute_affinity_matrix,
     compute_content_hash,
     compute_incremental_diff,
+    compute_pair_affinity_score,
     detect_primary_function,
     find_similar_products_for_new_item,
     match_catalog_with_gallery,
@@ -234,7 +235,13 @@ def sync_product_affinity_index(
         }
         diff = compute_incremental_diff(previous_hashes, current_hashes)
 
-        recomputed = bool(force or previous_index is None or diff.has_changes)
+        prev_provider = str(((previous_index or {}).get("meta") or {}).get("provider") or "")
+        recomputed = bool(
+            force
+            or previous_index is None
+            or diff.has_changes
+            or prev_provider != "tfidf_word_char_flavor_size_v2"
+        )
         now_iso = _utc_now_iso()
 
         if recomputed:
@@ -276,7 +283,7 @@ def sync_product_affinity_index(
             new_index: Dict[str, Any] = {
                 "meta": {
                     "last_sync_at": now_iso,
-                    "provider": "tfidf_word_char_cosine_v1",
+                    "provider": "tfidf_word_char_flavor_size_v2",
                     "total_active_skus": len(merged_skus),
                     "gallery_products_fetched": len(gallery_items),
                     "gallery_matched_skus": sum(1 for m in merged_skus.values() if m.get("gallery_matched")),
@@ -465,10 +472,11 @@ def find_similar_for_new_product(
             primary_function=cand_fn,
             supplier_tokens=supplier_tokens,
         )
-        mult = _pair_compatibility_multiplier(candidate_profile, cand_profile)
-        if mult <= 0.0:
-            continue
-        adjusted_score = round(float(m["score"]) * mult, 4)
+        adjusted_score = compute_pair_affinity_score(
+            base_semantic_score=float(m["score"]),
+            prof_a=candidate_profile,
+            prof_b=cand_profile,
+        )
         if adjusted_score < min_score:
             continue
         enriched.append(

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+import math
 import re
 from typing import Any, Dict, FrozenSet, List, Mapping, Optional, Sequence, Set, Tuple
 import unicodedata
@@ -41,6 +42,14 @@ DEFAULT_TOP_K_AFFINITIES: int = 25
 MIN_STORED_AFFINITY_SCORE: float = 0.30
 DEFAULT_CANNIBALIZATION_AFFINITY_THRESHOLD: float = 0.50
 GALLERY_MATCH_MIN_SCORE: float = 0.50
+
+# Pesos compostos de afinidade (usados igualmente em Canibalização e Produto Novo):
+# - 55% nome / função semântica (TF-IDF agnóstico de marca)
+# - 25% sabor (mesmo sabor compete diretamente; sabores diferentes ainda competem com peso reduzido)
+# - 20% tamanho / embalagem (proximidade log-tamanho + penalização leve para display/sachê vs pote/saco)
+AFFINITY_WEIGHT_SEMANTIC: float = 0.55
+AFFINITY_WEIGHT_FLAVOR: float = 0.25
+AFFINITY_WEIGHT_SIZE: float = 0.20
 
 # Famílias funcionais primárias mutuamente exclusivas (ordem de precedência explícita):
 # - acessórios e barras vêm antes de whey/pretreino para evitar colisões (ex.: coqueteleira, crunch, whey bar);
@@ -535,13 +544,255 @@ _STRICT_TOKEN_REQUIRED_FUNCS: FrozenSet[str] = frozenset(
 _TOPICAL_FORMS: FrozenSet[str] = frozenset({"sabonete", "shampoo", "condicionador", "creme", "oleo_capilar", "antisseptico"})
 _EDIBLE_NON_CAPS_FORMS: FrozenSet[str] = frozenset({"barra", "goma", "bala", "cha_infusao", "sache", "spray"})
 
+# Vocabulário canônico de sabores (multi-palavra primeiro para não fragmentar compostos).
+_FLAVOR_PHRASES: Tuple[Tuple[str, str], ...] = (
+    ("gelato di latte", "gelato"),
+    ("chocolate branco", "chocolate_branco"),
+    ("dark chocolate", "chocolate_amargo"),
+    ("chocolate amargo", "chocolate_amargo"),
+    ("chocolate ao leite", "chocolate"),
+    ("chocolate belga", "chocolate"),
+    ("chocolate suico", "chocolate"),
+    ("milk caramel", "caramelo"),
+    ("doce de leite", "doce_leite"),
+    ("leite condensado", "leite_condensado"),
+    ("leite ninho", "leite"),
+    ("leite em po", "leite"),
+    ("frutas vermelhas", "frutas_vermelhas"),
+    ("frutas amarelas", "frutas_amarelas"),
+    ("frutas tropicais", "frutas_tropicais"),
+    ("torta de limao", "torta_limao"),
+    ("cookies & cream", "cookies"),
+    ("cookies and cream", "cookies"),
+    ("cookies cream", "cookies"),
+    ("sem sabor", "sem_sabor"),
+    ("s/ sabor", "sem_sabor"),
+    ("maca verde", "maca_verde"),
+    ("algodao doce", "algodao_doce"),
+    ("pao de mel", "pao_mel"),
+    ("creme de avela", "avela"),
+    ("cafe com leite", "cafe"),
+    ("cha verde", "cha_verde"),
+)
+
+_FLAVOR_WORDS: Dict[str, str] = {
+    "morango": "morango",
+    "mor": "morango",
+    "chocolate": "chocolate",
+    "choco": "chocolate",
+    "choc": "chocolate",
+    "cacau": "chocolate",
+    "baunilha": "baunilha",
+    "baun": "baunilha",
+    "vanilla": "baunilha",
+    "cookies": "cookies",
+    "cookie": "cookies",
+    "gelato": "gelato",
+    "pistache": "pistache",
+    "banoffee": "banoffee",
+    "caramelo": "caramelo",
+    "caramel": "caramelo",
+    "coco": "coco",
+    "coconut": "coco",
+    "limao": "limao",
+    "lemon": "limao",
+    "laranja": "laranja",
+    "orange": "laranja",
+    "uva": "uva",
+    "grape": "uva",
+    "abacaxi": "abacaxi",
+    "melancia": "melancia",
+    "watermelon": "melancia",
+    "acai": "acai",
+    "guarana": "guarana",
+    "tangerina": "tangerina",
+    "maracuja": "maracuja",
+    "cafe": "cafe",
+    "coffee": "cafe",
+    "cappuccino": "cappuccino",
+    "pacoca": "pacoca",
+    "amendoim": "amendoim",
+    "peanut": "amendoim",
+    "beijinho": "beijinho",
+    "brigadeiro": "brigadeiro",
+    "brownie": "brownie",
+    "churros": "churros",
+    "truffle": "trufa",
+    "trufa": "trufa",
+    "milkshake": "milkshake",
+    "neutro": "sem_sabor",
+    "natural": "natural",
+    "menta": "menta",
+    "hortela": "menta",
+    "gengibre": "gengibre",
+    "canela": "canela",
+    "citrus": "citrus",
+    "citrico": "citrus",
+    "maca": "maca",
+    "pessego": "pessego",
+    "manga": "manga",
+    "kiwi": "kiwi",
+    "framboesa": "framboesa",
+    "amora": "amora",
+    "cereja": "cereja",
+    "banana": "banana",
+    "avela": "avela",
+    "napolitano": "napolitano",
+    "iogurte": "iogurte",
+    "yogurt": "iogurte",
+    "chocomaltine": "chocomaltine",
+    "ovomaltine": "chocomaltine",
+    "milho": "milho",
+    "pitaya": "pitaya",
+    "jabuticaba": "jabuticaba",
+    "hibisco": "hibisco",
+    "mel": "mel",
+    "leite": "leite",
+}
+
+_MULTIPACK_RE = re.compile(
+    r"\b(\d+)\s*[xX]\s*(\d+(?:[.,]\d+)?)\s*(kg|grs|gr|g|mg|ml|l|lt|capsulas|caps|cap|comp|unid|un)?\b"
+)
+_SINGLE_SIZE_RE = re.compile(
+    r"\b(\d+(?:[.,]\d+)?)\s*(kg|grs|gr|g|mg|ml|l|lt|capsulas|caps|cap|comp|comprimidos|tabletes|tabs|saches|sache|doses|dose|unid|un)\b"
+)
+_DISPLAY_PACK_MARKERS: Tuple[str, ...] = (
+    "display", "sache", "saches", "monodose", "caixa", "cx ", "unidade", "avulso",
+)
+
+
+def _extract_flavor_tokens(description: str) -> FrozenSet[str]:
+    """Extrai sabores normalizados presentes no nome comercial do produto."""
+    norm = _collapse_dotted_acronyms(_strip_accents(str(description or "").lower()))
+    found: Set[str] = set()
+    working = norm
+    for phrase, canonical in _FLAVOR_PHRASES:
+        if phrase in working:
+            found.add(canonical)
+            working = working.replace(phrase, " ")
+    for tok in re.findall(r"[a-z]{3,}", working):
+        canonical = _FLAVOR_WORDS.get(tok)
+        if canonical:
+            found.add(canonical)
+    return frozenset(found)
+
+
+def _normalize_size_unit(amount: float, unit: str) -> Optional[Tuple[str, float]]:
+    u = (unit or "").lower()
+    if u == "kg":
+        return ("mass", amount * 1000.0)
+    if u in ("g", "gr", "grs"):
+        return ("mass", amount)
+    if u == "mg":
+        return ("mass", amount / 1000.0)
+    if u in ("l", "lt"):
+        return ("volume", amount * 1000.0)
+    if u == "ml":
+        return ("volume", amount)
+    if u in ("caps", "capsulas", "cap", "comp", "comprimidos", "tabletes", "tabs", "un", "unid", "sache", "saches", "dose", "doses"):
+        return ("count", amount)
+    return None
+
+
+def _extract_size_signature(description: str) -> Tuple[Optional[str], Optional[float], bool]:
+    """
+    Extrai `(unit_family, total_amount_base, is_display_pack)` do nome comercial:
+    - Ex.: `900 GRS` / `900G` -> `('mass', 900.0, False)`
+    - Ex.: `1,2KG` -> `('mass', 1200.0, False)`
+    - Ex.: `DISPLAY 10X30G` -> `('mass', 300.0, True)`
+    - Ex.: `180 CAPS` -> `('count', 180.0, False)`
+    """
+    norm = _strip_accents(str(description or "").lower())
+    is_display = any(marker in norm for marker in _DISPLAY_PACK_MARKERS)
+
+    m_multi = _MULTIPACK_RE.search(norm)
+    if m_multi:
+        qty = float(m_multi.group(1))
+        per_unit = float(m_multi.group(2).replace(",", "."))
+        unit = m_multi.group(3) or ""
+        norm_unit = _normalize_size_unit(qty * per_unit, unit)
+        if norm_unit is not None:
+            return (norm_unit[0], norm_unit[1], True)
+
+    best_mass: Optional[float] = None
+    best_vol: Optional[float] = None
+    best_count: Optional[float] = None
+    for m in _SINGLE_SIZE_RE.finditer(norm):
+        val = float(m.group(1).replace(",", "."))
+        unit = m.group(2)
+        parsed = _normalize_size_unit(val, unit)
+        if parsed is None or parsed[1] <= 0:
+            continue
+        fam, amt = parsed
+        if fam == "mass":
+            best_mass = max(best_mass or 0.0, amt)
+        elif fam == "volume":
+            best_vol = max(best_vol or 0.0, amt)
+        elif fam == "count":
+            best_count = max(best_count or 0.0, amt)
+
+    if best_mass is not None:
+        return ("mass", best_mass, is_display)
+    if best_vol is not None:
+        return ("volume", best_vol, is_display)
+    if best_count is not None:
+        return ("count", best_count, is_display)
+    return (None, None, is_display)
+
+
+def _compute_flavor_similarity(flavors_a: FrozenSet[str], flavors_b: FrozenSet[str]) -> float:
+    """
+    Similaridade de sabor em `[0, 1]`:
+    - Ambos sem sabor (ex.: Creatina pura, Ômega 3): `1.00` (neutro sem penalização).
+    - Mesmo sabor / interseção: `0.85..1.00` (Jaccard escalado).
+    - Sabores diferentes: `0.20` (competem de forma secundária, abaixo do mesmo sabor).
+    - Apenas um informa sabor: `0.55`.
+    """
+    if not flavors_a and not flavors_b:
+        return 1.0
+    if not flavors_a or not flavors_b:
+        return 0.55
+    overlap = flavors_a & flavors_b
+    if overlap:
+        jaccard = len(overlap) / len(flavors_a | flavors_b)
+        return round(0.85 + 0.15 * jaccard, 4)
+    return 0.20
+
+
+def _compute_size_similarity(
+    size_a: Tuple[Optional[str], Optional[float], bool],
+    size_b: Tuple[Optional[str], Optional[float], bool],
+) -> float:
+    """
+    Similaridade de tamanho/embalagem em `[0, 1]`:
+    - Mesma família de unidade (`mass`/`volume`/`count`): `exp(-|ln(a) - ln(b)|)`.
+    - Penalização moderada (`* 0.75`) quando um é display/sachê/monodose e o outro é pote/saco/refil.
+    - Sem tamanho em ambos: `0.85`; tamanho em apenas um: `0.65`; famílias distintas: `0.30`.
+    """
+    fam_a, amt_a, disp_a = size_a
+    fam_b, amt_b, disp_b = size_b
+    if fam_a is None and fam_b is None:
+        base = 0.85
+    elif fam_a is None or fam_b is None:
+        base = 0.65
+    elif fam_a != fam_b:
+        base = 0.30
+    elif amt_a and amt_b and amt_a > 0 and amt_b > 0:
+        base = math.exp(-abs(math.log(amt_a) - math.log(amt_b)))
+    else:
+        base = 0.65
+
+    if disp_a != disp_b:
+        base *= 0.75
+    return round(max(0.0, min(1.0, base)), 4)
+
 
 def build_sku_compatibility_profile(
     description: str,
     primary_function: Optional[str],
     supplier_tokens: FrozenSet[str] = frozenset(),
 ) -> Dict[str, Any]:
-    """Extrai perfil estrutural leve para travas de compatibilidade na matriz de afinidade."""
+    """Extrai perfil estrutural leve para travas de compatibilidade, sabor e tamanho na matriz de afinidade."""
     if primary_function == "cha_infusao":
         core_tokens = _extract_tea_herb_tokens(description, supplier_tokens)
     else:
@@ -554,7 +805,44 @@ def build_sku_compatibility_profile(
         "is_compound": _has_compound_marker(description),
         "negated": _extract_negated_terms(description),
         "core_tokens": core_tokens,
+        "flavors": _extract_flavor_tokens(description),
+        "size": _extract_size_signature(description),
     }
+
+
+def compute_pair_affinity_score(
+    base_semantic_score: float,
+    prof_a: Mapping[str, Any],
+    prof_b: Mapping[str, Any],
+) -> float:
+    """
+    Calcula o score final de afinidade em `[0.0, 1.0]` combinando:
+    - Trava estrutural de compatibilidade (`_pair_compatibility_multiplier`);
+    - 55% Nome / Função Semântica (`base_semantic_score`);
+    - 25% Sabor (`_compute_flavor_similarity`);
+    - 20% Tamanho / Embalagem (`_compute_size_similarity`).
+
+    Utilizado de forma idêntica em Canibalização (F6) e Produto Novo (Cold Start).
+    """
+    mult = _pair_compatibility_multiplier(prof_a, prof_b)
+    if mult <= 0.0:
+        return 0.0
+
+    sem = max(0.0, min(1.0, float(base_semantic_score)))
+    flavors_a = prof_a.get("flavors") or frozenset()
+    flavors_b = prof_b.get("flavors") or frozenset()
+    size_a = prof_a.get("size") or (None, None, False)
+    size_b = prof_b.get("size") or (None, None, False)
+
+    flavor_sim = _compute_flavor_similarity(flavors_a, flavors_b)
+    size_sim = _compute_size_similarity(size_a, size_b)
+
+    combined = (
+        AFFINITY_WEIGHT_SEMANTIC * sem
+        + AFFINITY_WEIGHT_FLAVOR * flavor_sim
+        + AFFINITY_WEIGHT_SIZE * size_sim
+    ) * mult
+    return round(max(0.0, min(1.0, combined)), 4)
 
 
 def _pair_compatibility_multiplier(prof_a: Mapping[str, Any], prof_b: Mapping[str, Any]) -> float:
@@ -683,11 +971,8 @@ def compute_affinity_matrix(
             if i == j or row[j] < min_score:
                 continue
             if prof_i is not None and profiles[j] is not None:
-                mult = _pair_compatibility_multiplier(prof_i, profiles[j])
-                if mult <= 0.0:
-                    row[j] = -1.0
-                elif mult < 1.0:
-                    row[j] = row[j] * mult
+                scored = compute_pair_affinity_score(float(row[j]), prof_i, profiles[j])
+                row[j] = scored if scored > 0.0 else -1.0
             elif func_i is not None and funcs[j] is not None and funcs[j] != func_i:
                 row[j] = -1.0
 

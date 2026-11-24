@@ -354,3 +354,47 @@ def test_pretreino_with_creatina_in_formula_never_matches_pure_creatina(tmp_path
     assert "770500" in bope_neighbors
     assert "810095" not in bope_neighbors
     assert "660073" not in bope_neighbors
+
+
+def test_flavor_and_size_weights_rank_same_flavor_and_size_above_others(tmp_path):
+    """Mesmo sabor e tamanho (55% nome + 25% sabor + 20% tamanho) lideram tanto na Canibalização quanto no Produto Novo."""
+    from src.modules.analytics.service import product_affinity_service as aff_svc
+
+    fake_catalog = {
+        "2001": {"description": "WHEY 100% PURE 900 GRS GELATO DI LATTE - POTE", "supplier": "INTEGRALMEDICA", "category": "LINHA INTEGRALMEDICA", "current_price": 229.90, "active": True},
+        "2002": {"description": "WHEY 100% 900G GELATO DI LATTE", "supplier": "MAX TITANIUM", "category": "LINHA MAX TITANIUM", "current_price": 220.00, "active": True},
+        "2003": {"description": "WHEY 100% GELATO DI LATTE DISPLAY 10X30G", "supplier": "INTEGRALMEDICA", "category": "LINHA INTEGRALMEDICA", "current_price": 119.90, "active": True},
+        "2004": {"description": "100% WHEY POTE 900G MORANGO", "supplier": "INTEGRALMEDICA", "category": "LINHA INTEGRALMEDICA", "current_price": 199.90, "active": True},
+        "2005": {"description": "NUTRIWHEY MORANGO 1,2KG POUCH", "supplier": "INTEGRALMEDICA", "category": "LINHA INTEGRALMEDICA", "current_price": 99.90, "active": True},
+    }
+    index_file = tmp_path / "product_affinity_flavor_size.json"
+    aff_svc.reset_product_affinity_memory_cache()
+    aff_svc.sync_product_affinity_index(
+        force=True,
+        index_path=index_file,
+        catalog_loader=lambda: fake_catalog,
+        gallery_loader=lambda: [],
+    )
+
+    # 1) Canibalização (matriz SKU x SKU): 2002 (Whey 900g Gelato Max) deve competir mais com 2001 (Whey 900g Gelato Integral)
+    aff_2002 = aff_svc.get_product_affinities("2002", top_k=10, index_path=index_file)
+    assert aff_2002 is not None
+    by_sku_canib = {item["sku"]: item["affinityScore"] for item in aff_2002["affinities"]}
+    assert by_sku_canib["2001"] > by_sku_canib["2003"]  # 900g gelato > display 10x30g gelato
+    assert by_sku_canib["2001"] > by_sku_canib["2004"]  # 900g gelato > 900g morango
+    assert by_sku_canib["2004"] > by_sku_canib["2005"]  # 900g morango > 1,2kg morango
+    assert by_sku_canib["2004"] >= 0.50  # ainda compete como substituto de outro sabor
+
+    # 2) Produto Novo (Cold Start): busca por "Whey 100% 900g Sabor Gelato"
+    cold = aff_svc.find_similar_for_new_product(
+        name="Whey 100% 900g Sabor Gelato",
+        description="Whey 100% 900g Sabor Gelato",
+        top_k=10,
+        index_path=index_file,
+    )
+    aff_svc.reset_product_affinity_memory_cache()
+
+    by_sku_cold = {item["sku"]: item["affinityScore"] for item in cold}
+    assert by_sku_cold["2001"] > by_sku_cold["2003"]
+    assert by_sku_cold["2001"] > by_sku_cold["2004"]
+    assert by_sku_cold["2004"] > by_sku_cold["2005"]
