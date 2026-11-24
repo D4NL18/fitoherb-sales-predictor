@@ -446,18 +446,20 @@ def find_similar_for_new_product(
     full_scores = (vec_cache["matrix"] @ q_vec.T).toarray().ravel()
     core_scores = (vec_cache["core_matrix"] @ q_core.T).toarray().ravel()
     scores = np.maximum(full_scores, core_scores)
-    pool_k = min(len(scores), max(int(top_k) * 5, 50))
-    if pool_k < len(scores):
-        top_idx = np.argpartition(scores, -pool_k)[-pool_k:]
-        order = top_idx[np.argsort(-scores[top_idx])]
+    # Avalia todos os candidatos acima de `min_score` (até 400) antes de aplicar sabor/tamanho/apresentação,
+    # evitando que empates de core (ex.: 150+ Wheys) cortem fornecedores com SKU numericamente maior.
+    above_idx = np.flatnonzero(scores >= min_score)
+    if len(above_idx) > max(int(top_k) * 5, 400):
+        limit = max(int(top_k) * 5, 400)
+        part = np.argpartition(scores[above_idx], -limit)[-limit:]
+        order = above_idx[part[np.argsort(-scores[above_idx[part]])]]
     else:
-        order = np.argsort(-scores)
+        order = above_idx[np.argsort(-scores[above_idx])]
 
     skus = vec_cache["skus"]
     raw_matches = [
         {"sku": skus[int(idx)], "score": round(float(scores[int(idx)]), 4)}
         for idx in order
-        if float(scores[int(idx)]) >= min_score
     ]
     if not raw_matches:
         return []

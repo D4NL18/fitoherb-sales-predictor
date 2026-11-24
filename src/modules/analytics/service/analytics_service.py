@@ -924,7 +924,7 @@ def forecast_new_product(request: NewProductForecastRequest) -> NewProductForeca
         name=request.descricao,
         description=request.descricao,
         category=canonical_tipo or "",
-        top_k=30,
+        top_k=250,
     )
     affinity_scores_by_sku = {
         int(str(m["sku"]).strip()): float(m.get("affinityScore") or 0.0)
