@@ -46,7 +46,7 @@ GALLERY_MATCH_MIN_SCORE: float = 0.50
 # Pesos compostos de afinidade (usados igualmente em Canibalização e Produto Novo):
 # - 55% nome / função semântica (TF-IDF agnóstico de marca)
 # - 25% sabor (mesmo sabor compete diretamente; sabores diferentes ainda competem com peso reduzido)
-# - 20% tamanho / embalagem (proximidade log-tamanho + penalização leve para display/sachê vs pote/saco)
+# - 20% conteúdo / quantidade (peso em g/kg/mg, volume em ml/l, nº de cápsulas ou nº de unidades/doses)
 AFFINITY_WEIGHT_SEMANTIC: float = 0.55
 AFFINITY_WEIGHT_FLAVOR: float = 0.25
 AFFINITY_WEIGHT_SIZE: float = 0.20
@@ -764,13 +764,14 @@ def _compute_size_similarity(
     size_b: Tuple[Optional[str], Optional[float], bool],
 ) -> float:
     """
-    Similaridade de tamanho/embalagem em `[0, 1]`:
-    - Mesma família de unidade (`mass`/`volume`/`count`): `exp(-|ln(a) - ln(b)|)`.
-    - Penalização moderada (`* 0.75`) quando um é display/sachê/monodose e o outro é pote/saco/refil.
-    - Sem tamanho em ambos: `0.85`; tamanho em apenas um: `0.65`; famílias distintas: `0.30`.
+    Similaridade de peso / quantidade / volume em `[0, 1]`:
+    - Mesma família de grandeza (`mass` em g/kg/mg, `volume` em ml/l, `count` em cápsulas/unidades/doses):
+      `exp(-|ln(qtd_a) - ln(qtd_b)|)`.
+      Ex.: 900g vs 900g = 1,00 · 900g vs 1,2kg = 0,75 · 900g vs 300g (10x30g) = 0,33 · 60 caps vs 120 caps = 0,50.
+    - Sem medida em ambos: `0,85`; medida em apenas um: `0,65`; grandezas distintas: `0,30`.
     """
-    fam_a, amt_a, disp_a = size_a
-    fam_b, amt_b, disp_b = size_b
+    fam_a, amt_a, _ = size_a
+    fam_b, amt_b, _ = size_b
     if fam_a is None and fam_b is None:
         base = 0.85
     elif fam_a is None or fam_b is None:
@@ -782,8 +783,6 @@ def _compute_size_similarity(
     else:
         base = 0.65
 
-    if disp_a != disp_b:
-        base *= 0.75
     return round(max(0.0, min(1.0, base)), 4)
 
 
