@@ -1,0 +1,43 @@
+<section class="kpi-strip" aria-label="Indicadores executivos de canibalização">
+  <article class="kpi-card">
+    <span class="kpi-label">Produtos canibalizados</span>
+    <strong class="kpi-value tabular-nums">{{ kpis().totalVictims | ptDecimal:0 }}</strong>
+    <span class="kpi-caption tabular-nums">
+      SKUs afetados · {{ kpis().marginDestroyingPairsCount | ptDecimal:0 }}
+      {{ kpis().marginDestroyingPairsCount === 1 ? 'par destruindo margem' : 'pares destruindo margem' }}
+    </span>
+  </article>
+
+  <article class="kpi-card kpi-card-critical">
+    <span class="kpi-label">Faturamento perdido (canibalização)</span>
+    <strong class="kpi-value kpi-value-critical tabular-nums">
+      {{ -kpis().totalCannibalizedRevenue | signedBrl }}
+    </strong>
+    <span class="kpi-caption tabular-nums">
+      Impacto líquido margem: {{ kpis().totalNetMarginImpact | signedBrl }}
+    </span>
+  </article>
+
+  <article class="kpi-card kpi-card-critical">
+    <span class="kpi-label">Queda média atribuída</span>
+    <strong class="kpi-value kpi-value-critical tabular-nums">
+      <span aria-hidden="true">▼</span>
+      {{ -kpis().avgCannibalizedRevenuePct | signedPercent:'points':1 }}
+    </strong>
+    <span class="kpi-caption">sobre faturamento anterior</span>
+  </article>
+
+  <article class="kpi-card">
+    <span class="kpi-label">Principal categoria afetada</span>
+    @if (topCategory(); as cat) {
+      <strong class="kpi-value kpi-value-text" [title]="cat.name">{{ cat.name }}</strong>
+      <span class="kpi-caption tabular-nums">
+        {{ cat.skuCount | ptDecimal:0 }} {{ cat.skuCount === 1 ? 'SKU' : 'SKUs' }} ·
+        {{ -cat.totalCannibalizedRevenue | signedBrl }}
+      </span>
+    } @else {
+      <strong class="kpi-value kpi-value-text">—</strong>
+      <span class="kpi-caption">sem categoria afetada</span>
+    }
+  </article>
+</section>

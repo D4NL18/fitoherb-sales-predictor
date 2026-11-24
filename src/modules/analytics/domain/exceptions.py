@@ -219,6 +219,21 @@ class NewProductInsufficientSimilarsError(NewProductDomainException):
         )
 
 
+# ---------------------------------------------------------------------------
+# F6: Canibalização e Substituição (P-138; ADR-007 DA-07)
+# ---------------------------------------------------------------------------
+
+class CannibalizationProductNotFoundError(AnalyticsDomainException):
+    """CAN-001: SKU alvo inexistente ou inativo no catálogo."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code="CAN-001",
+            message="Produto não encontrado no catálogo ativo.",
+            fields=(),
+        )
+
+
 class NewProductInvalidTypeError(NewProductDomainException):
     """NEW-002: Tipo de produto informado não existe no catálogo ativo."""
 
@@ -263,5 +278,47 @@ class NewProductDatabaseUnavailableError(NewProductDomainException):
             code="NEW-005",
             message="Serviço de análise de produtos temporariamente indisponível. Tente novamente em instantes.",
             status_code=503,
+class CannibalizationEventNotFoundError(AnalyticsDomainException):
+    """CAN-002: Evento especificado não localizado ou sem histórico transacional."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code="CAN-002",
+            message="Nenhum evento do tipo especificado encontrado para o produto no período analisável.",
+            fields=(),
+        )
+
+
+class CannibalizationInsufficientHistoryError(AnalyticsDomainException):
+    """CAN-003: Histórico insuficiente de vendas para janelas pré/pós ou grupo de controle."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code="CAN-003",
+            message="Histórico insuficiente para compor as janelas pré e pós do evento ou constituir grupo de controle válido.",
+            fields=(),
+        )
+
+
+class CannibalizationInvalidParametersError(AnalyticsDomainException):
+    """CAN-004: Parâmetros de requisição inválidos (sem ecoar valores recebidos, LGPD-CAN-06)."""
+
+    def __init__(self, fields: Sequence[str] = ()) -> None:
+        field_list = tuple(fields)
+        msg = f"Parâmetros inválidos: {', '.join(field_list)}." if field_list else "Parâmetros inválidos."
+        super().__init__(
+            code="CAN-004",
+            message=msg,
+            fields=field_list,
+        )
+
+
+class CannibalizationProcessingError(AnalyticsDomainException):
+    """CAN-005: Erro interno inesperado no processamento estatístico da análise."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code="CAN-005",
+            message="Não foi possível processar a análise de canibalização no momento. Tente novamente mais tarde.",
             fields=(),
         )

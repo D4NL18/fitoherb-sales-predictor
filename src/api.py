@@ -3,6 +3,7 @@ API RESTful FastAPI para a Plataforma Fitoherb AI Suite.
 Atua como ponto de entrada corporativo e orquestrador de microsserviços/módulos DDD.
 Fitoherb Nordeste Distribuidora.
 """
+import asyncio
 from contextlib import asynccontextmanager
 import logging
 from pathlib import Path
@@ -46,8 +47,10 @@ from src.modules.pricing.service.pricing_service import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Inicializa o servidor imediatamente e pré-aquece o cache em segundo plano."""
+    """Inicializa o servidor imediatamente, pré-aquece o cache e agenda o cron diário 00:00 de afinidade."""
     import threading
+    from src.modules.analytics.service import analytics_service, product_affinity_service
+
     def _warmup():
         try:
             print("[CACHE] Pré-aquecendo cache de dados analíticos e FP-Growth...", flush=True)
@@ -56,8 +59,28 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             print(f"[CACHE] Aviso no pré-aquecimento: {e}", flush=True)
 
+    async def _daily_affinity_cron():
+        """Cron diário às 00:00: atualiza incrementalmente o índice de afinidade (novos/alterados/desativados)."""
+        while True:
+            try:
+                wait_seconds = product_affinity_service.seconds_until_next_midnight()
+                await asyncio.sleep(wait_seconds)
+                summary = await asyncio.to_thread(product_affinity_service.sync_product_affinity_index)
+                if summary.get("recomputed"):
+                    analytics_service.reset_cannibalization_report_cache()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.warning("[AFFINITY-CRON] Erro no ciclo diário (%s); tentará novamente amanhã.", type(exc).__name__)
+                await asyncio.sleep(60.0)
+
     threading.Thread(target=_warmup, daemon=True).start()
-    yield
+    cron_task = asyncio.create_task(_daily_affinity_cron())
+    try:
+        yield
+    finally:
+        cron_task.cancel()
+        await asyncio.gather(cron_task, return_exceptions=True)
 
 
 app = FastAPI(

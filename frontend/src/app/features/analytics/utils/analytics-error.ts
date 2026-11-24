@@ -159,6 +159,83 @@ export function resolveNewProductFieldError(
   return null;
 }
 
+/** Códigos de erro do subdomínio Canibalização por Migração e Equilíbrio de Preço (contrato analytics-canibalizacao v1.1.0 §5). */
+export const CANNIBALIZATION_ERROR_CODES = [
+  'CAN-001',
+  'CAN-003',
+  'CAN-004',
+  'CAN-005',
+  'ANL-001',
+] as const;
+
+export type CannibalizationErrorCode = (typeof CANNIBALIZATION_ERROR_CODES)[number];
+
+export type CannibalizationField =
+  | 'sku'
+  | 'windowDays'
+  | 'minDropPct'
+  | 'minMigratedClients'
+  | 'category'
+  | 'supplier'
+  | 'mechanism'
+  | 'search';
+
+export interface CannibalizationApiError {
+  code: CannibalizationErrorCode;
+  message: string;
+  fields: string[];
+}
+
+export const CANNIBALIZATION_ERROR_MESSAGES: Record<CannibalizationErrorCode, string> = {
+  'CAN-001': 'Produto não encontrado no catálogo ativo.',
+  'CAN-003':
+    'Histórico transacional insuficiente para compor a análise de canibalização na janela selecionada.',
+  'CAN-004': 'Parâmetro inválido informado na consulta do relatório de canibalização.',
+  'CAN-005':
+    'Não foi possível processar o relatório de canibalização no momento. Tente novamente mais tarde.',
+  'ANL-001': 'Base de vendas indisponível no momento. Tente novamente em instantes.',
+};
+
+export const CANNIBALIZATION_GENERIC_ERROR_MESSAGE =
+  'Não foi possível carregar o relatório de canibalização agora. Tente novamente em instantes.';
+
+const CANNIBALIZATION_FIELD_ERROR_MESSAGES: Record<CannibalizationField, string> = {
+  sku: 'Informe um código de produto válido (somente dígitos positivos).',
+  windowDays: 'Escolha um período válido: 30, 60 ou 90 dias.',
+  minDropPct: 'Informe uma queda percentual mínima entre 1% e 80%.',
+  minMigratedClients: 'Informe um mínimo de clientes migrados entre 1 e 50.',
+  category: 'Informe uma categoria válida.',
+  supplier: 'Informe um fornecedor válido.',
+  mechanism: 'Selecione um mecanismo de canibalização válido.',
+  search: 'Informe até 80 caracteres na busca.',
+};
+
+/** Type guard do corpo de erro do contrato de canibalização; `null` em 500 texto, rede ou corpo malformado. */
+export function toCannibalizationApiError(err: unknown): CannibalizationApiError | null {
+  return parseContractError(err, CANNIBALIZATION_ERROR_CODES);
+}
+
+/** Mensagem amigável de tela para erros de canibalização usando o mapa fixo do contrato. */
+export function resolveCannibalizationErrorMessage(
+  error: CannibalizationApiError | null,
+  fallbackMessage = CANNIBALIZATION_GENERIC_ERROR_MESSAGE,
+): string {
+  return error ? CANNIBALIZATION_ERROR_MESSAGES[error.code] : fallbackMessage;
+}
+
+/** Roteamento seguro de erros de validação (CAN-004) e não encontrado (CAN-001) para o campo afetado. */
+export function resolveCannibalizationFieldError(
+  error: CannibalizationApiError | null,
+  field: CannibalizationField,
+): string | null {
+  if (error === null) return null;
+  if (error.code === 'CAN-001' && field === 'sku') return CANNIBALIZATION_ERROR_MESSAGES['CAN-001'];
+  if (error.code === 'CAN-004' && error.fields.includes(field)) {
+    return CANNIBALIZATION_FIELD_ERROR_MESSAGES[field];
+  }
+  return null;
+}
+
 function parseContractError<TCode extends string>(
   err: unknown,
   allowedCodes: readonly TCode[],

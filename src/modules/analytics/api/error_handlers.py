@@ -20,6 +20,7 @@ from src.modules.analytics.api.mappers import to_error_meta
 from src.modules.analytics.api.schemas import AnalyticsErrorResponse, ErrorDetail
 from src.modules.analytics.domain.exceptions import (
     AnalyticsDomainException,
+    CannibalizationInvalidParametersError,
     InvalidParametersError,
     SeasonalityInvalidParametersError,
 )
@@ -52,6 +53,11 @@ ERROR_STATUS_BY_CODE: Dict[str, int] = {
     "NEW-003": 400,
     "NEW-004": 400,
     "NEW-005": 503,
+    "CAN-001": 404,
+    "CAN-002": 422,
+    "CAN-003": 422,
+    "CAN-004": 400,
+    "CAN-005": 500,
 }
 
 
@@ -98,6 +104,9 @@ async def _handle_validation_error(request: Request, exc: RequestValidationError
         return _error_response("ELA-004", msg, fields)
     if "/new-product" in request.url.path:
         return _error_response("NEW-004", "Parâmetros comerciais inconsistentes.", fields)
+    if "/cannibalization" in request.url.path or "/substitution" in request.url.path:
+        error = CannibalizationInvalidParametersError(fields=fields)
+        return _error_response(error.code, error.message, error.fields)
     error = InvalidParametersError(fields=fields)
     return _error_response(error.code, error.message, error.fields)
 

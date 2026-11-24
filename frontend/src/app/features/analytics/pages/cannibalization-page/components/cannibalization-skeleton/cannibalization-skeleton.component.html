@@ -1,0 +1,42 @@
+<div
+  class="skeleton-container"
+  aria-busy="true"
+  aria-label="Carregando relatório de canibalização e equilíbrio de preço"
+>
+  @if (slowQuery()) {
+    <div class="slow-query-notice" role="status" aria-live="polite">
+      Calculando migração de clientes e equilíbrio de preço na base de vendas — a primeira consulta
+      pode levar alguns segundos.
+    </div>
+  }
+
+  <div class="skeleton-kpis" aria-hidden="true">
+    @for (card of kpiPlaceholders; track card) {
+      <div class="skeleton-kpi-card">
+        <span class="skeleton-line skeleton-kpi-label"></span>
+        <span class="skeleton-box skeleton-kpi-value"></span>
+        <span class="skeleton-line skeleton-kpi-caption"></span>
+      </div>
+    }
+  </div>
+
+  <div class="skeleton-panel" aria-hidden="true">
+    <div class="skeleton-toolbar">
+      <span class="skeleton-box skeleton-control-wide"></span>
+      <span class="skeleton-box skeleton-control"></span>
+      <span class="skeleton-box skeleton-control"></span>
+      <span class="skeleton-box skeleton-control"></span>
+    </div>
+
+    <div class="skeleton-rows">
+      @for (row of rows; track row) {
+        <div class="skeleton-table-row">
+          <span class="skeleton-line skeleton-col-product"></span>
+          <span class="skeleton-line skeleton-col-num"></span>
+          <span class="skeleton-line skeleton-col-num"></span>
+          <span class="skeleton-line skeleton-col-action"></span>
+        </div>
+      }
+    </div>
+  </div>
+</div>

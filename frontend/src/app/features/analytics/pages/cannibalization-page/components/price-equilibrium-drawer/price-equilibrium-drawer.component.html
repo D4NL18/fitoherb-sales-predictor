@@ -1,0 +1,240 @@
+@if (activeVictim(); as v) {
+  <div class="drawer-backdrop" (click)="onBackdropClick()" (keydown.escape)="onBackdropClick()"></div>
+
+  <aside
+    #drawerPanel
+    class="drawer-panel"
+    role="dialog"
+    aria-modal="true"
+    [attr.aria-labelledby]="titleId"
+  >
+    <header class="drawer-header">
+      <div class="drawer-header-content">
+        <div class="drawer-sku-row">
+          <span class="drawer-sku tabular-nums">SKU {{ v.sku }}</span>
+          <span class="tag tabular-nums" [class]="getSeverityClass(v.cannibalizedRevenuePct)">
+            <span aria-hidden="true">▼</span>
+            <span>{{ -v.cannibalizedRevenuePct | signedPercent:'points':1 }}</span>
+          </span>
+        </div>
+        <h3 [id]="titleId" class="drawer-title" tabindex="-1">{{ v.description }}</h3>
+        <p class="drawer-meta">Categoria: {{ v.category }} · Fornecedor: {{ v.supplier }}</p>
+      </div>
+
+      <button
+        #closeButton
+        type="button"
+        class="btn-close-drawer"
+        aria-label="Fechar painel de equilíbrio de preço"
+        (click)="closeDrawer.emit()"
+      >
+        ×
+      </button>
+    </header>
+
+    <div class="drawer-body">
+      <section class="victim-summary" aria-label="Resumo da vítima">
+        <div class="summary-grid">
+          <div class="summary-cell">
+            <span class="summary-label">Faturamento ({{ windowDays() }}d)</span>
+            <strong class="summary-value tabular-nums">
+              {{ v.preRevenue | brl }} → {{ v.curRevenue | brl }}
+            </strong>
+          </div>
+
+          <div class="summary-cell">
+            <span class="summary-label">Perda por Canibalização</span>
+            <strong class="summary-value summary-value-critical tabular-nums">
+              {{ -v.cannibalizedRevenue | signedBrl }}
+              ({{ -v.cannibalizedRevenuePct | signedPercent:'points':1 }})
+            </strong>
+          </div>
+
+          <div class="summary-cell">
+            <span class="summary-label">Preço Atual</span>
+            <strong class="summary-value tabular-nums">{{ v.currentPrice | brl }}</strong>
+          </div>
+
+          <div class="summary-cell">
+            <span class="summary-label">Margem Atual</span>
+            <strong class="summary-value tabular-nums">
+              {{ v.marginPct | ptDecimal:1 }}% ({{ v.unitMargin | brl }} / un)
+            </strong>
+          </div>
+        </div>
+
+        @if (v.costFallbackUsed) {
+          <p class="fallback-note">
+            Custo unitário estimado via fallback de margem padrão (40%) por ausência de custo recente
+            no cadastro.
+          </p>
+        }
+      </section>
+
+      @if (loadingDetail()) {
+        <div class="detail-sync-status" role="status" aria-live="polite">
+          <span class="skeleton-line detail-sync-bar" aria-hidden="true"></span>
+          <span>Atualizando detalhamento completo dos canibalizadores...</span>
+        </div>
+      }
+
+      @if (detailError(); as err) {
+        <div class="detail-error-box" role="alert">
+          <p class="detail-error-text">{{ err }}</p>
+          <button type="button" class="btn-retry-detail" (click)="retryDetail.emit()">
+            Tentar novamente
+          </button>
+        </div>
+      }
+
+      <section class="cannibalizers-section" aria-label="Produtos canibalizadores e equilíbrio de preço">
+        <div class="section-heading-row">
+          <h4 class="section-heading">
+            Produtos canibalizadores ({{ activeCannibalizers().length | ptDecimal:0 }})
+          </h4>
+          <p class="privacy-note">Contagem agregada de clientes migrados (sem dados pessoais).</p>
+        </div>
+
+        @for (cannibal of activeCannibalizers(); track cannibal.sku; let idx = $index) {
+          @let mech = getMechanismMeta(cannibal.mechanism);
+          <article class="cannibal-card">
+            <header class="cannibal-card-header">
+              <div class="cannibal-title-group">
+                <span class="cannibal-rank tabular-nums">#{{ idx + 1 }} · SKU {{ cannibal.sku }}</span>
+                <h5 class="cannibal-description">{{ cannibal.description }}</h5>
+                @if (isDetailedCannibalizer(cannibal)) {
+                  <span class="cannibal-submeta">
+                    Fornecedor: {{ cannibal.supplier }} · {{ cannibal.category }}
+                  </span>
+                } @else if (cannibal.supplier) {
+                  <span class="cannibal-submeta">
+                    Fornecedor: {{ cannibal.supplier }}
+                  </span>
+                }
+              </div>
+
+              <span class="clients-badge tabular-nums">
+                {{ cannibal.migratedClients | ptDecimal:0 }}
+                {{ cannibal.migratedClients === 1 ? 'cliente migrado' : 'clientes migrados' }}
+              </span>
+            </header>
+
+            <div class="impact-row tabular-nums">
+              <span class="impact-label">Impacto atribuído a este canibalizador:</span>
+              <strong class="impact-value">
+                {{ -cannibal.migratedRevenue | signedBrl }}
+                ({{ cannibal.shareOfCannibalizationPct | ptDecimal:1 }}% da canibalização)
+              </strong>
+            </div>
+
+            <div class="comparison-grid">
+              <div class="comparison-col">
+                <span class="comparison-title">Comparativo Preço</span>
+                <dl class="comparison-list tabular-nums">
+                  <div class="comparison-item">
+                    <dt>Vítima</dt>
+                    <dd>{{ v.currentPrice | brl }}</dd>
+                  </div>
+                  <div class="comparison-item">
+                    <dt>Canibalizador</dt>
+                    <dd>{{ cannibal.currentPrice | brl }}</dd>
+                  </div>
+                  <div class="comparison-item comparison-highlight">
+                    <dt>Gap de preço</dt>
+                    <dd>{{ cannibal.priceGapPct | signedPercent:'points':1 }}</dd>
+                  </div>
+                </dl>
+              </div>
+
+              <div class="comparison-col">
+                <span class="comparison-title">Comparativo Margem</span>
+                <dl class="comparison-list tabular-nums">
+                  <div class="comparison-item">
+                    <dt>Vítima</dt>
+                    <dd>{{ v.marginPct | ptDecimal:1 }}%</dd>
+                  </div>
+                  <div class="comparison-item">
+                    <dt>Canibalizador</dt>
+                    <dd>{{ cannibal.marginPct | ptDecimal:1 }}%</dd>
+                  </div>
+                  <div class="comparison-item comparison-highlight">
+                    <dt>Diferença</dt>
+                    <dd>
+                      {{ calcMarginDiffPp(v.marginPct, cannibal.marginPct) | signedDecimal:1 }} p.p.
+                    </dd>
+                  </div>
+                </dl>
+              </div>
+            </div>
+
+            <div
+              class="equilibrium-block"
+              [style.border-left-color]="mech.borderToken"
+            >
+              <div class="equilibrium-header">
+                <span class="tag" [class]="mech.tagClass">
+                  <span aria-hidden="true">{{ mech.symbol }}</span>
+                  <span>{{ mech.label }}</span>
+                </span>
+                @if (cannibal.projectedPriceGapPct !== null) {
+                  <span class="projected-gap tabular-nums">
+                    Gap projetado: {{ cannibal.projectedPriceGapPct | ptDecimal:1 }}%
+                  </span>
+                }
+              </div>
+
+              @if (
+                cannibal.suggestedCannibalPrice !== null || cannibal.suggestedVictimPrice !== null
+              ) {
+                <div class="suggested-prices tabular-nums">
+                  @if (cannibal.suggestedCannibalPrice !== null) {
+                    <div class="suggested-line">
+                      <span class="suggested-label">Preço sugerido (canibalizador):</span>
+                      <strong class="suggested-value">
+                        {{ cannibal.suggestedCannibalPrice | brl }}
+                        ({{
+                          calcPriceChangePct(cannibal.currentPrice, cannibal.suggestedCannibalPrice)
+                            | signedPercent:'points':1
+                        }})
+                      </strong>
+                    </div>
+                  }
+                  @if (cannibal.suggestedVictimPrice !== null) {
+                    <div class="suggested-line">
+                      <span class="suggested-label">Preço sugerido (vítima):</span>
+                      <strong class="suggested-value">
+                        {{ cannibal.suggestedVictimPrice | brl }}
+                        ({{
+                          calcPriceChangePct(v.currentPrice, cannibal.suggestedVictimPrice)
+                            | signedPercent:'points':1
+                        }})
+                      </strong>
+                    </div>
+                  }
+                  @if (isDetailedCannibalizer(cannibal) && cannibal.victimMarginFloorPrice !== null) {
+                    <div class="suggested-line floor-line">
+                      <span class="suggested-label">Piso de margem mínima (20%):</span>
+                      <span>{{ cannibal.victimMarginFloorPrice | brl }}</span>
+                    </div>
+                  }
+                </div>
+              }
+
+              <p class="action-summary">{{ cannibal.actionSummary }}</p>
+            </div>
+          </article>
+        } @empty {
+          <p class="empty-cannibalizers">
+            Nenhum produto canibalizador elegível encontrado para este SKU na janela selecionada.
+          </p>
+        }
+      </section>
+    </div>
+
+    <footer class="drawer-footer">
+      <button type="button" class="btn-footer-close" (click)="closeDrawer.emit()">
+        Fechar painel
+      </button>
+    </footer>
+  </aside>
+}

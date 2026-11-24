@@ -40,6 +40,11 @@ export const ANALYTICS_SECTIONS: readonly AnalyticsSection[] = [
     path: '/analytics/produto-novo',
     description: 'Viabilidade conservadora e demanda inicial para produtos sem SKU',
   },
+  {
+    label: 'Canibalização',
+    path: '/analytics/canibalizacao',
+    description: 'Impacto de promoções, preços e lançamentos na canibalização e substituição',
+  },
 ];
 
 @Component({

@@ -3,7 +3,16 @@
  * Delegam para `utils/pt-br-format.ts`, que segue o arredondamento meio para cima de P-065.
  */
 import { Pipe, PipeTransform } from '@angular/core';
-import { formatCurrency, formatDecimal, formatIsoDate, formatPercent, formatPosition } from '../utils/pt-br-format';
+import {
+  formatCurrency,
+  formatDecimal,
+  formatIsoDate,
+  formatPercent,
+  formatPosition,
+  formatSignedCurrency,
+  formatSignedDecimal,
+  formatSignedPercent,
+} from '../utils/pt-br-format';
 
 @Pipe({ name: 'ptDecimal', standalone: true })
 export class PtDecimalPipe implements PipeTransform {
@@ -37,5 +46,26 @@ export class PtDatePipe implements PipeTransform {
 export class ListPositionPipe implements PipeTransform {
   transform(position: number): string {
     return formatPosition(position);
+  }
+}
+
+@Pipe({ name: 'signedDecimal', standalone: true })
+export class SignedDecimalPipe implements PipeTransform {
+  transform(value: number, fractionDigits = 2): string {
+    return formatSignedDecimal(value, fractionDigits);
+  }
+}
+
+@Pipe({ name: 'signedBrl', standalone: true })
+export class SignedBrlPipe implements PipeTransform {
+  transform(value: number): string {
+    return formatSignedCurrency(value);
+  }
+}
+
+@Pipe({ name: 'signedPercent', standalone: true })
+export class SignedPercentPipe implements PipeTransform {
+  transform(value: number, scale: 'points' | 'ratio' = 'points', fractionDigits = 2): string {
+    return formatSignedPercent(value, scale, fractionDigits);
   }
 }
