@@ -64,7 +64,7 @@ export function parsePtBrNumber(raw: string): number | null {
   if (!cleaned) return null;
 
   const normalized = cleaned.includes(',')
-    ? cleaned.replace(/\./g, '').replace(',', '.')
+    ? cleaned.replaceAll('.', '').replace(',', '.')
     : cleaned;
 
   if (!VALID_NUMERIC_PATTERN.test(normalized)) return null;
