@@ -35,6 +35,11 @@ export const ANALYTICS_SECTIONS: readonly AnalyticsSection[] = [
     path: '/analytics/elasticity',
     description: 'Sensibilidade de preço por produto com simulador de reajustes',
   },
+  {
+    label: 'Canibalização',
+    path: '/analytics/canibalizacao',
+    description: 'Impacto de promoções, preços e lançamentos na canibalização e substituição',
+  },
 ];
 
 @Component({

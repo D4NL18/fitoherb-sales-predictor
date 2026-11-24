@@ -1,0 +1,76 @@
+@use '../../../../styles/analytics-ui' as ui;
+
+:host {
+  display: block;
+}
+
+.kpi-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-3);
+
+  @media (max-width: ui.$bp-tablet) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  @media (max-width: 359.98px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.kpi-card {
+  @include ui.panel;
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.kpi-card-critical {
+  border-left: 3px solid var(--feedback-critical-bg);
+}
+
+.kpi-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-secondary);
+}
+
+.kpi-value {
+  font-family: var(--font-family-mono);
+  font-size: 1.45rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--text-primary);
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  overflow-wrap: anywhere;
+
+  @media (max-width: ui.$bp-mobile) {
+    font-size: 1.2rem;
+  }
+}
+
+.kpi-value-critical {
+  color: var(--feedback-critical-bg);
+}
+
+.kpi-value-text {
+  font-family: var(--font-family-headline);
+  font-size: 1.25rem;
+  letter-spacing: -0.01em;
+}
+
+.kpi-caption {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}

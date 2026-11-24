@@ -31,6 +31,13 @@ export const ANALYTICS_ROUTES: Routes = [
         loadComponent: () =>
           import('./pages/elasticity-page/elasticity-page.component').then((m) => m.ElasticityPageComponent),
       },
+      {
+        path: 'canibalizacao',
+        loadComponent: () =>
+          import('./pages/cannibalization-page/cannibalization-page.component').then(
+            (m) => m.CannibalizationPageComponent,
+          ),
+      },
     ],
   },
 ];

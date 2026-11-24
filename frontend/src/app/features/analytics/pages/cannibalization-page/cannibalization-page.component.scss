@@ -1,0 +1,135 @@
+@use '../../styles/analytics-ui' as ui;
+
+:host {
+  display: block;
+}
+
+.cannibalization-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.header-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex: 1 1 24rem;
+  min-width: 0;
+}
+
+.page-title {
+  margin: 0;
+  font-family: var(--font-family-headline);
+  font-size: 1.45rem;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--text-primary);
+}
+
+.page-subtitle {
+  margin: 0;
+  font-size: 0.92rem;
+  color: var(--text-secondary);
+  max-width: 70ch;
+}
+
+.page-meta-line {
+  margin: var(--space-1) 0 0;
+  font-family: var(--font-family-mono);
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.period-control {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex-shrink: 0;
+
+  @media (max-width: ui.$bp-tablet) {
+    width: 100%;
+  }
+}
+
+.period-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-secondary);
+}
+
+.period-segmented {
+  display: inline-flex;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xs);
+  padding: 2px;
+  gap: 2px;
+
+  @media (max-width: ui.$bp-tablet) {
+    display: flex;
+    width: 100%;
+  }
+}
+
+.period-btn {
+  min-height: ui.$touch-target;
+  padding: var(--space-2) var(--space-4);
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-family-body);
+  font-size: 0.88rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+
+  @include ui.hover {
+    &:hover:not(:disabled):not(.is-active) {
+      color: var(--text-primary);
+      background: var(--bg-surface);
+    }
+  }
+
+  &.is-active {
+    background: var(--brand-primary);
+    color: var(--text-on-brand);
+  }
+
+  &:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  @media (max-width: ui.$bp-tablet) {
+    flex: 1 1 0;
+  }
+
+  @media (max-width: ui.$bp-mobile) {
+    min-height: 44px;
+    padding: var(--space-2) var(--space-2);
+    font-size: 0.84rem;
+  }
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+@include ui.reduced-motion {
+  .period-btn {
+    transition: none;
+  }
+}
