@@ -1,0 +1,123 @@
+@use '../../../../styles/analytics-ui' as ui;
+
+:host {
+  display: block;
+}
+
+.skeleton-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.slow-query-notice {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--feedback-info-bg);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3) var(--space-4);
+  font-size: 0.9rem;
+  color: var(--text-primary);
+}
+
+.skeleton-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-3);
+
+  @media (max-width: ui.$bp-tablet) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  @media (max-width: 359.98px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.skeleton-kpi-card {
+  @include ui.panel;
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.skeleton-kpi-label {
+  width: 65%;
+  height: 0.75rem;
+}
+
+.skeleton-kpi-value {
+  width: 55%;
+  height: 1.65rem;
+}
+
+.skeleton-kpi-caption {
+  width: 80%;
+  height: 0.75rem;
+}
+
+.skeleton-panel {
+  @include ui.panel;
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+
+  @media (max-width: ui.$bp-mobile) {
+    padding: var(--space-4);
+  }
+}
+
+.skeleton-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1.8fr) repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+
+  @media (max-width: ui.$bp-tablet) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  @media (max-width: ui.$bp-mobile) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.skeleton-control-wide,
+.skeleton-control {
+  width: 100%;
+  height: ui.$touch-target;
+}
+
+.skeleton-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.skeleton-table-row {
+  display: grid;
+  grid-template-columns: minmax(0, 2.2fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.9fr);
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--border-subtle);
+
+  @media (max-width: ui.$bp-mobile) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.skeleton-col-product {
+  width: 88%;
+  height: 1.15rem;
+}
+
+.skeleton-col-num {
+  width: 72%;
+  height: 1.15rem;
+}
+
+.skeleton-col-action {
+  width: 100%;
+  height: 1.5rem;
+}

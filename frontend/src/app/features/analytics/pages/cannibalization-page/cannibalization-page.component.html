@@ -1,0 +1,93 @@
+<div class="cannibalization-page" [attr.inert]="drawerOpen() ? '' : null">
+  <header class="page-header">
+    <div class="header-text">
+      <h2 class="page-title">Relatório de Canibalização e Equilíbrio de Preço</h2>
+      <p class="page-subtitle">
+        Identifique produtos com queda de faturamento atribuída à migração de clientes para outros
+        itens do portfólio e simule o preço de equilíbrio para proteger a margem.
+      </p>
+      @if (store.meta(); as meta) {
+        <p class="page-meta-line tabular-nums">
+          Base: últimos {{ meta.windowDays }} dias vs. {{ meta.windowDays }} dias anteriores
+          @if (meta.dataReferencia) {
+            · Pedidos até {{ meta.dataReferencia | ptDate }}
+          }
+        </p>
+      }
+    </div>
+
+    <div class="period-control">
+      <span class="period-label">Período</span>
+      <div class="period-segmented" role="group" aria-label="Período de análise">
+        @for (days of periodOptions; track days) {
+          <button
+            type="button"
+            class="period-btn tabular-nums"
+            [class.is-active]="store.windowDays() === days"
+            [attr.aria-pressed]="store.windowDays() === days"
+            [disabled]="store.loading()"
+            (click)="onSelectPeriod(days)"
+          >
+            {{ days }} dias
+          </button>
+        }
+      </div>
+    </div>
+  </header>
+
+  @if (store.loading()) {
+    <app-cannibalization-skeleton [slowQuery]="store.slowQuery()" />
+  } @else if (store.errorMessage()) {
+    <app-error-banner
+      [message]="store.errorMessage()!"
+      [code]="store.errorCode()"
+      retryLabel="Tentar novamente"
+      (retry)="onRetry()"
+    />
+  } @else if (store.isPeriodEmpty()) {
+    <app-result-state
+      [view]="emptyPeriodView()"
+      (action)="onEmptyPeriodAction($event)"
+    />
+  } @else if (store.kpis()) {
+    <app-cannibalization-kpi-strip
+      [kpis]="store.kpis()!"
+      [topCategory]="store.topCategoryHighlight()"
+    />
+
+    <app-cannibalization-report-table
+      [victims]="store.pagedVictims()"
+      [totalCatalogVictims]="store.victims().length"
+      [totalFilteredCount]="store.totalFilteredCount()"
+      [page]="store.safePage()"
+      [totalPages]="store.totalPages()"
+      [pageOffset]="store.pageOffset()"
+      [searchQuery]="store.searchQuery()"
+      [selectedSupplier]="store.selectedSupplier()"
+      [selectedCategory]="store.selectedCategory()"
+      [supplierOptions]="store.supplierOptions()"
+      [categoryOptions]="store.categoryOptions()"
+      [sortBy]="store.sortBy()"
+      [hasActiveFilters]="store.hasActiveFilters()"
+      [selectedSku]="store.selectedVictim()?.sku ?? null"
+      (searchChange)="onSearchChange($event)"
+      (supplierChange)="onSupplierChange($event)"
+      (categoryChange)="onCategoryChange($event)"
+      (sortChange)="onSortChange($event)"
+      (pageChange)="onPageChange($event)"
+      (clearFilters)="onClearFilters()"
+      (selectVictim)="onSelectVictim($event)"
+    />
+  }
+</div>
+
+<app-price-equilibrium-drawer
+  [victim]="store.selectedVictim()"
+  [detail]="store.detailResponse()?.data ?? null"
+  [loadingDetail]="store.detailLoading()"
+  [detailError]="store.detailError()"
+  [windowDays]="store.windowDays()"
+  [returnFocusTo]="drawerTriggerEl()"
+  (closeDrawer)="onCloseDrawer()"
+  (retryDetail)="onRetryDetail()"
+/>

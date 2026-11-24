@@ -93,7 +93,7 @@
   }
 
   @if (enableProductSearch()) {
-    <p class="search-status" role="status" aria-live="polite">{{ searchStatus() }}</p>
+    <p class="search-status" [attr.role]="searchStatus() ? 'status' : null" aria-live="polite">{{ searchStatus() }}</p>
   }
 
   <p class="field-hint" [id]="ids.hint">{{ hint() }}</p>

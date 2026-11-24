@@ -46,8 +46,43 @@ export function formatIsoDate(isoDate: string): string {
 }
 
 const POSITION_MIN_DIGITS = 2;
+const TYPOGRAPHIC_MINUS = '\u2212';
 
 /** Posição na lista completa com dois dígitos ("01", "12", "150"), Design Plan §5.6. */
 export function formatPosition(position: number): string {
   return String(position).padStart(POSITION_MIN_DIGITS, '0');
+}
+
+function resolveSignPrefix(value: number): string {
+  if (value > 0) return '+';
+  if (value < 0) return TYPOGRAPHIC_MINUS;
+  return '';
+}
+
+/** Número decimal com sinal explícito (`+` ou `−` tipográfico). */
+export function formatSignedDecimal(value: number, fractionDigits = 2): string {
+  const rounded = roundHalfUp(value, fractionDigits);
+  const sign = resolveSignPrefix(rounded);
+  return `${sign}${formatDecimal(Math.abs(rounded), fractionDigits)}`;
+}
+
+/** Valor em reais com sinal explícito (`+R$ 3.235,63` ou `−R$ 1.381,05`). */
+export function formatSignedCurrency(value: number): string {
+  const rounded = roundHalfUp(value, CURRENCY_DIGITS);
+  const sign = resolveSignPrefix(rounded);
+  return `${sign}${formatCurrency(Math.abs(rounded))}`;
+}
+
+/**
+ * Percentual com sinal explícito:
+ * - `'points'`: valor já vem em pontos percentuais (ex.: `-49.31` -> `−49,31%`).
+ * - `'ratio'`: valor vem como fração `0..1` (ex.: `0.42` -> `+42,00%`).
+ */
+export function formatSignedPercent(
+  value: number,
+  scale: 'points' | 'ratio' = 'points',
+  fractionDigits = 2,
+): string {
+  const percentPoints = scale === 'ratio' ? Number(`${value}e${PERCENT_SHIFT}`) : value;
+  return `${formatSignedDecimal(percentPoints, fractionDigits)}%`;
 }
