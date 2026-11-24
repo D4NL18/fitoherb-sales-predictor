@@ -97,6 +97,7 @@
               [attr.aria-selected]="selectedValue() === ''"
               (mousedown)="$event.preventDefault()"
               (click)="selectOption('')"
+              (keydown.enter)="selectOption('')"
             >
               <span class="combobox-option-name">
                 {{ allLabel() }} ({{ options().length | ptDecimal }})
@@ -116,6 +117,7 @@
               [attr.aria-selected]="selectedValue() === opt.name"
               (mousedown)="$event.preventDefault()"
               (click)="selectOption(opt.name)"
+              (keydown.enter)="selectOption(opt.name)"
             >
               <span class="combobox-option-name">{{ opt.name }}</span>
               <span class="combobox-option-count tabular-nums">{{ opt.count | ptDecimal }}</span>

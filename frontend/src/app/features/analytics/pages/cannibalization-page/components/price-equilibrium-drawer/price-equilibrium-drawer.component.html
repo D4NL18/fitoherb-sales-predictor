@@ -1,5 +1,5 @@
 @if (activeVictim(); as v) {
-  <div class="drawer-backdrop" (click)="onBackdropClick()"></div>
+  <div class="drawer-backdrop" (click)="onBackdropClick()" (keydown.escape)="onBackdropClick()"></div>
 
   <aside
     #drawerPanel
