@@ -7,7 +7,7 @@ allowlist de LGPD-03: nenhum dado de cliente além do que o contrato permite (ne
 """
 from __future__ import annotations
 
-from typing import List, Literal, Optional
+from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
@@ -683,10 +683,14 @@ NewProductSeasonalityStatusLiteral = Literal["APPLIED", "FALLBACK_NEUTRAL", "UNA
 
 
 class NewProductOptionsData(CamelModel):
-    """Opções deduplicadas e ordenadas de tipos e fornecedores ativos (P-141)."""
+    """Opções deduplicadas e ordenadas de fornecedores e linhas/tipos ativos (P-141)."""
 
-    tipos: List[str] = Field(description="Lista ordenada de tipos de produto ativos.")
+    tipos: List[str] = Field(description="Lista ordenada de linhas/tipos de produto ativos.")
     fornecedores: List[str] = Field(description="Lista ordenada de fornecedores ativos.")
+    tipos_por_fornecedor: Dict[str, List[str]] = Field(
+        default_factory=dict,
+        description="Mapeamento de fornecedor ativo para suas linhas/tipos ativos.",
+    )
 
 
 class NewProductOptionsResponse(CamelModel):
@@ -699,7 +703,10 @@ class NewProductOptionsResponse(CamelModel):
 class NewProductForecastRequest(CamelModel):
     """Corpo de requisição para POST /analytics/new-product/forecast (P-140)."""
 
-    tipo: str = Field(min_length=1, description="Categoria do produto no catálogo ativo.")
+    tipo: Optional[str] = Field(
+        default=None,
+        description="Linha/categoria opcional do produto no catálogo ativo (quando omitida, busca similares em todo o catálogo priorizando descrição, preço e fornecedor).",
+    )
     fornecedor: str = Field(min_length=1, description="Fornecedor pretendido no catálogo ativo.")
     descricao: str = Field(min_length=3, max_length=120, description="Descrição comercial do produto hipotético.")
     preco_venda_previsto: float = Field(description="Preço de venda previsto (R$).")

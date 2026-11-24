@@ -106,9 +106,9 @@ def test_domain_constants_match_specification():
     assert MIN_LAUNCH_MONTHS == 3
     assert TOP_K_SIMILARS == 10
     assert MIN_SIMILARS == 3
-    assert WEIGHT_SUPPLIER == pytest.approx(0.25)
-    assert WEIGHT_PRICE == pytest.approx(0.35)
-    assert WEIGHT_TFIDF == pytest.approx(0.40)
+    assert WEIGHT_SUPPLIER == pytest.approx(0.10)
+    assert WEIGHT_PRICE == pytest.approx(0.40)
+    assert WEIGHT_TFIDF == pytest.approx(0.50)
     assert WEIGHT_SUPPLIER + WEIGHT_PRICE + WEIGHT_TFIDF == pytest.approx(1.00)
     assert NEW_PRODUCT_HAIRCUT == pytest.approx(0.70)
     assert MIN_BACKTEST_SUCCESS_RATE == pytest.approx(0.80)
@@ -265,14 +265,14 @@ def test_similarity_score_weights():
     sim_3002 = next(s for s in similars if s.sku == 3002)
     assert sim_3002.score_fornecedor == pytest.approx(0.0)
     assert sim_3002.score_preco == pytest.approx(0.50, abs=1e-4)
-    expected_3002 = (0.25 * 0.0) + (0.35 * 0.50) + (0.40 * sim_3002.score_tfidf)
+    expected_3002 = (0.10 * 0.0) + (0.40 * 0.50) + (0.50 * sim_3002.score_tfidf)
     assert sim_3002.score_final == pytest.approx(expected_3002, abs=1e-4)
 
     sim_3003 = next(s for s in similars if s.sku == 3003)
     assert sim_3003.score_fornecedor == pytest.approx(1.0)
     assert sim_3003.score_preco == pytest.approx(1.0)
     assert sim_3003.score_tfidf == pytest.approx(0.0, abs=1e-4)
-    assert sim_3003.score_final == pytest.approx(0.60, abs=1e-4)
+    assert sim_3003.score_final == pytest.approx(0.50, abs=1e-4)
 
 
 def test_top_k_similars_limit_10():

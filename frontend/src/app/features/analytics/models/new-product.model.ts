@@ -11,10 +11,11 @@ export type SeasonalityStatus = 'APPLIED' | 'FALLBACK_NEUTRAL' | 'UNAVAILABLE';
 export interface NewProductOptions {
   tipos: string[];
   fornecedores: string[];
+  tiposPorFornecedor?: Record<string, string[]>;
 }
 
 export interface NewProductForecastRequest {
-  tipo: string;
+  tipo?: string | null;
   fornecedor: string;
   descricao: string;
   precoVendaPrevisto: number;

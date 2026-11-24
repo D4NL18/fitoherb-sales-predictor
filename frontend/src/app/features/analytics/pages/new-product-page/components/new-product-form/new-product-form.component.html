@@ -20,41 +20,7 @@
     [attr.aria-busy]="optionsLoading() || submitting()"
     (submit)="onSubmit($event)"
   >
-    <!-- 1. Tipo do Produto -->
-    <div class="field-group">
-      <label class="field-label" for="np-tipo">
-        Tipo do Produto <span class="required-mark" aria-hidden="true">*</span>
-      </label>
-
-      @if (optionsLoading()) {
-        <div class="skeleton-line field-skeleton" aria-hidden="true"></div>
-      } @else {
-        <select
-          #tipoSelect
-          id="np-tipo"
-          name="tipo"
-          class="field-control"
-          [class.field-invalid]="tipoError() !== null"
-          [value]="tipo()"
-          [disabled]="hasEmptyCatalog() || optionsErrorBannerMessage() !== null"
-          [attr.aria-invalid]="tipoError() !== null ? 'true' : null"
-          [attr.aria-describedby]="tipoError() ? 'np-tipo-error' : null"
-          (change)="onTipoChange($any($event.target).value)"
-          (blur)="markTouched('tipo')"
-        >
-          <option value="">Selecione o tipo...</option>
-          @for (item of tiposList(); track item) {
-            <option [value]="item">{{ item }}</option>
-          }
-        </select>
-      }
-
-      @if (tipoError(); as err) {
-        <p id="np-tipo-error" class="field-error" role="alert">{{ err }}</p>
-      }
-    </div>
-
-    <!-- 2. Fornecedor (Combobox ARIA) -->
+    <!-- 1. Fornecedor (Prioritário · Combobox com busca) -->
     <div class="field-group">
       <label class="field-label" for="np-fornecedor">
         Fornecedor <span class="required-mark" aria-hidden="true">*</span>
@@ -71,7 +37,7 @@
             type="text"
             class="field-control combobox-input"
             [class.field-invalid]="fornecedorError() !== null"
-            placeholder="Digite para filtrar o fornecedor..."
+            placeholder="Digite para buscar o fornecedor..."
             autocomplete="off"
             role="combobox"
             aria-autocomplete="list"
@@ -128,7 +94,7 @@
       }
     </div>
 
-    <!-- 3. Descrição -->
+    <!-- 2. Descrição -->
     <div class="field-group">
       <div class="label-row">
         <label class="field-label" for="np-descricao">

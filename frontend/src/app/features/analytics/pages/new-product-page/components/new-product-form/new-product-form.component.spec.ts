@@ -27,17 +27,13 @@ describe('NewProductFormComponent', () => {
     fixture.detectChanges();
 
     const skeletons = fixture.nativeElement.querySelectorAll('.field-skeleton');
-    expect(skeletons.length).toBe(2);
-    expect(fixture.nativeElement.querySelector('select#np-tipo')).toBeNull();
+    expect(skeletons.length).toBe(1);
+    expect(fixture.nativeElement.querySelector('#np-fornecedor')).toBeNull();
   });
 
   it('converte margemMinimaDesejada de 0-100% para 0.00-1.00 e emite payload completo', () => {
     const submitted: NewProductForecastRequest[] = [];
     component.submitForecast.subscribe((req) => submitted.push(req));
-
-    const select: HTMLSelectElement = fixture.nativeElement.querySelector('#np-tipo');
-    select.value = 'Tinturas';
-    select.dispatchEvent(new Event('change'));
 
     const supplierInput: HTMLInputElement = fixture.nativeElement.querySelector('#np-fornecedor');
     supplierInput.value = 'FITOHERB LABORATORIOS';
@@ -67,7 +63,7 @@ describe('NewProductFormComponent', () => {
 
     expect(submitted.length).toBe(1);
     expect(submitted[0]).toEqual({
-      tipo: 'Tinturas',
+      tipo: null,
       fornecedor: 'FITOHERB LABORATORIOS',
       descricao: 'Tintura de Melissa 50ml',
       precoVendaPrevisto: 42.5,
@@ -80,10 +76,6 @@ describe('NewProductFormComponent', () => {
   it('bloqueia submit e exibe erro inline pt-BR quando custoUnitario > precoVendaPrevisto', () => {
     const submitted: NewProductForecastRequest[] = [];
     component.submitForecast.subscribe((req) => submitted.push(req));
-
-    const select: HTMLSelectElement = fixture.nativeElement.querySelector('#np-tipo');
-    select.value = 'Tinturas';
-    select.dispatchEvent(new Event('change'));
 
     const supplierInput: HTMLInputElement = fixture.nativeElement.querySelector('#np-fornecedor');
     supplierInput.value = 'FITOHERB LABORATORIOS';

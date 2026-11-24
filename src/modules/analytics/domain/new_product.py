@@ -35,9 +35,9 @@ LAUNCH_CUTOFF_DATE = date(2025, 4, 1)
 MIN_LAUNCH_MONTHS = 3
 TOP_K_SIMILARS = 10
 MIN_SIMILARS = 3
-WEIGHT_SUPPLIER = 0.25
-WEIGHT_PRICE = 0.35
-WEIGHT_TFIDF = 0.40
+WEIGHT_SUPPLIER = 0.10
+WEIGHT_PRICE = 0.40
+WEIGHT_TFIDF = 0.50
 NEW_PRODUCT_HAIRCUT = 0.70
 MIN_BACKTEST_SUCCESS_RATE = 0.80
 DEFAULT_HORIZON_MONTHS = 3
@@ -232,30 +232,38 @@ def filter_eligible_launches(
 
 def find_similars(
     candidates_df: pd.DataFrame,
-    tipo: str,
+    tipo: Optional[str],
     fornecedor: str,
     descricao: str,
     preco_venda_previsto: float,
     top_k: int = TOP_K_SIMILARS,
 ) -> List[SimilarProductMatch]:
     """
-    Seleciona até `top_k` lançamentos similares do mesmo `tipo` estrito (P-142, P-143).
+    Seleciona até `top_k` lançamentos similares (P-142, P-143).
+    - Quando `tipo` é informado, restringe ao `tipo` estrito.
+    - Quando `tipo` é omitido, busca em todo o catálogo priorizando aderência semântica
+      (TF-IDF > 0 sempre que houver >= MIN_SIMILARS candidatos aderentes), evitando
+      comparar produtos sem relação (ex.: Whey vs Creatina) apenas por serem do mesmo fornecedor.
     Lança `NewProductInsufficientSimilarsError` (NEW-001) se houver < MIN_SIMILARS (3).
     """
     if candidates_df.empty:
         raise NewProductInsufficientSimilarsError(count=0)
 
-    tipo_norm = tipo.strip().casefold()
+    tipo_norm = tipo.strip().casefold() if tipo and tipo.strip() else ""
     forn_norm = fornecedor.strip().casefold()
 
-    same_type = candidates_df[
-        candidates_df["tipo"].astype(str).str.strip().str.casefold() == tipo_norm
-    ]
-    if same_type.empty:
+    if tipo_norm:
+        pool_df = candidates_df[
+            candidates_df["tipo"].astype(str).str.strip().str.casefold() == tipo_norm
+        ]
+    else:
+        pool_df = candidates_df
+
+    if pool_df.empty:
         raise NewProductInsufficientSimilarsError(count=0)
 
     grouped_items: List[dict] = []
-    for sku_val, grp in same_type.groupby("sku", sort=False):
+    for sku_val, grp in pool_df.groupby("sku", sort=False):
         first_row = grp.iloc[0]
         first_sale = _to_date(first_row["first_sale_date"])
         month_map: Dict[Tuple[int, int], float] = {}
@@ -288,8 +296,25 @@ def find_similars(
         descricao, [item["descricao"] for item in grouped_items]
     )
 
+    # Quando buscando no catálogo amplo (sem linha estrita), exige aderência textual
+    # sempre que existirem ao menos MIN_SIMILARS lançamentos com TF-IDF > 0.
+    candidate_indices = list(range(len(grouped_items)))
+    if not tipo_norm:
+        semantic_indices = [idx for idx in candidate_indices if float(tfidf_scores[idx]) > 0.0]
+        if len(semantic_indices) >= MIN_SIMILARS:
+            candidate_indices = semantic_indices
+        else:
+            supplier_indices = [
+                idx
+                for idx in candidate_indices
+                if grouped_items[idx]["fornecedor"].strip().casefold() == forn_norm
+            ]
+            if len(supplier_indices) >= MIN_SIMILARS:
+                candidate_indices = supplier_indices
+
     matches: List[SimilarProductMatch] = []
-    for idx, item in enumerate(grouped_items):
+    for idx in candidate_indices:
+        item = grouped_items[idx]
         s_forn = 1.0 if item["fornecedor"].strip().casefold() == forn_norm else 0.0
         cand_price = item["preco"]
         if preco_venda_previsto > 0 and cand_price > 0:
@@ -394,20 +419,28 @@ def apply_seasonality_and_clamp(
     return clamped, round(factor, 4), confidence, "APPLIED"
 
 
-def compute_mature_ceiling(mature_df: pd.DataFrame, tipo: str) -> int:
+def compute_mature_ceiling(
+    mature_df: pd.DataFrame,
+    tipo: Optional[str] = None,
+    fornecedor: Optional[str] = None,
+    descricao: Optional[str] = None,
+) -> int:
     """
     Calcula o Teto Maduro de Referência (`tetoMaduroP75`, P-147) sobre produtos com
-    primeira venda anterior a LAUNCH_CUTOFF_DATE (2025-04-01) do mesmo `tipo`.
+    primeira venda anterior a LAUNCH_CUTOFF_DATE (2025-04-01).
+    - Se `tipo` for informado, restringe ao mesmo `tipo`.
+    - Se `tipo` for omitido, prioriza produtos maduros semanticamente aderentes à `descricao`
+      (TF-IDF > 0 quando houver >= MIN_SIMILARS SKUs), com fallback para `fornecedor`.
     """
     if mature_df.empty:
         return 0
 
-    tipo_norm = tipo.strip().casefold()
-    work = mature_df[
-        mature_df["tipo"].astype(str).str.strip().str.casefold() == tipo_norm
-    ]
-    if work.empty:
-        return 0
+    work = mature_df
+    tipo_norm = tipo.strip().casefold() if tipo and tipo.strip() else ""
+    if tipo_norm:
+        work = work[work["tipo"].astype(str).str.strip().str.casefold() == tipo_norm]
+        if work.empty:
+            return 0
 
     if "first_sale_date" in work.columns:
         first_dates = work["first_sale_date"].map(_to_date)
@@ -415,6 +448,28 @@ def compute_mature_ceiling(mature_df: pd.DataFrame, tipo: str) -> int:
 
     if work.empty:
         return 0
+
+    if not tipo_norm:
+        filtered_work = None
+        if descricao and "descricao" in work.columns and "sku" in work.columns:
+            sku_desc = work.drop_duplicates(subset=["sku"])[["sku", "descricao"]]
+            scores = _compute_tfidf_scores(descricao, sku_desc["descricao"].astype(str).tolist())
+            matched_skus = set(
+                sku_desc["sku"].iloc[idx]
+                for idx, sc in enumerate(scores)
+                if float(sc) > 0.0
+            )
+            if len(matched_skus) >= MIN_SIMILARS:
+                filtered_work = work[work["sku"].isin(matched_skus)]
+
+        if filtered_work is None and fornecedor and "fornecedor" in work.columns:
+            forn_norm = fornecedor.strip().casefold()
+            forn_work = work[work["fornecedor"].astype(str).str.strip().str.casefold() == forn_norm]
+            if not forn_work.empty:
+                filtered_work = forn_work
+
+        if filtered_work is not None and not filtered_work.empty:
+            work = filtered_work
 
     quantities = [max(0, float(q)) for q in work["net_quantity"].tolist()]
     return max(0, int(round(float(np.percentile(quantities, 75)))))

@@ -62,7 +62,6 @@ export class NewProductFormComponent {
   readonly formChanged = output<void>();
   readonly retryOptions = output<void>();
 
-  private readonly tipoSelect = viewChild<ElementRef<HTMLSelectElement>>('tipoSelect');
   private readonly fornecedorInput = viewChild<ElementRef<HTMLInputElement>>('fornecedorInput');
   private readonly descricaoInput = viewChild<ElementRef<HTMLInputElement>>('descricaoInput');
   private readonly precoInput = viewChild<ElementRef<HTMLInputElement>>('precoInput');
@@ -72,7 +71,6 @@ export class NewProductFormComponent {
   protected readonly horizonOptions = HORIZON_OPTIONS;
   protected readonly maxDescLen = MAX_DESC_LEN;
 
-  protected readonly tipo = signal<string>('');
   protected readonly fornecedorQuery = signal<string>('');
   protected readonly fornecedorDropdownOpen = signal<boolean>(false);
   protected readonly activeFornecedorIndex = signal<number>(-1);
@@ -93,7 +91,6 @@ export class NewProductFormComponent {
     horizonMonths: false,
   });
 
-  protected readonly tiposList = computed(() => this.options()?.tipos ?? []);
   protected readonly fornecedoresList = computed(() => this.options()?.fornecedores ?? []);
 
   protected readonly filteredFornecedores = computed(() => {
@@ -116,16 +113,6 @@ export class NewProductFormComponent {
   protected readonly parsedPreco = computed(() => parsePtBrNumber(this.precoRaw()));
   protected readonly parsedCusto = computed(() => parsePtBrNumber(this.custoRaw()));
   protected readonly parsedMargem = computed(() => parsePtBrNumber(this.margemRaw()));
-
-  protected readonly tipoError = computed(() => {
-    const apiErr = resolveNewProductFieldError(this.apiError(), 'tipo');
-    if (apiErr) return apiErr;
-    if (!this.shouldShowError('tipo')) return null;
-    if (!this.tipo().trim()) {
-      return 'Selecione o tipo do produto para localizar lançamentos similares.';
-    }
-    return null;
-  });
 
   protected readonly fornecedorError = computed(() => {
     const apiErr = resolveNewProductFieldError(this.apiError(), 'fornecedor');
@@ -226,13 +213,7 @@ export class NewProductFormComponent {
   });
 
   focusTipoSelect(): void {
-    this.tipoSelect()?.nativeElement.focus();
-  }
-
-  protected onTipoChange(value: string): void {
-    this.tipo.set(value);
-    this.markTouched('tipo');
-    this.formChanged.emit();
+    this.fornecedorInput()?.nativeElement.focus();
   }
 
   protected onFornecedorInput(value: string): void {
@@ -391,7 +372,7 @@ export class NewProductFormComponent {
       margemPct !== null ? Number((margemPct / MAX_MARGIN_PCT).toFixed(4)) : null;
 
     this.submitForecast.emit({
-      tipo: this.tipo().trim(),
+      tipo: null,
       fornecedor,
       descricao: this.descricao().trim(),
       precoVendaPrevisto: Number(preco.toFixed(2)),
@@ -402,7 +383,6 @@ export class NewProductFormComponent {
   }
 
   protected onReset(): void {
-    this.tipo.set('');
     this.fornecedorQuery.set('');
     this.fornecedorDropdownOpen.set(false);
     this.activeFornecedorIndex.set(-1);
@@ -435,7 +415,6 @@ export class NewProductFormComponent {
 
   private isFormValid(): boolean {
     return (
-      !this.tipoError() &&
       !this.fornecedorError() &&
       !this.descricaoError() &&
       !this.precoError() &&
@@ -445,10 +424,6 @@ export class NewProductFormComponent {
   }
 
   private focusFirstInvalidField(): void {
-    if (this.tipoError()) {
-      this.tipoSelect()?.nativeElement.focus();
-      return;
-    }
     if (this.fornecedorError()) {
       this.fornecedorInput()?.nativeElement.focus();
       return;

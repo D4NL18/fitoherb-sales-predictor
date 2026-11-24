@@ -45,9 +45,9 @@ describe('NewProductSimilarsDrawerComponent', () => {
     expect(dialog?.getAttribute('aria-modal')).toBe('true');
 
     const text = dialog?.textContent ?? '';
-    expect(text).toContain('Descrição / Texto TF-IDF (peso 40%)');
-    expect(text).toContain('Proximidade Log-Preço (peso 35%)');
-    expect(text).toContain('Mesmo Fornecedor (peso 25%)');
+    expect(text).toContain('Descrição / Texto TF-IDF (peso 50%)');
+    expect(text).toContain('Proximidade Log-Preço (peso 40%)');
+    expect(text).toContain('Mesmo Fornecedor (peso 10%)');
     expect(text).toContain('Mesmo fornecedor');
   });
 

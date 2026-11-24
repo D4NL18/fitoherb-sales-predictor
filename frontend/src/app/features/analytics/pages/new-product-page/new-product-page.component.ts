@@ -30,8 +30,8 @@ import { NewProductSimilarsDrawerComponent } from './components/new-product-simi
 const INITIAL_RESULT_STATE: ResultStateView = {
   icon: 'document',
   title: 'Simule um lançamento sem precisar de SKU',
-  text: 'Selecione o Tipo e o Fornecedor, descreva o produto e informe o preço previsto. O sistema projeta o volume conservador de compra a partir de lançamentos reais recentes.',
-  actionLabel: 'Selecionar Tipo',
+  text: 'Selecione o Fornecedor, descreva o produto e informe o preço previsto. O sistema busca lançamentos realmente similares pela descrição, faixa de preço e fornecedor.',
+  actionLabel: 'Selecionar Fornecedor',
   action: 'focus-field',
   tone: 'neutral',
 };

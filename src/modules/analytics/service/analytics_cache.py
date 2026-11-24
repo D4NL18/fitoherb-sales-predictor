@@ -516,6 +516,8 @@ _NEW_PRODUCT_OPTIONS_LOCK = threading.Lock()
 
 _NEW_PRODUCT_CANDIDATES_BY_TYPE: Dict[str, Tuple[datetime, pd.DataFrame]] = {}
 _NEW_PRODUCT_MATURE_BY_TYPE: Dict[str, Tuple[datetime, pd.DataFrame]] = {}
+_NEW_PRODUCT_ALL_CANDIDATES: Optional[Tuple[datetime, pd.DataFrame]] = None
+_NEW_PRODUCT_ALL_MATURE: Optional[Tuple[datetime, pd.DataFrame]] = None
 _NEW_PRODUCT_TYPE_LOCK = threading.Lock()
 
 
@@ -581,4 +583,79 @@ def get_mature_product_distribution(tipo: str, force_reload: bool = False) -> pd
         first_of_month = business_date(now).replace(day=1)
         df = sales_repository.fetch_mature_product_distribution(tipo=tipo.strip(), cutoff=first_of_month)
         _NEW_PRODUCT_MATURE_BY_TYPE[key] = (now, df)
+        return df
+
+
+def get_all_new_product_candidates(force_reload: bool = False) -> pd.DataFrame:
+    """Retorna todos os lançamentos reais agregados do catálogo com cache de 6h e lock."""
+    global _NEW_PRODUCT_ALL_CANDIDATES
+    cached = _NEW_PRODUCT_ALL_CANDIDATES
+    if not force_reload and cached is not None and _is_fresh(cached[0]):
+        return cached[1]
+
+    with _NEW_PRODUCT_TYPE_LOCK:
+        cached = _NEW_PRODUCT_ALL_CANDIDATES
+        if not force_reload and cached is not None and _is_fresh(cached[0]):
+            return cached[1]
+
+        now = _utc_now()
+        first_of_month = business_date(now).replace(day=1)
+        df = sales_repository.fetch_all_new_product_candidates(cutoff=first_of_month)
+        _NEW_PRODUCT_ALL_CANDIDATES = (now, df)
+        return df
+
+
+def get_all_mature_product_distribution(force_reload: bool = False) -> pd.DataFrame:
+    """
+    Constrói a distribuição mensal de produtos maduros (< 2025-04-01) em memória a partir
+    dos caches já existentes (`get_monthly_sales` + `get_catalog`), evitando self-join lento no SQL Server.
+    """
+    global _NEW_PRODUCT_ALL_MATURE
+    cached = _NEW_PRODUCT_ALL_MATURE
+    if not force_reload and cached is not None and _is_fresh(cached[0]):
+        return cached[1]
+
+    with _NEW_PRODUCT_TYPE_LOCK:
+        cached = _NEW_PRODUCT_ALL_MATURE
+        if not force_reload and cached is not None and _is_fresh(cached[0]):
+            return cached[1]
+
+        now = _utc_now()
+        monthly_df = get_monthly_sales(force_reload=force_reload)
+        catalog_snap = get_catalog()
+
+        if monthly_df.empty:
+            df = pd.DataFrame(columns=sales_repository.MATURE_PRODUCT_ALL_COLUMNS)
+            _NEW_PRODUCT_ALL_MATURE = (now, df)
+            return df
+
+        work = monthly_df[["sku", "sale_year", "sale_month", "net_quantity"]].copy()
+        work["_ym"] = work["sale_year"].astype(int) * 100 + work["sale_month"].astype(int)
+        first_ym_by_sku = work.groupby("sku")["_ym"].min()
+        mature_skus = first_ym_by_sku[first_ym_by_sku < 202504]
+
+        if mature_skus.empty:
+            df = pd.DataFrame(columns=sales_repository.MATURE_PRODUCT_ALL_COLUMNS)
+            _NEW_PRODUCT_ALL_MATURE = (now, df)
+            return df
+
+        mature_df = work[work["sku"].isin(mature_skus.index)].copy()
+        first_date_map = {
+            int(sku): date(int(ym) // 100, int(ym) % 100, 1)
+            for sku, ym in mature_skus.items()
+        }
+        entries = catalog_snap.entries
+        mature_df["tipo"] = ""
+        mature_df["fornecedor"] = mature_df["sku"].map(
+            lambda s: entries[int(s)].supplier if int(s) in entries else ""
+        )
+        mature_df["descricao"] = mature_df["sku"].map(
+            lambda s: entries[int(s)].description if int(s) in entries else ""
+        )
+        mature_df["first_sale_date"] = mature_df["sku"].map(lambda s: first_date_map[int(s)])
+        mature_df["net_quantity"] = (
+            mature_df["net_quantity"].astype(float).clip(lower=0).round().astype("int64")
+        )
+        df = mature_df[sales_repository.MATURE_PRODUCT_ALL_COLUMNS].reset_index(drop=True)
+        _NEW_PRODUCT_ALL_MATURE = (now, df)
         return df

@@ -717,6 +717,16 @@ def _get_mature_product_distribution_df(tipo: str):
     return analytics_cache.get_mature_product_distribution(tipo)
 
 
+def _get_all_new_product_candidates_df():
+    """Wrapper de cache para todos os lançamentos reais do catálogo (substituível em testes)."""
+    return analytics_cache.get_all_new_product_candidates()
+
+
+def _get_all_mature_product_distribution_df():
+    """Wrapper de cache para produtos maduros de todo o catálogo (substituível em testes)."""
+    return analytics_cache.get_all_mature_product_distribution()
+
+
 class _F1CategorySeasonalityProvider(SeasonalityProvider):
     """Adaptador desacoplado que consulta `get_seasonality_index` (F1) sobre os SKUs da categoria."""
 
@@ -793,6 +803,9 @@ def get_new_product_options() -> NewProductOptionsResponse:
         data=NewProductOptionsData(
             tipos=list(options.get("tipos", [])),
             fornecedores=list(options.get("fornecedores", [])),
+            tipos_por_fornecedor={
+                k: list(v) for k, v in dict(options.get("tipos_por_fornecedor", {})).items()
+            },
         ),
         meta=AnalyticsMeta(
             timestamp=mappers.utc_timestamp(),
@@ -844,17 +857,28 @@ def forecast_new_product(request: NewProductForecastRequest) -> NewProductForeca
     tipos_map = {t.strip().casefold(): t for t in options.get("tipos", [])}
     forn_map = {f.strip().casefold(): f for f in options.get("fornecedores", [])}
 
-    canonical_tipo = tipos_map.get(request.tipo.strip().casefold())
-    if canonical_tipo is None:
-        raise NewProductInvalidTypeError()
-
     canonical_fornecedor = forn_map.get(request.fornecedor.strip().casefold())
     if canonical_fornecedor is None:
         raise NewProductInvalidSupplierError()
 
+    raw_tipo = (request.tipo or "").strip()
+    canonical_tipo: Optional[str] = None
+    if raw_tipo:
+        canonical_tipo = tipos_map.get(raw_tipo.casefold())
+        if canonical_tipo is None:
+            raise NewProductInvalidTypeError()
+
+    # Linhas de marca ("LINHA <FORNECEDOR>") são redundantes com o fornecedor no ERP e
+    # não devem restringir a busca de similares a uma única marca (ex.: Whey Max vs Whey Integral).
+    use_strict_tipo = canonical_tipo is not None and not canonical_tipo.upper().startswith("LINHA ")
+
     try:
-        candidates_df = _get_new_product_candidates_df(canonical_tipo)
-        mature_df = _get_mature_product_distribution_df(canonical_tipo)
+        if use_strict_tipo and canonical_tipo is not None:
+            candidates_df = _get_new_product_candidates_df(canonical_tipo)
+            mature_df = _get_mature_product_distribution_df(canonical_tipo)
+        else:
+            candidates_df = _get_all_new_product_candidates_df()
+            mature_df = _get_all_mature_product_distribution_df()
     except AnalyticsDataSourceError:
         raise NewProductDatabaseUnavailableError() from None
 
@@ -863,7 +887,7 @@ def forecast_new_product(request: NewProductForecastRequest) -> NewProductForeca
 
     similars = find_similars(
         candidates_df=eligible_df,
-        tipo=canonical_tipo,
+        tipo=canonical_tipo if use_strict_tipo else None,
         fornecedor=canonical_fornecedor,
         descricao=request.descricao,
         preco_venda_previsto=request.preco_venda_previsto,
@@ -879,7 +903,7 @@ def forecast_new_product(request: NewProductForecastRequest) -> NewProductForeca
         final_qty, factor, conf, status = apply_seasonality_and_clamp(
             base_quantity=point.conservative_quantity,
             p25_quantity=point.similar_p25_quantity,
-            category=canonical_tipo,
+            category=canonical_tipo or canonical_fornecedor,
             calendar_month=cal_month,
             provider=seasonality_provider,
         )
@@ -944,11 +968,21 @@ def forecast_new_product(request: NewProductForecastRequest) -> NewProductForeca
         parecer=fin.parecer,
     )
 
-    teto_p75 = compute_mature_ceiling(mature_df, canonical_tipo)
+    teto_p75 = compute_mature_ceiling(
+        mature_df,
+        tipo=canonical_tipo if use_strict_tipo else None,
+        fornecedor=canonical_fornecedor,
+        descricao=request.descricao,
+    )
+    ceiling_scope = (
+        f"do tipo {canonical_tipo}"
+        if use_strict_tipo and canonical_tipo is not None
+        else "similares no catálogo"
+    )
     market_ceiling = NewProductMarketCeiling(
         teto_maduro_p75=teto_p75,
         descricao=(
-            f"Percentil 75 das vendas mensais de produtos maduros do tipo {canonical_tipo} "
+            f"Percentil 75 das vendas mensais de produtos maduros {ceiling_scope} "
             "(referencial de mercado pleno; não representa meta de lançamento)."
         ),
     )

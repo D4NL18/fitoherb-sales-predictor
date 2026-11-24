@@ -14,7 +14,10 @@
           <span class="drawer-kicker">Explicabilidade do Similar · SKU {{ item.sku }}</span>
           <h3 id="drawer-similar-title" class="drawer-title">{{ item.descricao }}</h3>
           <p id="drawer-similar-subtitle" class="drawer-subtitle">
-            {{ inputSummary()?.tipo }} · {{ item.fornecedor }} · 1ª venda em {{ item.primeiraVenda | ptDate }}
+            @if (inputSummary()?.tipo; as tipoFiltro) {
+              {{ tipoFiltro }} ·
+            }
+            {{ item.fornecedor }} · 1ª venda em {{ item.primeiraVenda | ptDate }}
           </p>
         </div>
 
@@ -71,7 +74,7 @@
           <div class="score-breakdown">
             <div class="score-row">
               <div class="score-row-label">
-                <span>Descrição / Texto TF-IDF (peso 40%)</span>
+                <span>Descrição / Texto TF-IDF (peso 50%)</span>
                 <strong class="mono-val">{{ item.scoreTfidf | ptPercent: 1 }}</strong>
               </div>
               <div class="score-track" aria-hidden="true">
@@ -81,7 +84,7 @@
 
             <div class="score-row">
               <div class="score-row-label">
-                <span>Proximidade Log-Preço (peso 35%)</span>
+                <span>Proximidade Log-Preço (peso 40%)</span>
                 <strong class="mono-val">{{ item.scorePreco | ptPercent: 1 }}</strong>
               </div>
               <div class="score-track" aria-hidden="true">
@@ -91,7 +94,7 @@
 
             <div class="score-row">
               <div class="score-row-label">
-                <span>Mesmo Fornecedor (peso 25%)</span>
+                <span>Mesmo Fornecedor (peso 10%)</span>
                 <strong class="mono-val">{{ item.scoreFornecedor | ptPercent: 0 }}</strong>
               </div>
               <div class="score-track" aria-hidden="true">
@@ -100,7 +103,7 @@
             </div>
 
             <div class="score-total-box">
-              <span>Score Composto Final (0,25×F + 0,35×P + 0,40×T)</span>
+              <span>Score Composto Final (0,10×F + 0,40×P + 0,50×T)</span>
               <strong class="mono-val">{{ item.scoreFinal | ptPercent: 1 }}</strong>
             </div>
           </div>
