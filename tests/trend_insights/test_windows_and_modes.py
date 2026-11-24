@@ -81,7 +81,7 @@ def test_delta_over_adjusted_base_reproduces_trend_variation(mode, window, base,
     pre = Fraction(cell.anterior_bruto_escalado, VALUE_SCALE)
     base_adjusted = pre * spec.scale_k
     observed = (cur - base_adjusted) / base_adjusted * 100
-    assert abs(float(observed) - cell.variacao_pct) <= 0.05
+    assert abs(float(observed) - cell.variacao_pct) <= 0.05 + 1e-9
 
 
 @pytest.mark.parametrize(

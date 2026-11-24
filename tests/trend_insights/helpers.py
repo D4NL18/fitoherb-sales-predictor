@@ -82,7 +82,10 @@ class FakeObjectStore:
             raise mod("domain.ports").ObjectStoreUnavailable()
         if self.conflicts_to_inject > 0:
             self.conflicts_to_inject -= 1
-            self.generations[path] = self.generations.get(path, 0) + 1  # alguem escreveu antes
+            # Alguem escreveu antes: o objeto passa a existir (se ainda nao existia) com a nova geracao, para que o
+            # escritor consiga ler a geracao atual e repetir (no GCS real o objeto criado pelo concorrente existe).
+            self.objects.setdefault(path, {})
+            self.generations[path] = self.generations.get(path, 0) + 1
             raise mod("domain.ports").ObjectConflict()
         if self.generations.get(path, 0) != if_generation_match:
             raise mod("domain.ports").ObjectConflict()
@@ -277,6 +280,8 @@ def make_rig(*, llm: Optional[FakeLlm] = None, settings_env: Optional[dict] = No
     rig.llm = llm or FakeLlm(clock=rig.clock, seconds_per_call=seconds_per_call)
     if llm is not None and llm.clock is None:
         llm.clock = rig.clock
+    if llm is not None and seconds_per_call:
+        llm.seconds_per_call = seconds_per_call
     rig.ledger = mod("store.budget_ledger").BudgetLedger(store=rig.objects, settings=rig.settings, clock=rig.clock)
     rig.insight_store = mod("store.insight_store").InsightStore(store=rig.objects, clock=rig.clock)
     rig.guard = mod("service.generation_guard").GenerationGuard(settings=rig.settings, clock=rig.clock)

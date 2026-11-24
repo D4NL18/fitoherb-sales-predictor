@@ -222,7 +222,7 @@ def test_app_registers_routes_and_requires_basic_auth_in_production(monkeypatch)
     monkeypatch.setenv("AUTH_USERNAME", "u")
     monkeypatch.setenv("AUTH_PASSWORD", "p")
     from src.api import app
-    paths = {getattr(r, "path", "") for r in app.routes}
+    paths = set(app.openapi()["paths"])  # FastAPI >= 0.141 inclui routers de forma preguicosa: `app.routes` nao os expoe
     assert "/api/v1/sales-trend/insights/product/{sku}" in paths
     assert "/api/v1/sales-trend/insights/product/{sku}/generate" in paths
     assert "/api/v1/sales-trend/insights/health" in paths
