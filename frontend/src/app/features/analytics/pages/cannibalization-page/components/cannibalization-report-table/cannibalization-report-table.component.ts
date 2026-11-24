@@ -183,7 +183,7 @@ export class CannibalizationReportTableComponent {
     return MECHANISM_VISUAL_META[mechanism];
   }
 
-  protected onRowClick(victim: CannibalizationVictimSummary, event: MouseEvent): void {
+  protected onRowClick(victim: CannibalizationVictimSummary, event: Event): void {
     const target = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
     this.selectVictim.emit({ victim, triggerEl: target });
   }
