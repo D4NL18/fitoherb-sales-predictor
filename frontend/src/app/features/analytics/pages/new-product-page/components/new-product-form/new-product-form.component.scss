@@ -1,0 +1,354 @@
+@use '../../../../styles/analytics-ui' as ui;
+
+.form-panel {
+  @include ui.panel;
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.form-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.form-heading {
+  font-family: var(--font-family-headline);
+  font-size: 1.08rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.form-subtitle {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.np-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+
+.label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.field-label {
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.required-mark {
+  color: var(--feedback-critical-bg);
+}
+
+.optional-tag {
+  font-weight: 400;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.char-counter {
+  font-family: var(--font-family-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.76rem;
+  color: var(--text-secondary);
+}
+
+.field-skeleton {
+  width: 100%;
+  height: ui.$touch-target;
+}
+
+.field-control {
+  width: 100%;
+  min-height: ui.$touch-target;
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-family-body);
+  font-size: 0.92rem;
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xs);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+
+  @include ui.hover {
+    &:hover:not(:disabled) {
+      border-color: var(--border-strong);
+    }
+  }
+
+  &:focus-visible {
+    outline: none;
+    border-color: var(--border-focus);
+    box-shadow: 0 0 0 2px var(--brand-primary-subtle);
+  }
+
+  &:disabled {
+    background: var(--bg-subtle);
+    cursor: not-allowed;
+  }
+
+  &.field-invalid {
+    border-width: 1.5px;
+    border-color: var(--feedback-critical-bg);
+  }
+}
+
+.combobox-wrapper {
+  position: relative;
+}
+
+.combobox-input {
+  padding-right: 44px;
+}
+
+.combobox-clear {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: ui.$touch-target;
+  height: ui.$touch-target;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  color: var(--text-secondary);
+  font-size: 1.15rem;
+  cursor: pointer;
+
+  @include ui.hover {
+    &:hover {
+      color: var(--text-primary);
+    }
+  }
+}
+
+.combobox-listbox {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  max-height: 220px;
+  overflow-y: auto;
+  list-style: none;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xs);
+  box-shadow: var(--shadow-md);
+}
+
+.combobox-option {
+  min-height: ui.$touch-target;
+  padding: var(--space-2) var(--space-3);
+  display: flex;
+  align-items: center;
+  font-size: 0.88rem;
+  color: var(--text-primary);
+  cursor: pointer;
+
+  @include ui.hover {
+    &:hover {
+      background: var(--bg-table-row-hover);
+    }
+  }
+
+  &.is-active {
+    background: var(--brand-primary-subtle);
+  }
+
+  &.is-selected {
+    font-weight: 600;
+    color: var(--brand-primary);
+  }
+}
+
+.combobox-empty {
+  padding: var(--space-3);
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.affix-group {
+  display: flex;
+  align-items: stretch;
+  min-height: ui.$touch-target;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xs);
+  overflow: hidden;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+
+  &:focus-within {
+    border-color: var(--border-focus);
+    box-shadow: 0 0 0 2px var(--brand-primary-subtle);
+  }
+
+  &.field-invalid {
+    border-width: 1.5px;
+    border-color: var(--feedback-critical-bg);
+  }
+}
+
+.affix-prefix,
+.affix-suffix {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--space-3);
+  font-family: var(--font-family-mono);
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-subtle);
+  user-select: none;
+}
+
+.affix-prefix {
+  border-right: 1px solid var(--border-default);
+}
+
+.affix-suffix {
+  border-left: 1px solid var(--border-default);
+}
+
+.affix-input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  padding: var(--space-2) var(--space-3);
+  font-size: 0.92rem;
+  color: var(--text-primary);
+  background: transparent;
+
+  &:focus {
+    outline: none;
+  }
+}
+
+.mono-input {
+  font-family: var(--font-family-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.field-hint {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+.field-error {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--feedback-critical-bg);
+  line-height: 1.35;
+}
+
+.field-notice {
+  padding: var(--space-2) var(--space-3);
+  font-size: 0.8rem;
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-left-width: 3px;
+  border-radius: var(--radius-xs);
+
+  &.notice-warning {
+    border-left-color: var(--feedback-warning-bg);
+  }
+
+  &.notice-info {
+    border-left-color: var(--feedback-info-bg);
+  }
+}
+
+.horizon-fieldset {
+  &:disabled {
+    opacity: 0.6;
+  }
+}
+
+.horizon-group {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+.horizon-option {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: ui.$touch-target;
+  padding: var(--space-2);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+
+  @include ui.hover {
+    &:hover:not(.is-selected) {
+      background: var(--bg-subtle);
+    }
+  }
+
+  &:has(.horizon-radio:focus-visible) {
+    outline: 2px solid var(--border-focus);
+    outline-offset: 2px;
+  }
+
+  &.is-selected {
+    background: var(--brand-primary);
+    border-color: var(--brand-primary);
+    color: var(--text-on-brand);
+  }
+}
+
+.horizon-radio {
+  @include ui.sr-only;
+}
+
+.form-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.btn-submit {
+  @extend %button-primary;
+  width: 100%;
+  min-height: 44px;
+}
+
+.btn-reset {
+  @extend %button-secondary;
+  width: 100%;
+  min-height: 44px;
+}
+
+.btn-spinner {
+  @include ui.spinner;
+}

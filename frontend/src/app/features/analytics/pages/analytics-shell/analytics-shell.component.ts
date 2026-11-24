@@ -36,6 +36,11 @@ export const ANALYTICS_SECTIONS: readonly AnalyticsSection[] = [
     description: 'Sensibilidade de preço por produto com simulador de reajustes',
   },
   {
+    label: 'Produto Novo',
+    path: '/analytics/produto-novo',
+    description: 'Viabilidade conservadora e demanda inicial para produtos sem SKU',
+  },
+  {
     label: 'Canibalização',
     path: '/analytics/canibalizacao',
     description: 'Impacto de promoções, preços e lançamentos na canibalização e substituição',

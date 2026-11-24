@@ -48,6 +48,11 @@ ERROR_STATUS_BY_CODE: Dict[str, int] = {
     "ELA-002": 404,
     "ELA-003": 422,
     "ELA-004": 400,
+    "NEW-001": 422,
+    "NEW-002": 400,
+    "NEW-003": 400,
+    "NEW-004": 400,
+    "NEW-005": 503,
     "CAN-001": 404,
     "CAN-002": 422,
     "CAN-003": 422,
@@ -70,7 +75,13 @@ def _handle_domain_error(request: Request, exc: AnalyticsDomainException) -> JSO
 
 
 def _handle_infrastructure_error(request: Request, exc: AnalyticsInfrastructureException) -> JSONResponse:
-    """ANL-001 -> 503, ANL-002 -> 429, sem detalhe do driver (LGPD-05)."""
+    """ANL-001 -> 503 (ou NEW-005 em /new-product), ANL-002 -> 429, sem detalhe do driver (LGPD-05)."""
+    if "/new-product" in request.url.path and exc.code == "ANL-001":
+        return _error_response(
+            "NEW-005",
+            "Serviço de análise de produtos temporariamente indisponível. Tente novamente em instantes.",
+            (),
+        )
     return _error_response(exc.code, exc.message, ())
 
 
@@ -91,6 +102,8 @@ async def _handle_validation_error(request: Request, exc: RequestValidationError
     if "/elasticity" in request.url.path:
         msg = f"Parâmetros inválidos: {', '.join(fields)}." if fields else "Parâmetros inválidos."
         return _error_response("ELA-004", msg, fields)
+    if "/new-product" in request.url.path:
+        return _error_response("NEW-004", "Parâmetros comerciais inconsistentes.", fields)
     if "/cannibalization" in request.url.path or "/substitution" in request.url.path:
         error = CannibalizationInvalidParametersError(fields=fields)
         return _error_response(error.code, error.message, error.fields)

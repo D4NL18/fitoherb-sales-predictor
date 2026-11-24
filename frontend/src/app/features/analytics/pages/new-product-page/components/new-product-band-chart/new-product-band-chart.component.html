@@ -1,0 +1,77 @@
+<div class="band-chart-card">
+  <div class="chart-legend" aria-hidden="true">
+    <span class="legend-item">
+      <span class="legend-symbol symbol-p10">▽</span>
+      <span>Piso P10 (tracejado)</span>
+    </span>
+    <span class="legend-item legend-primary">
+      <span class="legend-symbol symbol-cons">●</span>
+      <span>Conservador (oficial)</span>
+    </span>
+    <span class="legend-item">
+      <span class="legend-symbol symbol-p50">□</span>
+      <span>Mediana P50 (pontilhado)</span>
+    </span>
+  </div>
+
+  <svg
+    class="band-svg"
+    [attr.viewBox]="viewBox"
+    role="img"
+    [attr.aria-label]="ariaSummary()"
+    preserveAspectRatio="xMidYMid meet"
+  >
+    <!-- Linhas de grade horizontais -->
+    @for (tick of yTicks(); track tick.label) {
+      <line
+        class="grid-line"
+        [attr.x1]="padLeft"
+        [attr.y1]="tick.y"
+        [attr.x2]="plotRight"
+        [attr.y2]="tick.y"
+      />
+      <text class="axis-label axis-y" [attr.x]="padLeft - 8" [attr.y]="tick.y + 4" text-anchor="end">
+        {{ tick.label }}
+      </text>
+    }
+
+    <!-- Área sombreada entre P10 e P50 -->
+    @if (bandPolygonPoints(); as poly) {
+      <polygon class="band-area" [attr.points]="poly" />
+    }
+
+    <!-- Linhas das séries -->
+    @if (points().length > 1) {
+      <polyline class="series-line line-p10" [attr.points]="p10Polyline()" />
+      <polyline class="series-line line-p50" [attr.points]="p50Polyline()" />
+      <polyline class="series-line line-cons" [attr.points]="consPolyline()" />
+    }
+
+    <!-- Marcadores e rótulos por mês -->
+    @for (pt of points(); track pt.label) {
+      <line class="guide-x" [attr.x1]="pt.x" y1="26" [attr.x2]="pt.x" [attr.y2]="plotBottom" />
+
+      <!-- P10: triângulo invertido -->
+      <polygon class="marker-p10" [attr.points]="pt.trianglePoints" />
+
+      <!-- P50: quadrado vazado -->
+      <rect
+        class="marker-p50"
+        [attr.x]="pt.x - 4.5"
+        [attr.y]="pt.p50Y - 4.5"
+        width="9"
+        height="9"
+      />
+
+      <!-- Conservador: círculo sólido + valor -->
+      <circle class="marker-cons" [attr.cx]="pt.x" [attr.cy]="pt.consY" r="5" />
+      <text class="point-value" [attr.x]="pt.x" [attr.y]="pt.consY - 10" text-anchor="middle">
+        {{ formatQty(pt.conservative) }}
+      </text>
+
+      <text class="axis-label axis-x" [attr.x]="pt.x" [attr.y]="plotBottom + 20" text-anchor="middle">
+        {{ pt.label }}
+      </text>
+    }
+  </svg>
+</div>

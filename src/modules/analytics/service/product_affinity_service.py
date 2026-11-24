@@ -25,15 +25,22 @@ from src.modules.analytics.domain.product_affinity import (
     DEFAULT_TOP_K_AFFINITIES,
     MIN_STORED_AFFINITY_SCORE,
     _collect_all_supplier_tokens,
+    _pair_compatibility_multiplier,
+    _split_doc_channels,
+    _vectorize_documents,
     build_affinity_document,
     build_sku_compatibility_profile,
     compute_affinity_matrix,
     compute_content_hash,
     compute_incremental_diff,
+    compute_pair_affinity_score,
     detect_primary_function,
     find_similar_products_for_new_item,
     match_catalog_with_gallery,
 )
+from scipy.sparse import hstack
+from sklearn.preprocessing import normalize
+import numpy as np
 from src.modules.analytics.repository import gallery_client, sales_repository
 
 logger = logging.getLogger(__name__)
@@ -43,6 +50,7 @@ DEFAULT_INDEX_PATH: Path = _REPO_ROOT / "data" / "cache" / "product_affinity_ind
 
 _AFFINITY_LOCK = threading.Lock()
 _LOADED_INDEX: Optional[Dict[str, Any]] = None
+_QUERY_VECTOR_CACHE: Optional[Dict[str, Any]] = None
 
 
 def _utc_now_iso() -> str:
@@ -81,9 +89,49 @@ def _save_index_atomic(payload: Dict[str, Any], index_path: Path = DEFAULT_INDEX
 
 def reset_product_affinity_memory_cache() -> None:
     """Limpa o cache em memória (apoio a testes)."""
-    global _LOADED_INDEX
+    global _LOADED_INDEX, _QUERY_VECTOR_CACHE
     with _AFFINITY_LOCK:
         _LOADED_INDEX = None
+        _QUERY_VECTOR_CACHE = None
+
+
+def _get_or_build_query_vector_cache(index: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """
+    Cacheia em memória a matriz TF-IDF vetorizada e os tokens de fornecedor do índice carregado,
+    evitando refazer `fit_transform` em ~2.000 produtos a cada simulação de Produto Novo (< 30ms/req).
+    """
+    global _QUERY_VECTOR_CACHE
+    index_key = (id(index), str((index.get("meta") or {}).get("last_sync_at") or ""), len(index.get("skus") or {}))
+    cached = _QUERY_VECTOR_CACHE
+    if cached is not None and cached.get("key") == index_key:
+        return cached
+
+    skus_meta = index.get("skus") or {}
+    valid_items = [
+        (str(sku), str(meta.get("doc") or ""))
+        for sku, meta in sorted(skus_meta.items())
+        if isinstance(meta, dict) and str(meta.get("doc") or "").strip()
+    ]
+    if not valid_items:
+        return None
+
+    skus = [sku for sku, _ in valid_items]
+    docs = [doc for _, doc in valid_items]
+    matrix, vectorizers = _vectorize_documents(docs)
+    core_vec = vectorizers[0]
+    doc_cores, _ = _split_doc_channels(docs)
+    core_matrix = normalize(core_vec.transform(doc_cores), norm="l2", axis=1)
+    supplier_tokens = _collect_all_supplier_tokens(skus_meta)
+    built = {
+        "key": index_key,
+        "skus": skus,
+        "matrix": matrix,
+        "core_matrix": core_matrix,
+        "vectorizers": vectorizers,
+        "supplier_tokens": supplier_tokens,
+    }
+    _QUERY_VECTOR_CACHE = built
+    return built
 
 
 def get_loaded_affinity_index(index_path: Path = DEFAULT_INDEX_PATH) -> Optional[Dict[str, Any]]:
@@ -191,7 +239,13 @@ def sync_product_affinity_index(
         }
         diff = compute_incremental_diff(previous_hashes, current_hashes)
 
-        recomputed = bool(force or previous_index is None or diff.has_changes)
+        prev_provider = str(((previous_index or {}).get("meta") or {}).get("provider") or "")
+        recomputed = bool(
+            force
+            or previous_index is None
+            or diff.has_changes
+            or prev_provider != "tfidf_word_char_flavor_size_v2"
+        )
         now_iso = _utc_now_iso()
 
         if recomputed:
@@ -233,7 +287,7 @@ def sync_product_affinity_index(
             new_index: Dict[str, Any] = {
                 "meta": {
                     "last_sync_at": now_iso,
-                    "provider": "tfidf_word_char_cosine_v1",
+                    "provider": "tfidf_word_char_flavor_size_v2",
                     "total_active_skus": len(merged_skus),
                     "gallery_products_fetched": len(gallery_items),
                     "gallery_matched_skus": sum(1 for m in merged_skus.values() if m.get("gallery_matched")),
@@ -341,36 +395,110 @@ def find_similar_for_new_product(
     category: str = "",
     top_k: int = 10,
     index_path: Path = DEFAULT_INDEX_PATH,
+    auto_sync: bool = False,
+    min_score: float = MIN_STORED_AFFINITY_SCORE,
 ) -> List[Dict[str, Any]]:
     """
-    API de serviço compartilhada para a worktree de Produto Novo (cold start):
-    retorna os `top_k` produtos ativos mais afins a um produto candidato novo.
+    API de serviço compartilhada para Produto Novo (cold start):
+    retorna os `top_k` produtos ativos mais afins a um produto candidato novo,
+    aplicando as mesmas travas estruturais de compatibilidade (`build_sku_compatibility_profile`
+    + `_pair_compatibility_multiplier`) usadas na matriz de canibalização.
     """
     index = get_loaded_affinity_index(index_path)
+    if index is None and auto_sync:
+        try:
+            sync_product_affinity_index(index_path=index_path)
+            index = get_loaded_affinity_index(index_path)
+        except Exception as exc:
+            logger.warning(
+                "Fallback gracioso no cold start: falha ao sincronizar índice de afinidade (%s).",
+                type(exc).__name__,
+            )
+            return []
     if index is None:
         return []
+
     skus_meta = index.get("skus") or {}
-    indexed_docs = {sku: str(meta.get("doc") or "") for sku, meta in skus_meta.items()}
-    supplier_tokens = _collect_all_supplier_tokens(skus_meta)
-    matches = find_similar_products_for_new_item(
+    vec_cache = _get_or_build_query_vector_cache(index)
+    if vec_cache is None:
+        return []
+
+    supplier_tokens = vec_cache["supplier_tokens"]
+    query_doc = build_affinity_document(
         name=name,
-        description=description,
-        category=category,
-        indexed_documents=indexed_docs,
+        gallery_name=name,
+        gallery_description=description,
+        gallery_category=category,
         supplier_tokens=supplier_tokens,
-        top_k=top_k,
     )
+    if not query_doc:
+        return []
+
+    core_vec, desc_word_vec, desc_char_vec = vec_cache["vectorizers"]
+    q_cores, q_riches = _split_doc_channels([query_doc])
+    q_core = normalize(core_vec.transform(q_cores), norm="l2", axis=1)
+    q_word = normalize(desc_word_vec.transform(q_riches), norm="l2", axis=1)
+    q_char = normalize(desc_char_vec.transform(q_riches), norm="l2", axis=1)
+    q_vec = normalize(hstack([q_core * 0.80, q_word * 0.15, q_char * 0.05]).tocsr(), norm="l2", axis=1)
+
+    # Usa max(core_cosine, full_cosine) no cold start para não penalizar produtos
+    # que possuem descrição rica da galeria do site frente a produtos sem descrição.
+    full_scores = (vec_cache["matrix"] @ q_vec.T).toarray().ravel()
+    core_scores = (vec_cache["core_matrix"] @ q_core.T).toarray().ravel()
+    scores = np.maximum(full_scores, core_scores)
+    # Avalia todos os candidatos acima de `min_score` (até 400) antes de aplicar sabor/tamanho/apresentação,
+    # evitando que empates de core (ex.: 150+ Wheys) cortem fornecedores com SKU numericamente maior.
+    above_idx = np.flatnonzero(scores >= min_score)
+    if len(above_idx) > max(int(top_k) * 5, 400):
+        limit = max(int(top_k) * 5, 400)
+        part = np.argpartition(scores[above_idx], -limit)[-limit:]
+        order = above_idx[part[np.argsort(-scores[above_idx[part]])]]
+    else:
+        order = above_idx[np.argsort(-scores[above_idx])]
+
+    skus = vec_cache["skus"]
+    raw_matches = [
+        {"sku": skus[int(idx)], "score": round(float(scores[int(idx)]), 4)}
+        for idx in order
+    ]
+    if not raw_matches:
+        return []
+
+    candidate_fn = detect_primary_function(name, description)
+    candidate_profile = build_sku_compatibility_profile(
+        description=name,
+        primary_function=candidate_fn,
+        supplier_tokens=supplier_tokens,
+    )
+
     enriched: List[Dict[str, Any]] = []
-    for m in matches:
-        meta = skus_meta.get(m["sku"]) or {}
+    for m in raw_matches:
+        sku_str = str(m["sku"])
+        meta = skus_meta.get(sku_str) or {}
+        cand_desc = str(meta.get("description") or "")
+        cand_fn = str(meta.get("primary_function") or "") or detect_primary_function(cand_desc)
+        cand_profile = build_sku_compatibility_profile(
+            description=cand_desc,
+            primary_function=cand_fn,
+            supplier_tokens=supplier_tokens,
+        )
+        adjusted_score = compute_pair_affinity_score(
+            base_semantic_score=float(m["score"]),
+            prof_a=candidate_profile,
+            prof_b=cand_profile,
+        )
+        if adjusted_score < min_score:
+            continue
         enriched.append(
             {
-                "sku": m["sku"],
-                "description": meta.get("description", ""),
-                "supplier": meta.get("supplier", ""),
-                "category": meta.get("category", ""),
+                "sku": sku_str,
+                "description": cand_desc,
+                "supplier": str(meta.get("supplier") or ""),
+                "category": str(meta.get("category") or ""),
                 "currentPrice": float(meta.get("current_price") or 0.0),
-                "affinityScore": float(m["score"]),
+                "affinityScore": adjusted_score,
             }
         )
-    return enriched
+
+    enriched.sort(key=lambda item: (-float(item["affinityScore"]), str(item["sku"])))
+    return enriched[: max(1, int(top_k))]

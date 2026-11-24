@@ -7,7 +7,7 @@ allowlist de LGPD-03: nenhum dado de cliente além do que o contrato permite (ne
 """
 from __future__ import annotations
 
-from typing import List, Literal, Optional, Union
+from typing import Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
@@ -677,6 +677,182 @@ class ElasticitySimulationResponse(CamelModel):
     meta: ResponseMeta = Field(description="Metadados da requisição.")
 
 
+# ------------------------------------------------------------------ Viabilidade de Produto Novo (F2 / P-139..P-149)
+
+NewProductSeasonalityConfidenceLiteral = Literal["ALTA", "MEDIA", "BAIXA", "INSUFICIENTE", "PADRAO"]
+NewProductSeasonalityStatusLiteral = Literal["APPLIED", "FALLBACK_NEUTRAL", "UNAVAILABLE"]
+
+
+class NewProductOptionsData(CamelModel):
+    """Opções deduplicadas e ordenadas de fornecedores e linhas/tipos ativos (P-141)."""
+
+    tipos: List[str] = Field(description="Lista ordenada de linhas/tipos de produto ativos.")
+    fornecedores: List[str] = Field(description="Lista ordenada de fornecedores ativos.")
+    tipos_por_fornecedor: Dict[str, List[str]] = Field(
+        default_factory=dict,
+        description="Mapeamento de fornecedor ativo para suas linhas/tipos ativos.",
+    )
+
+
+class NewProductOptionsResponse(CamelModel):
+    """Envelope 200 OK para GET /analytics/new-product/options."""
+
+    data: NewProductOptionsData = Field(description="Opções do catálogo ativo.")
+    meta: AnalyticsMeta = Field(description="Metadados da requisição.")
+
+
+class NewProductForecastRequest(CamelModel):
+    """Corpo de requisição para POST /analytics/new-product/forecast (P-140)."""
+
+    tipo: Optional[str] = Field(
+        default=None,
+        description="Linha/categoria opcional do produto no catálogo ativo (quando omitida, busca similares em todo o catálogo priorizando descrição, preço e fornecedor).",
+    )
+    fornecedor: str = Field(min_length=1, description="Fornecedor pretendido no catálogo ativo.")
+    descricao: str = Field(min_length=3, max_length=120, description="Descrição comercial do produto hipotético.")
+    preco_venda_previsto: float = Field(description="Preço de venda previsto (R$).")
+    custo_unitario: Optional[float] = Field(default=None, description="Custo unitário opcional (R$).")
+    margem_minima_desejada: Optional[float] = Field(default=None, description="Margem mínima desejada [0.0..1.0].")
+    horizon_months: int = Field(default=3, ge=1, le=3, description="Horizonte de projeção em meses (1 a 3).")
+
+
+class MonthlyForecastItem(CamelModel):
+    """Projeção mensal conservadora e faixas dos similares (P-145, P-146, P-147)."""
+
+    month: int = Field(description="Mês relativo do lançamento (1, 2 ou 3).")
+    calendar_month: int = Field(description="Mês civil correspondente (1..12).")
+    quantity: int = Field(description="Quantidade final prevista após modulação sazonal e trava P25.")
+    revenue: float = Field(description="Receita mensal projetada (R$).")
+    gross_margin: Optional[float] = Field(default=None, description="Margem bruta mensal projetada (R$).")
+    p10_quantity: int = Field(description="Percentil 10 dos similares no mês.")
+    conservative_quantity: int = Field(description="Quantidade conservadora prevista.")
+    p50_quantity: int = Field(description="Mediana (P50) dos similares no mês.")
+    similar_p25_quantity: int = Field(description="Percentil 25 (P25) dos similares no mês.")
+    seasonality_factor: float = Field(description="Fator sazonal amortecido aplicado [0.90, 1.10].")
+    seasonality_confidence: NewProductSeasonalityConfidenceLiteral = Field(
+        description="Nível de confiança do índice sazonal."
+    )
+
+
+class NewProductAggregatedTotals(CamelModel):
+    """Totais e médias agregadas do horizonte projetado."""
+
+    total_quantity: int = Field(description="Quantidade total projetada no horizonte.")
+    total_revenue: float = Field(description="Receita total projetada no horizonte (R$).")
+    total_gross_margin: Optional[float] = Field(default=None, description="Margem bruta total (R$).")
+    average_monthly_quantity: int = Field(description="Média mensal de unidades.")
+    average_monthly_revenue: float = Field(description="Receita média mensal (R$).")
+
+
+class NewProductFinancialViability(CamelModel):
+    """Indicadores financeiros e parecer de viabilidade (P-148)."""
+
+    preco_venda: float = Field(description="Preço de venda previsto (R$).")
+    custo_unitario: Optional[float] = Field(default=None, description="Custo unitário informado (R$).")
+    margem_bruta_unitaria: Optional[float] = Field(default=None, description="Margem bruta unitária (R$).")
+    margem_bruta_percentual: Optional[float] = Field(default=None, description="Margem bruta percentual [0..1].")
+    margem_minima_desejada: Optional[float] = Field(default=None, description="Margem mínima desejada [0..1].")
+    viavel: Optional[bool] = Field(default=None, description="Parecer booleano de viabilidade.")
+    parecer: Optional[str] = Field(default=None, description="Parecer textual de viabilidade.")
+
+
+class NewProductMarketCeiling(CamelModel):
+    """Referencial de mercado maduro do tipo (P-147)."""
+
+    teto_maduro_p75: int = Field(description="Percentil 75 das vendas mensais de produtos maduros do tipo.")
+    descricao: str = Field(description="Aviso conceitual de que é referencial maduro, não meta de lançamento.")
+
+
+class SimilarProductItem(CamelModel):
+    """Produto histórico similar utilizado na composição da curva (P-142, P-143)."""
+
+    sku: str = Field(description="Código SKU do produto similar.")
+    descricao: str = Field(description="Descrição do produto similar.")
+    fornecedor: str = Field(description="Fornecedor do produto similar.")
+    primeira_venda: str = Field(description="Data da primeira venda (AAAA-MM-DD).")
+    preco_historico: float = Field(description="Preço de venda histórico (R$).")
+    score_final: float = Field(description="Score composto de similaridade [0..1].")
+    score_fornecedor: float = Field(description="Score parcial de fornecedor [0..1].")
+    score_preco: float = Field(description="Score parcial de proximidade log-preço [0..1].")
+    score_tfidf: float = Field(description="Score parcial de afinidade semântica [0..1].")
+    affinity_score: float = Field(
+        default=0.0,
+        description="Score de afinidade semântica do motor compartilhado [0..1].",
+    )
+    quantidades_primeiros_meses: List[int] = Field(description="Quantidades líquidas nos primeiros 3 meses.")
+
+
+NewProductPricePositionLiteral = Literal["ABAIXO", "NA_FAIXA", "ACIMA"]
+NewProductCannibalizationRiskLevelLiteral = Literal["ALTO", "MODERADO", "BAIXO"]
+
+
+class NewProductReferencePriceRange(CamelModel):
+    """Faixa de preço de referência dos produtos afins ativos ponderada por afinidade."""
+
+    min_price: float = Field(description="Menor preço entre os produtos afins (R$).")
+    weighted_avg_price: float = Field(description="Preço médio ponderado pela afinidade semântica (R$).")
+    median_price: float = Field(description="Preço mediano dos produtos afins (R$).")
+    max_price: float = Field(description="Maior preço entre os produtos afins (R$).")
+    price_position: NewProductPricePositionLiteral = Field(
+        description="Posicionamento do preço previsto frente à faixa de referência."
+    )
+    sample_size: int = Field(description="Quantidade de produtos afins com preço válido.")
+
+
+class NewProductCannibalizationRiskProduct(CamelModel):
+    """Produto existente do portfólio exposto a risco de canibalização pelo novo lançamento."""
+
+    sku: str = Field(description="Código SKU do produto existente.")
+    descricao: str = Field(description="Descrição do produto existente.")
+    fornecedor: str = Field(description="Fornecedor do produto existente.")
+    preco_atual: float = Field(description="Preço atual de venda (R$).")
+    affinity_score: float = Field(description="Afinidade semântica com o lançamento [0..1].")
+    same_supplier: bool = Field(description="Indica se pertence ao mesmo fornecedor do lançamento.")
+
+
+class NewProductCannibalizationRisk(CamelModel):
+    """Avaliação preventiva de risco de canibalização sobre o portfólio ativo."""
+
+    risk_level: NewProductCannibalizationRiskLevelLiteral = Field(description="Nível de risco: ALTO, MODERADO ou BAIXO.")
+    affected_sku_count: int = Field(description="Total de produtos ativos com afinidade >= 50%.")
+    same_supplier_affected_count: int = Field(description="Produtos sobrepostos do mesmo fornecedor.")
+    cross_supplier_affected_count: int = Field(description="Produtos sobrepostos de outros fornecedores.")
+    estimated_overlap_pct: float = Field(description="Índice estimado de sobreposição semântica (%).")
+    summary: str = Field(description="Resumo executivo do risco de canibalização.")
+    top_at_risk_products: List[NewProductCannibalizationRiskProduct] = Field(
+        default_factory=list,
+        description="Principais produtos existentes expostos à migração de demanda.",
+    )
+
+
+class NewProductForecastData(CamelModel):
+    """Payload principal da simulação de viabilidade de produto novo."""
+
+    input_summary: NewProductForecastRequest = Field(description="Resumo dos parâmetros informados.")
+    monthly_forecast: List[MonthlyForecastItem] = Field(description="Projeção mensal no horizonte.")
+    seasonality_status: NewProductSeasonalityStatusLiteral = Field(
+        description="Status de integração com o índice sazonal F1."
+    )
+    aggregated_totals: NewProductAggregatedTotals = Field(description="Totais agregados no horizonte.")
+    financial_viability: NewProductFinancialViability = Field(description="Análise financeira de margem.")
+    market_ceiling: NewProductMarketCeiling = Field(description="Teto maduro de referência (P75).")
+    reference_price_range: Optional[NewProductReferencePriceRange] = Field(
+        default=None,
+        description="Faixa de preço de referência dos produtos afins ativos.",
+    )
+    cannibalization_risk: Optional[NewProductCannibalizationRisk] = Field(
+        default=None,
+        description="Avaliação preventiva de risco de canibalização sobre o portfólio ativo.",
+    )
+    similars_used: List[SimilarProductItem] = Field(description="TOP-10 similares utilizados.")
+    methodology_notice: str = Field(description="Aviso metodológico conservador.")
+
+
+class NewProductForecastResponse(CamelModel):
+    """Envelope 200 OK para POST /analytics/new-product/forecast."""
+
+    data: NewProductForecastData = Field(description="Resultado da simulação de viabilidade.")
+    meta: AnalyticsMeta = Field(description="Metadados da requisição com dataReferencia.")
 # ------------------------------------------------------------------ Canibalização e Substituição (F6 / P-128..P-138)
 
 
