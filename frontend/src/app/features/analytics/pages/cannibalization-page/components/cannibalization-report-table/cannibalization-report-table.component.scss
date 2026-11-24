@@ -1,0 +1,558 @@
+@use '../../../../styles/analytics-ui' as ui;
+
+:host {
+  display: block;
+}
+
+.report-panel {
+  @include ui.panel;
+  padding: var(--space-5) var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+
+  @media (max-width: ui.$bp-mobile) {
+    padding: var(--space-4);
+  }
+}
+
+.sr-only {
+  @include ui.sr-only;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ==========================================================================
+   Toolbar de Filtros
+   ========================================================================== */
+
+.report-toolbar {
+  display: grid;
+  grid-template-columns: minmax(14rem, 1.8fr) repeat(3, minmax(10rem, 1fr));
+  gap: var(--space-3);
+  align-items: end;
+
+  @media (max-width: ui.$bp-tablet) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+
+    .filter-search {
+      grid-column: 1 / -1;
+    }
+
+    .filter-sort {
+      grid-column: 1 / -1;
+    }
+  }
+
+  @media (max-width: ui.$bp-mobile) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.filter-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-secondary);
+}
+
+.search-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.search-icon {
+  position: absolute;
+  left: var(--space-3);
+  display: inline-flex;
+  color: var(--text-secondary);
+  pointer-events: none;
+}
+
+.filter-input,
+.filter-select {
+  width: 100%;
+  min-height: ui.$touch-target;
+  font-family: var(--font-family-body);
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xs);
+  transition: border-color var(--transition-fast);
+
+  &:focus-visible {
+    outline: 2px solid var(--border-focus);
+    outline-offset: 1px;
+    border-color: var(--border-focus);
+  }
+
+  @include ui.hover {
+    &:hover {
+      border-color: var(--border-strong);
+    }
+  }
+
+  @media (max-width: ui.$bp-mobile) {
+    min-height: 44px;
+  }
+}
+
+.filter-input {
+  padding: var(--space-2) var(--space-8) var(--space-2) 2.25rem;
+
+  &::placeholder {
+    color: var(--text-muted);
+  }
+}
+
+.filter-select {
+  padding: var(--space-2) var(--space-3);
+}
+
+.btn-clear-search {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: ui.$touch-target;
+  height: ui.$touch-target;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+
+  @include ui.hover {
+    &:hover {
+      color: var(--text-primary);
+    }
+  }
+}
+
+.report-subbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.results-summary {
+  @include ui.caption;
+  font-family: var(--font-family-mono);
+}
+
+.btn-clear-filters {
+  @extend %button-secondary;
+  min-height: 34px;
+  padding: var(--space-1) var(--space-3);
+  font-size: 0.82rem;
+}
+
+/* ==========================================================================
+   Tabela Desktop (>= 640px)
+   ========================================================================== */
+
+.table-scroll-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+
+  @media (max-width: ui.$bp-mobile) {
+    display: none;
+  }
+}
+
+.cannibalization-table {
+  width: 100%;
+  min-width: 56rem;
+  border-collapse: collapse;
+  background: var(--bg-surface);
+
+  th,
+  td {
+    padding: var(--space-3);
+    text-align: left;
+    border-bottom: 1px solid var(--border-subtle);
+    font-size: 0.88rem;
+    vertical-align: middle;
+  }
+
+  thead th {
+    background: var(--bg-table-header);
+    padding: var(--space-2) var(--space-3);
+    white-space: nowrap;
+    font-size: 0.76rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--text-secondary);
+  }
+
+  .num-col,
+  .num-cell {
+    text-align: right;
+  }
+
+  .center-col,
+  .center-cell {
+    text-align: center;
+  }
+
+  .action-col {
+    text-align: right;
+    white-space: nowrap;
+  }
+}
+
+.revenue-sort-group {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+}
+
+.sort-sep {
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+}
+
+.sort-header-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  border: 0;
+  background: transparent;
+  padding: 2px 0;
+  font-family: var(--font-family-body);
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-secondary);
+  cursor: pointer;
+
+  &.is-numeric {
+    justify-content: flex-end;
+  }
+
+  &.is-centered {
+    justify-content: center;
+  }
+
+  @include ui.hover {
+    &:hover {
+      color: var(--text-primary);
+    }
+  }
+}
+
+.sort-indicator {
+  font-size: 0.68rem;
+  color: var(--brand-primary);
+}
+
+.report-row {
+  cursor: pointer;
+  transition: background-color var(--transition-fast);
+
+  &:nth-child(even) {
+    background: var(--bg-table-row-zebra);
+  }
+
+  @include ui.hover {
+    &:hover {
+      background: var(--bg-table-row-hover);
+    }
+  }
+
+  &.is-selected {
+    background: var(--brand-primary-subtle);
+    box-shadow: inset 3px 0 0 var(--brand-primary);
+  }
+}
+
+.product-cell {
+  min-width: 14rem;
+}
+
+.product-sku-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: 2px;
+}
+
+.sku-code {
+  font-family: var(--font-family-mono);
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.fallback-pill {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: var(--radius-xs);
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+}
+
+.product-name {
+  font-weight: 700;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.product-meta {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.price-cell {
+  font-family: var(--font-family-mono);
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.sub-metric {
+  font-family: var(--font-family-body);
+  font-size: 0.76rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.revenue-cell {
+  font-family: var(--font-family-mono);
+  white-space: nowrap;
+}
+
+.revenue-pre {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.revenue-cur {
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.lost-cell {
+  font-family: var(--font-family-mono);
+  font-weight: 700;
+  color: var(--feedback-critical-bg);
+  white-space: nowrap;
+}
+
+.cannibal-cell {
+  min-width: 13rem;
+  max-width: 18rem;
+}
+
+.cannibal-name {
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cannibal-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  margin: 2px 0 var(--space-1);
+}
+
+.more-cannibals {
+  font-family: var(--font-family-mono);
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--brand-primary);
+}
+
+.mechanism-tag {
+  font-size: 0.7rem;
+  padding: 2px 7px;
+}
+
+.muted-text {
+  color: var(--text-muted);
+}
+
+.btn-row-action {
+  @extend %button-secondary;
+  min-height: 36px;
+  padding: var(--space-1) var(--space-3);
+  font-size: 0.82rem;
+
+  @include ui.hover {
+    &:hover {
+      border-color: var(--brand-primary);
+      color: var(--brand-primary);
+    }
+  }
+}
+
+/* ==========================================================================
+   Cards Empilhados Mobile (< 640px)
+   ========================================================================== */
+
+.cannibalization-card-list {
+  display: none;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex-direction: column;
+  gap: var(--space-3);
+
+  @media (max-width: ui.$bp-mobile) {
+    display: flex;
+  }
+}
+
+.victim-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  cursor: pointer;
+
+  &.is-selected {
+    background: var(--brand-primary-subtle);
+    border-left: 3px solid var(--brand-primary);
+  }
+}
+
+.card-top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.card-title-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.card-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.card-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.card-metric-label {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.card-revenue-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  font-family: var(--font-family-mono);
+  font-size: 0.82rem;
+  color: var(--text-primary);
+}
+
+.card-cannibal-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  min-width: 0;
+
+  .cannibal-name {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
+
+.btn-card-action {
+  @extend %button-secondary;
+  width: 100%;
+  min-height: 44px;
+}
+
+/* ==========================================================================
+   Empty State de Filtros
+   ========================================================================== */
+
+.filters-empty-state {
+  padding: var(--space-6) var(--space-4);
+  background: var(--bg-canvas);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.empty-title {
+  margin: 0;
+  font-family: var(--font-family-headline);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.empty-text {
+  margin: 0;
+  max-width: 56ch;
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+}
+
+.btn-secondary-action {
+  @extend %button-secondary;
+  margin-top: var(--space-2);
+}
+
+@include ui.reduced-motion {
+  .filter-input,
+  .filter-select,
+  .report-row {
+    transition: none;
+  }
+}

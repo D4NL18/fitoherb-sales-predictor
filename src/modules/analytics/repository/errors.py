@@ -21,3 +21,6 @@ class AnalyticsDataSourceError(AnalyticsInfrastructureException):
         message: str = "Base de vendas indisponível no momento. Tente novamente em instantes.",
     ) -> None:
         super().__init__(code="ANL-001", message=message)
+
+
+SalesDatabaseUnavailableError = AnalyticsDataSourceError

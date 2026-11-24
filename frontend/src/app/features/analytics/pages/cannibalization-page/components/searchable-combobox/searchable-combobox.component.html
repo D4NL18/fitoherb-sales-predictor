@@ -1,0 +1,134 @@
+<div class="combobox-field" #comboboxContainer>
+  <label [for]="ids.trigger" class="combobox-label">{{ label() }}</label>
+
+  <div class="combobox-wrap">
+    <button
+      #triggerEl
+      [id]="ids.trigger"
+      type="button"
+      class="combobox-trigger"
+      [class.has-selection]="selectedValue() !== ''"
+      [class.is-open]="isOpen()"
+      [disabled]="disabled()"
+      aria-haspopup="listbox"
+      [attr.aria-expanded]="isOpen()"
+      [attr.aria-controls]="isOpen() ? ids.listbox : null"
+      (click)="toggleDropdown()"
+      (keydown)="onKeydown($event)"
+    >
+      <span class="combobox-trigger-label">
+        @if (selectedValue(); as activeVal) {
+          {{ activeVal }}
+        } @else {
+          {{ allLabel() }} ({{ options().length | ptDecimal }})
+        }
+      </span>
+      <span class="combobox-chevron" aria-hidden="true">
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <polyline points="6 9 12 15 18 9"></polyline>
+        </svg>
+      </span>
+    </button>
+
+    @if (selectedValue() !== '' && !disabled()) {
+      <button
+        type="button"
+        class="btn-clear-combobox"
+        [attr.aria-label]="clearAriaLabel()"
+        (click)="clearSelection($event)"
+      >
+        ×
+      </button>
+    }
+
+    @if (isOpen()) {
+      <div class="combobox-dropdown">
+        <div class="combobox-search-box">
+          <span class="combobox-search-icon" aria-hidden="true">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+          </span>
+          <input
+            #searchEl
+            [id]="ids.search"
+            type="search"
+            class="combobox-search-input"
+            autocomplete="off"
+            spellcheck="false"
+            [placeholder]="searchPlaceholder()"
+            [attr.aria-label]="searchPlaceholder()"
+            [value]="internalQuery()"
+            (input)="onSearchInput(searchEl.value)"
+            (keydown)="onKeydown($event)"
+          />
+        </div>
+
+        <ul
+          [id]="ids.listbox"
+          class="combobox-listbox"
+          role="listbox"
+          [attr.aria-label]="listboxAriaLabel()"
+        >
+          @if (internalQuery().trim() === '') {
+            <li
+              class="combobox-option"
+              role="option"
+              [class.is-selected]="selectedValue() === ''"
+              [attr.aria-selected]="selectedValue() === ''"
+              (mousedown)="$event.preventDefault()"
+              (click)="selectOption('')"
+              (keydown.enter)="selectOption('')"
+            >
+              <span class="combobox-option-name">
+                {{ allLabel() }} ({{ options().length | ptDecimal }})
+              </span>
+              <span class="combobox-option-count tabular-nums">
+                {{ totalItemsCount() | ptDecimal }}
+              </span>
+            </li>
+          }
+
+          @for (opt of filteredOptions(); track opt.name) {
+            <li
+              class="combobox-option"
+              role="option"
+              [class.is-selected]="selectedValue() === opt.name"
+              [class.is-active]="activeIndex() === $index"
+              [attr.aria-selected]="selectedValue() === opt.name"
+              (mousedown)="$event.preventDefault()"
+              (click)="selectOption(opt.name)"
+              (keydown.enter)="selectOption(opt.name)"
+            >
+              <span class="combobox-option-name">{{ opt.name }}</span>
+              <span class="combobox-option-count tabular-nums">{{ opt.count | ptDecimal }}</span>
+            </li>
+          } @empty {
+            <li class="combobox-option-empty" role="option" aria-disabled="true" aria-selected="false">
+              {{ emptySearchLabel() }}
+            </li>
+          }
+        </ul>
+      </div>
+    }
+  </div>
+</div>

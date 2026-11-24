@@ -7,7 +7,7 @@ allowlist de LGPD-03: nenhum dado de cliente além do que o contrato permite (ne
 """
 from __future__ import annotations
 
-from typing import List, Literal, Optional
+from typing import List, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
@@ -527,9 +527,10 @@ class SeasonalityRankingResponse(CamelModel):
 # ------------------------------------------------------------------ Elasticidade-Preço (F5 / P-095..P-105)
 
 class ResponseMeta(CamelModel):
-    """Metadados de resposta para os endpoints de elasticidade."""
+    """Metadados de resposta para os endpoints de elasticidade e analytics."""
     timestamp: str = Field(description="Momento da resposta (ISO-8601).")
     version: str = Field(default="1.0.0", description="Versão do contrato.")
+    data_referencia: Optional[str] = Field(default=None, description="Data de referência da base (AAAA-MM-DD).")
     total_items: Optional[int] = Field(default=None, description="Total de itens disponíveis.")
     total_pages: Optional[int] = Field(default=None, description="Total de páginas.")
     limit: Optional[int] = Field(default=None, description="Limite da página.")
@@ -674,3 +675,337 @@ class ElasticitySimulationResponse(CamelModel):
     """Envelope 200 OK para POST /analytics/elasticity/simulate."""
     data: SimulationImpactData = Field(description="Resultado dos impactos calculados em volume, receita e margem.")
     meta: ResponseMeta = Field(description="Metadados da requisição.")
+
+
+# ------------------------------------------------------------------ Canibalização e Substituição (F6 / P-128..P-138)
+
+
+class SubstituteCandidateDTO(CamelModel):
+    """Candidato a produto substituto (sem PII de clientes, P-128.5)."""
+
+    sku: str = Field(description="Código do produto substituto.")
+    description: str = Field(description="Descrição do produto.")
+    category: str = Field(description="Categoria (`Tipo`) do produto.")
+    jaccard_similarity: float = Field(description="Coeficiente de similaridade de Jaccard.")
+    common_buyers_count: int = Field(description="Quantidade de compradores em comum (sem identificadores).")
+    current_price: float = Field(description="Preço atual de venda.")
+    current_stock: int = Field(description="Estoque disponível atual.")
+
+
+class SubstitutionDataDTO(CamelModel):
+    """Dados do endpoint GET /analytics/substitution/{sku}."""
+
+    target_sku: str = Field(description="SKU alvo consultado.")
+    target_description: str = Field(description="Descrição do SKU alvo.")
+    target_category: str = Field(description="Categoria (`Tipo`) do SKU alvo.")
+    target_current_price: float = Field(description="Preço de venda atual do SKU alvo.")
+    target_stock: int = Field(description="Estoque atual do SKU alvo.")
+    substitutes: List[SubstituteCandidateDTO] = Field(default_factory=list, description="Lista de substitutos.")
+
+
+class SubstitutionMeta(AnalyticsMeta):
+    """Metadados de resposta de GET /analytics/substitution/{sku}."""
+
+    version: str = Field(default="1.0.0", description="Versão do contrato.")
+    target_sku: str = Field(description="SKU alvo consultado.")
+    total_found: int = Field(description="Total de substitutos encontrados.")
+    execution_time_ms: int = Field(default=0, description="Tempo de execução em ms.")
+
+
+class SubstitutionResponse(CamelModel):
+    """Envelope 200 OK para GET /analytics/substitution/{sku}."""
+
+    data: SubstitutionDataDTO = Field(description="Mapa de substitutos do SKU alvo.")
+    meta: Union[SubstitutionMeta, ResponseMeta] = Field(description="Metadados da requisição.")
+
+
+class PeriodMetricsDTO(CamelModel):
+    """Métricas agregadas do produto alvo na janela pré ou pós evento."""
+
+    start_date: str = Field(description="Data inicial da janela (AAAA-MM-DD).")
+    end_date: str = Field(description="Data final da janela (AAAA-MM-DD).")
+    volume: float = Field(description="Volume líquido vendido na janela.")
+    avg_price: float = Field(description="Preço médio de venda na janela.")
+    revenue: float = Field(description="Receita líquida na janela.")
+    estimated_margin: float = Field(description="Margem de contribuição estimada na janela.")
+
+
+class TargetProductDTO(CamelModel):
+    """Dados e desempenho do produto alvo da ação comercial."""
+
+    sku: str = Field(description="SKU do produto alvo.")
+    description: str = Field(description="Descrição do produto alvo.")
+    category: str = Field(description="Categoria (`Tipo`) do produto alvo.")
+    event_type: Literal["promo", "price", "launch"] = Field(description="Tipo de evento analisado.")
+    event_date: str = Field(description="Data base do evento T0 (AAAA-MM-DD).")
+    price_direction: Literal["PRICE_DROP", "PRICE_HIKE", "NONE"] = Field(description="Direção da variação de preço.")
+    avg_price_change_pct: float = Field(description="Variação percentual do preço médio.")
+    cost_fallback_used: bool = Field(description="Indica se aplicou fallback de custo de 60%.")
+    pre_period: PeriodMetricsDTO = Field(description="Métricas da janela pré-evento.")
+    post_period: PeriodMetricsDTO = Field(description="Métricas da janela pós-evento.")
+    delta_volume: float = Field(description="Variação absoluta de volume do alvo.")
+    delta_volume_pct: float = Field(description="Variação percentual de volume do alvo.")
+    delta_revenue: float = Field(description="Variação absoluta de receita do alvo.")
+    delta_margin: float = Field(description="Variação absoluta de margem do alvo.")
+
+
+class ControlGroupDTO(CamelModel):
+    """Resumo do grupo de controle selecionado para o DiD (P-131)."""
+
+    category: str = Field(description="Categoria principal do grupo de controle.")
+    sample_size: int = Field(description="Quantidade de produtos estáveis no controle.")
+    growth_factor: float = Field(description="Fator de crescimento g_ctrl do grupo de controle.")
+    control_strategy: Literal["CATEGORIAL", "FORNECEDOR", "GLOBAL"] = Field(description="Estratégia de seleção.")
+    is_expanded_control: bool = Field(description="True se houve fallback para fornecedor ou portfólio global.")
+    description: str = Field(description="Descrição resumida do grupo de controle.")
+
+
+class TimelinePointDTO(CamelModel):
+    """Ponto semanal da série temporal simétrica pré/pós evento (P-130)."""
+
+    week_offset: int = Field(description="Deslocamento semanal em relação a T0 (-W..-1 ou 1..W).")
+    start_date: str = Field(description="Início da semana (AAAA-MM-DD).")
+    end_date: str = Field(description="Fim da semana (AAAA-MM-DD).")
+    period: Literal["PRE", "POST"] = Field(description="Período relativo ao evento.")
+    target_volume: float = Field(description="Volume do produto alvo na semana.")
+    control_total_volume: float = Field(description="Volume total do grupo de controle na semana.")
+
+
+class ElasticityDecompositionDTO(CamelModel):
+    """Decomposição opcional de choque de preço via F5 (P-136.2)."""
+
+    cross_elasticity: float = Field(description="Elasticidade cruzada epsilon_ji.")
+    price_explained_delta_volume: float = Field(description="Parcela da variação explicada por preço.")
+    residual_delta_volume: float = Field(description="Parcela residual (visibilidade/layout).")
+    price_explained_share: float = Field(description="Proporção explicada por preço.")
+
+
+class AffectedProductDTO(CamelModel):
+    """Produto candidato avaliado pelo motor DiD + FDR (P-132 a P-134)."""
+
+    sku: str = Field(description="SKU do produto afetado.")
+    description: str = Field(description="Descrição do produto.")
+    category: str = Field(description="Categoria (`Tipo`).")
+    jaccard_similarity: float = Field(description="Similaridade de Jaccard com o alvo.")
+    common_buyers_count: int = Field(description="Quantidade de compradores em comum.")
+    pre_volume: float = Field(description="Volume na janela pré-evento.")
+    post_volume: float = Field(description="Volume na janela pós-evento.")
+    counterfactual_volume: float = Field(description="Volume contrafactual projetado pelo controle.")
+    delta_volume: float = Field(description="Efeito causal líquido estimado em unidades.")
+    delta_volume_pct: float = Field(description="Variação percentual causal.")
+    unit_price: float = Field(description="Preço unitário médio no período pós.")
+    unit_margin: float = Field(description="Margem unitária em R$.")
+    cost_fallback_used: bool = Field(description="Indica se aplicou fallback de custo de 60%.")
+    delta_revenue: float = Field(description="Impacto estimado em receita líquida.")
+    delta_margin: float = Field(description="Impacto estimado em margem de contribuição.")
+    classification: Literal["CANIBALIZACAO", "COMPLEMENTO", "MIGRACAO_POSITIVA", "SEM_EFEITO"] = Field(
+        description="Classificação semântica do impacto."
+    )
+    p_value: float = Field(description="Valor-p bicaudal bruto.")
+    q_value: float = Field(description="Valor-q ajustado por Benjamini-Hochberg.")
+    is_significant: bool = Field(description="Significativo após FDR e corte prático.")
+    confidence_interval: List[float] = Field(description="Intervalo de confiança de 95% [inf, sup].")
+    elasticity_decomposition: Optional[ElasticityDecompositionDTO] = Field(
+        default=None, description="Decomposição de elasticidade cruzada (F5) ou null."
+    )
+
+
+class NetImpactDTO(CamelModel):
+    """Balanço líquido consolidado e veredito comercial da ação (P-135)."""
+
+    target_delta_volume: float = Field(description="Delta de volume do produto alvo.")
+    affected_delta_volume: float = Field(description="Soma do delta de volume dos produtos afetados.")
+    net_delta_volume: float = Field(description="Efeito líquido global em unidades.")
+    target_delta_revenue: float = Field(description="Delta de receita do produto alvo.")
+    affected_delta_revenue: float = Field(description="Soma do delta de receita dos afetados.")
+    net_delta_revenue: float = Field(description="Efeito líquido global em receita.")
+    target_delta_margin: float = Field(description="Delta de margem do produto alvo.")
+    affected_delta_margin: float = Field(description="Soma do delta de margem dos afetados.")
+    net_delta_margin: float = Field(description="Efeito líquido global em margem.")
+    commercial_verdict: Literal["VALEU_A_PENA", "ILUSAO_DE_VOLUME", "PREJUIZO_TOTAL"] = Field(
+        description="Veredito executivo da ação."
+    )
+    summary_message: str = Field(description="Resumo executivo em português.")
+
+
+class ElasticityIntegrationDTO(CamelModel):
+    """Status de integração com o módulo de Elasticidade-Preço Cruzada (F5, P-136.3)."""
+
+    status: Literal["NAO_INTEGRADO", "INTEGRADO", "PARCIAL"] = Field(description="Estado da integração com F5.")
+    message: str = Field(description="Mensagem descritiva do estado de integração.")
+
+
+class CannibalizationDataDTO(CamelModel):
+    """Corpo de dados do endpoint GET /analytics/cannibalization/{sku}."""
+
+    target_product: TargetProductDTO = Field(description="Dados e desempenho do produto alvo.")
+    control_group: ControlGroupDTO = Field(description="Grupo de controle utilizado no DiD.")
+    timeline_series: List[TimelinePointDTO] = Field(default_factory=list, description="Série semanal pré/pós.")
+    affected_products: List[AffectedProductDTO] = Field(default_factory=list, description="Produtos afetados.")
+    net_impact: NetImpactDTO = Field(description="Consolidação financeira e veredito comercial.")
+    elasticity_integration: ElasticityIntegrationDTO = Field(description="Estado da integração com F5.")
+
+
+class CannibalizationMeta(AnalyticsMeta):
+    """Metadados de resposta de GET /analytics/cannibalization/{sku}."""
+
+    version: str = Field(default="1.0.0", description="Versão do contrato.")
+    sku: str = Field(description="SKU alvo analisado.")
+    event_type: Literal["promo", "price", "launch"] = Field(description="Tipo de evento analisado.")
+    window_weeks: int = Field(description="Tamanho da janela simétrica em semanas.")
+    execution_time_ms: int = Field(default=0, description="Tempo de execução em ms.")
+
+
+class CannibalizationResponse(CamelModel):
+    """Envelope 200 OK para GET /analytics/cannibalization/{sku}."""
+
+    data: CannibalizationDataDTO = Field(description="Análise completa de canibalização.")
+    meta: CannibalizationMeta = Field(description="Metadados da requisição.")
+
+
+# ------------------------------------------------------------------ Canibalização v2 — Relatório Global e Equilíbrio de Preço (F6 v2 / P-128..P-138)
+
+CannibalizationMechanismLiteral = Literal[
+    "PRECO_MENOR_DESTROI_MARGEM",
+    "PRECO_MENOR_MARGEM_PRESERVADA",
+    "MIGRACAO_POR_VALOR",
+]
+
+
+class PeriodRangeDTO(CamelModel):
+    """Intervalo inclusivo de datas (AAAA-MM-DD) de uma janela comparativa."""
+
+    start_date: str = Field(description="Data inicial inclusiva (AAAA-MM-DD).")
+    end_date: str = Field(description="Data final inclusiva (AAAA-MM-DD).")
+
+
+class CannibalizationReportKpisDTO(CamelModel):
+    """KPIs globais consolidados do relatório de canibalização (P-132.4)."""
+
+    total_victims: int = Field(description="Quantidade de SKUs vítimas encontrados.")
+    total_cannibalized_revenue: float = Field(description="Soma do faturamento canibalizado em R$.")
+    avg_cannibalized_revenue_pct: float = Field(description="Percentual médio ponderado de faturamento canibalizado.")
+    total_net_margin_impact: float = Field(description="Impacto líquido total de margem em R$.")
+    margin_destroying_pairs_count: int = Field(description="Contagem de pares classificados como PRECO_MENOR_DESTROI_MARGEM.")
+
+
+class CannibalizerSummaryDTO(CamelModel):
+    """Resumo de um produto canibalizador B no relatório global (zero PII, LGPD-CAN-02)."""
+
+    sku: str = Field(description="SKU do produto canibalizador.")
+    description: str = Field(description="Descrição do produto canibalizador.")
+    supplier: str = Field(default="", description="Fornecedor do produto canibalizador.")
+    migrated_clients: int = Field(description="Quantidade líquida de clientes migrados (A -> B).")
+    migrated_revenue: float = Field(description="Faturamento líquido migrado em R$.")
+    share_of_cannibalization_pct: float = Field(description="Participação percentual deste canibalizador na vítima.")
+    current_price: float = Field(description="Preço de referência atual do canibalizador.")
+    unit_margin: float = Field(description="Margem unitária em R$.")
+    margin_pct: float = Field(description="Margem unitária percentual (%).")
+    cost_fallback_used: bool = Field(description="Indica se aplicou fallback de custo de 60%.")
+    price_gap_pct: float = Field(description="Gap percentual de preço ((P_A - P_B) / P_B * 100).")
+    net_margin_impact: float = Field(description="Impacto líquido de margem do par em R$.")
+    mechanism: CannibalizationMechanismLiteral = Field(description="Classificação do mecanismo de canibalização.")
+    suggested_victim_price: float = Field(description="Preço sugerido de equilíbrio para a vítima.")
+    suggested_cannibal_price: float = Field(description="Preço sugerido de equilíbrio para o canibalizador.")
+    projected_price_gap_pct: float = Field(description="Gap percentual de preço projetado após equilíbrio.")
+    action_summary: str = Field(description="Resumo acionável de precificação em português.")
+
+
+class CannibalizerDetailDTO(CannibalizerSummaryDTO):
+    """Detalhe completo de um produto canibalizador B no drill-down da vítima."""
+
+    category: str = Field(description="Categoria (`Tipo`) do canibalizador.")
+    supplier: str = Field(description="Fornecedor do canibalizador.")
+    gross_clients_to_cannibal: int = Field(description="Clientes brutos migrando de A para B.")
+    reverse_clients_to_victim: int = Field(description="Clientes no fluxo reverso de B para A.")
+    pre_revenue: float = Field(description="Faturamento líquido do canibalizador no período PRE.")
+    cur_revenue: float = Field(description="Faturamento líquido do canibalizador no período CUR.")
+    unit_cost: float = Field(description="Custo unitário efetivo utilizado (R$).")
+    current_stock: int = Field(description="Estoque atual disponível do canibalizador.")
+    victim_margin_floor_price: float = Field(description="Preço piso da vítima para preservar 20% de margem.")
+
+
+class CannibalizationVictimBaseDTO(CamelModel):
+    """Métricas financeiras e comerciais da vítima A."""
+
+    sku: str = Field(description="SKU do produto vítima.")
+    description: str = Field(description="Descrição do produto vítima.")
+    category: str = Field(description="Categoria (`Tipo`) do produto vítima.")
+    supplier: str = Field(description="Fornecedor do produto vítima.")
+    pre_revenue: float = Field(description="Faturamento líquido no período PRE.")
+    cur_revenue: float = Field(description="Faturamento líquido no período CUR.")
+    revenue_drop: float = Field(description="Queda absoluta de faturamento (PRE - CUR).")
+    revenue_drop_pct: float = Field(description="Queda percentual de faturamento.")
+    cannibalized_revenue: float = Field(description="Faturamento perdido atribuído à canibalização (R$).")
+    cannibalized_revenue_pct: float = Field(description="Percentual do faturamento PRE canibalizado.")
+    drop_explained_pct: float = Field(description="Parcela percentual da queda explicada por canibalização.")
+    current_price: float = Field(description="Preço de referência atual da vítima.")
+    unit_cost: float = Field(description="Custo unitário efetivo da vítima (R$).")
+    unit_margin: float = Field(description="Margem unitária da vítima (R$).")
+    margin_pct: float = Field(description="Margem percentual da vítima (%).")
+    cost_fallback_used: bool = Field(description="Indica se aplicou fallback de custo de 60%.")
+    current_stock: int = Field(description="Estoque disponível atual da vítima.")
+    cannibalizer_count: int = Field(description="Quantidade de canibalizadores válidos identificados.")
+    net_margin_impact: float = Field(description="Impacto líquido acumulado de margem em R$.")
+
+
+class CannibalizationVictimSummaryDTO(CannibalizationVictimBaseDTO):
+    """Item de vítima no Relatório Global de Canibalização."""
+
+    top_cannibal: CannibalizerSummaryDTO = Field(description="Principal canibalizador (maior receita migrada).")
+    cannibalizers: List[CannibalizerSummaryDTO] = Field(default_factory=list, description="Lista de canibalizadores.")
+
+
+class CannibalizationReportDataDTO(CamelModel):
+    """Corpo de dados de GET /api/v1/analytics/cannibalization/report."""
+
+    kpis: CannibalizationReportKpisDTO = Field(description="KPIs consolidados do relatório.")
+    available_categories: List[str] = Field(default_factory=list, description="Categorias disponíveis para filtro.")
+    available_suppliers: List[str] = Field(default_factory=list, description="Fornecedores disponíveis para filtro.")
+    victims: List[CannibalizationVictimSummaryDTO] = Field(default_factory=list, description="Lista de produtos vítimas.")
+
+
+class CannibalizationReportMeta(AnalyticsMeta):
+    """Metadados de resposta de GET /api/v1/analytics/cannibalization/report."""
+
+    version: str = Field(default=ANALYTICS_CONTRACT_VERSION, description="Versão do contrato da API.")
+    window_days: int = Field(description="Janela comparativa selecionada (30, 60 ou 90 dias).")
+    min_drop_pct: float = Field(description="Queda percentual mínima aplicada.")
+    min_migrated_clients: int = Field(description="Mínimo de clientes em migração líquida aplicado.")
+    pre_period: PeriodRangeDTO = Field(description="Período anterior (PRE).")
+    cur_period: PeriodRangeDTO = Field(description="Período atual (CUR).")
+    total_found: int = Field(description="Quantidade total de vítimas após filtros.")
+    execution_time_ms: int = Field(default=0, description="Tempo de execução em ms.")
+
+
+class CannibalizationReportResponse(CamelModel):
+    """Envelope 200 OK para GET /api/v1/analytics/cannibalization/report."""
+
+    data: CannibalizationReportDataDTO = Field(description="Relatório global de canibalização.")
+    meta: CannibalizationReportMeta = Field(description="Metadados da requisição.")
+
+
+class CannibalizationVictimDetailDataDTO(CamelModel):
+    """Corpo de dados de GET /api/v1/analytics/cannibalization/report/{sku}."""
+
+    is_cannibalized: bool = Field(description="Indica se o SKU possui canibalização detectada na janela.")
+    victim: CannibalizationVictimBaseDTO = Field(description="Métricas da vítima consultada.")
+    cannibalizers: List[CannibalizerDetailDTO] = Field(default_factory=list, description="Canibalizadores detalhados.")
+
+
+class CannibalizationVictimDetailMeta(AnalyticsMeta):
+    """Metadados de resposta de GET /api/v1/analytics/cannibalization/report/{sku}."""
+
+    version: str = Field(default=ANALYTICS_CONTRACT_VERSION, description="Versão do contrato da API.")
+    sku: str = Field(description="SKU consultado.")
+    window_days: int = Field(description="Janela comparativa selecionada (30, 60 ou 90 dias).")
+    pre_period: PeriodRangeDTO = Field(description="Período anterior (PRE).")
+    cur_period: PeriodRangeDTO = Field(description="Período atual (CUR).")
+    execution_time_ms: int = Field(default=0, description="Tempo de execução em ms.")
+
+
+class CannibalizationVictimDetailResponse(CamelModel):
+    """Envelope 200 OK para GET /api/v1/analytics/cannibalization/report/{sku}."""
+
+    data: CannibalizationVictimDetailDataDTO = Field(description="Diagnóstico detalhado da vítima.")
+    meta: CannibalizationVictimDetailMeta = Field(description="Metadados da requisição.")

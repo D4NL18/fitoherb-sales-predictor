@@ -1,0 +1,425 @@
+<section class="report-panel" aria-label="Relatório de produtos canibalizados">
+  <div class="report-toolbar" role="search" aria-label="Filtros e ordenação do relatório de canibalização">
+    <div class="filter-field filter-search">
+      <label [for]="ids.search" class="filter-label">Buscar produto ou SKU</label>
+      <div class="search-input-wrap">
+        <span class="search-icon" aria-hidden="true">
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+        </span>
+        <input
+          #searchEl
+          [id]="ids.search"
+          type="search"
+          class="filter-input"
+          autocomplete="off"
+          spellcheck="false"
+          [value]="searchQuery()"
+          placeholder="Buscar SKU, produto ou canibalizador..."
+          (input)="onSearchInput(searchEl.value)"
+        />
+        @if (searchQuery().length > 0) {
+          <button
+            type="button"
+            class="btn-clear-search"
+            aria-label="Limpar busca"
+            (click)="onSearchInput('')"
+          >
+            ×
+          </button>
+        }
+      </div>
+    </div>
+
+    <app-searchable-combobox
+      label="Fornecedor"
+      allLabel="Todos os fornecedores"
+      searchPlaceholder="Buscar fornecedor..."
+      emptySearchLabel="Nenhum fornecedor encontrado."
+      clearAriaLabel="Limpar filtro de fornecedor"
+      listboxAriaLabel="Fornecedores disponíveis"
+      [options]="supplierOptions()"
+      [totalItemsCount]="totalCatalogVictims()"
+      [selectedValue]="selectedSupplier()"
+      (valueChange)="supplierChange.emit($event)"
+    />
+
+    <app-searchable-combobox
+      label="Categoria (Tipo)"
+      allLabel="Todas as categorias"
+      searchPlaceholder="Buscar categoria..."
+      emptySearchLabel="Nenhuma categoria encontrada."
+      clearAriaLabel="Limpar filtro de categoria"
+      listboxAriaLabel="Categorias disponíveis"
+      [options]="categoryOptions()"
+      [totalItemsCount]="totalCatalogVictims()"
+      [selectedValue]="selectedCategory()"
+      (valueChange)="categoryChange.emit($event)"
+    />
+
+    <div class="filter-field filter-sort">
+      <label [for]="ids.sort" class="filter-label">Ordenação</label>
+      <select
+        #sortEl
+        [id]="ids.sort"
+        class="filter-select"
+        [value]="sortBy()"
+        (change)="onSortSelectChange(sortEl.value)"
+      >
+        <option value="reduction-desc">% Redução por Canibalização (maior ↓)</option>
+        <option value="reduction-asc">% Redução por Canibalização (menor ↑)</option>
+        <option value="lost-desc">R$ Perdido (maior ↓)</option>
+        <option value="lost-asc">R$ Perdido (menor ↑)</option>
+        <option value="pre-rev-desc">Faturamento Anterior (maior ↓)</option>
+        <option value="pre-rev-asc">Faturamento Anterior (menor ↑)</option>
+        <option value="cur-rev-desc">Faturamento Atual (maior ↓)</option>
+        <option value="cur-rev-asc">Faturamento Atual (menor ↑)</option>
+        <option value="price-desc">Preço Atual (maior ↓)</option>
+        <option value="price-asc">Preço Atual (menor ↑)</option>
+        <option value="cannibals-desc">Canibalizadores (maior ↓)</option>
+        <option value="cannibals-asc">Canibalizadores (menor ↑)</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="report-subbar">
+    <span class="results-summary tabular-nums" aria-live="polite">{{ rangeSummary() }}</span>
+    @if (hasActiveFilters()) {
+      <button type="button" class="btn-clear-filters" (click)="clearFilters.emit()">
+        Limpar filtros
+      </button>
+    }
+  </div>
+
+  @if (totalFilteredCount() === 0) {
+    <div class="filters-empty-state" role="status">
+      <h3 class="empty-title">Nenhum produto encontrado para os filtros aplicados</h3>
+      <p class="empty-text">
+        Ajuste os termos de busca ou limpe os filtros de fornecedor e categoria para voltar a ver os
+        produtos canibalizados do período.
+      </p>
+      <button type="button" class="btn-secondary-action" (click)="clearFilters.emit()">
+        Limpar filtros
+      </button>
+    </div>
+  } @else {
+    <div class="table-scroll-wrap">
+      <table class="cannibalization-table">
+        <caption class="sr-only">
+          Produtos canibalizados por migração de clientes no período selecionado
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">Produto</th>
+            <th
+              scope="col"
+              class="center-col"
+              [class.is-sorted]="isColumnSorted('price')"
+              [attr.aria-sort]="getAriaSort('price')"
+            >
+              <button type="button" class="sort-header-btn is-centered" (click)="onColumnSort('price')">
+                <span>Preço atual</span>
+                @if (getAriaSort('price') !== 'none') {
+                  <span class="sort-indicator" aria-hidden="true">
+                    {{ getAriaSort('price') === 'ascending' ? '▲' : '▼' }}
+                  </span>
+                }
+              </button>
+            </th>
+            <th
+              scope="col"
+              class="center-col"
+              [class.is-sorted]="isRevenueSorted()"
+              [attr.aria-sort]="
+                getAriaSort('cur-rev') !== 'none'
+                  ? getAriaSort('cur-rev')
+                  : getAriaSort('pre-rev')
+              "
+            >
+              <div class="revenue-sort-group">
+                <button
+                  type="button"
+                  class="sort-header-btn is-centered"
+                  (click)="onColumnSort('pre-rev')"
+                  title="Ordenar por faturamento anterior"
+                >
+                  <span>Fat. Anterior</span>
+                  @if (getAriaSort('pre-rev') !== 'none') {
+                    <span class="sort-indicator" aria-hidden="true">
+                      {{ getAriaSort('pre-rev') === 'ascending' ? '▲' : '▼' }}
+                    </span>
+                  }
+                </button>
+                <span class="sort-sep" aria-hidden="true">→</span>
+                <button
+                  type="button"
+                  class="sort-header-btn is-centered"
+                  (click)="onColumnSort('cur-rev')"
+                  title="Ordenar por faturamento atual"
+                >
+                  <span>Atual</span>
+                  @if (getAriaSort('cur-rev') !== 'none') {
+                    <span class="sort-indicator" aria-hidden="true">
+                      {{ getAriaSort('cur-rev') === 'ascending' ? '▲' : '▼' }}
+                    </span>
+                  }
+                </button>
+              </div>
+            </th>
+            <th
+              scope="col"
+              class="center-col"
+              [class.is-sorted]="isColumnSorted('reduction')"
+              [attr.aria-sort]="getAriaSort('reduction')"
+            >
+              <button
+                type="button"
+                class="sort-header-btn is-centered"
+                (click)="onColumnSort('reduction')"
+              >
+                <span>% Redução (Canib.)</span>
+                @if (getAriaSort('reduction') !== 'none') {
+                  <span class="sort-indicator" aria-hidden="true">
+                    {{ getAriaSort('reduction') === 'ascending' ? '▲' : '▼' }}
+                  </span>
+                }
+              </button>
+            </th>
+            <th
+              scope="col"
+              class="center-col"
+              [class.is-sorted]="isColumnSorted('lost')"
+              [attr.aria-sort]="getAriaSort('lost')"
+            >
+              <button type="button" class="sort-header-btn is-centered" (click)="onColumnSort('lost')">
+                <span>R$ Perdido</span>
+                @if (getAriaSort('lost') !== 'none') {
+                  <span class="sort-indicator" aria-hidden="true">
+                    {{ getAriaSort('lost') === 'ascending' ? '▲' : '▼' }}
+                  </span>
+                }
+              </button>
+            </th>
+            <th
+              scope="col"
+              [class.is-sorted]="isColumnSorted('cannibals')"
+              [attr.aria-sort]="getAriaSort('cannibals')"
+            >
+              <button
+                type="button"
+                class="sort-header-btn"
+                (click)="onColumnSort('cannibals')"
+              >
+                <span>Principal Canibalizador</span>
+                @if (getAriaSort('cannibals') !== 'none') {
+                  <span class="sort-indicator" aria-hidden="true">
+                    {{ getAriaSort('cannibals') === 'ascending' ? '▲' : '▼' }}
+                  </span>
+                }
+              </button>
+            </th>
+            <th scope="col" class="action-col">Ação</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          @for (item of victims(); track item.sku) {
+            <tr
+              class="report-row"
+              [class.is-selected]="selectedSku() === item.sku"
+              (click)="onRowClick(item, $event)"
+              (keydown.enter)="onRowClick(item, $event)"
+            >
+              <td class="product-cell">
+                <div class="product-sku-line">
+                  <span class="sku-code tabular-nums">{{ item.sku }}</span>
+                  @if (item.costFallbackUsed) {
+                    <span
+                      class="fallback-pill"
+                      title="Custo estimado via fallback de margem padrão (40%)"
+                    >
+                      Margem est.
+                    </span>
+                  }
+                </div>
+                <div class="product-name">{{ item.description }}</div>
+                <div class="product-meta">{{ item.category }} · {{ item.supplier }}</div>
+              </td>
+
+              <td
+                class="center-cell price-cell tabular-nums"
+                [class.is-sorted]="isColumnSorted('price')"
+              >
+                <div>{{ item.currentPrice | brl }}</div>
+                <div class="sub-metric">Margem {{ item.marginPct | ptDecimal:1 }}%</div>
+              </td>
+
+              <td
+                class="center-cell revenue-cell tabular-nums"
+                [class.is-sorted]="isRevenueSorted()"
+              >
+                <div class="revenue-pre">{{ item.preRevenue | brl }}</div>
+                <div class="revenue-cur">→ {{ item.curRevenue | brl }}</div>
+              </td>
+
+              <td
+                class="center-cell"
+                [class.is-sorted]="isColumnSorted('reduction')"
+              >
+                <span class="tag tabular-nums" [class]="getSeverityClass(item.cannibalizedRevenuePct)">
+                  <span aria-hidden="true">▼</span>
+                  <span>{{ -item.cannibalizedRevenuePct | signedPercent:'points':1 }}</span>
+                </span>
+              </td>
+
+              <td
+                class="center-cell lost-cell tabular-nums"
+                [class.is-sorted]="isColumnSorted('lost')"
+              >
+                {{ -item.cannibalizedRevenue | signedBrl }}
+              </td>
+
+              <td
+                class="cannibal-cell"
+                [class.is-sorted]="isColumnSorted('cannibals')"
+              >
+                @if (item.topCannibal; as top) {
+                  <div class="cannibal-name" [title]="top.description">{{ top.description }}</div>
+                  @if (top.supplier) {
+                    <div class="product-meta">Fornecedor: {{ top.supplier }}</div>
+                  }
+                  <div class="cannibal-meta tabular-nums">
+                    <span>
+                      {{ top.migratedClients | ptDecimal:0 }}
+                      {{ top.migratedClients === 1 ? 'cliente migrado' : 'clientes migrados' }}
+                    </span>
+                    @if (item.cannibalizerCount > 1) {
+                      <span class="more-cannibals">
+                        +{{ item.cannibalizerCount - 1 }}
+                        {{ item.cannibalizerCount - 1 === 1 ? 'outro' : 'outros' }}
+                      </span>
+                    }
+                  </div>
+                  @let mech = getMechanismMeta(top.mechanism);
+                  <span class="tag mechanism-tag" [class]="mech.tagClass">
+                    <span aria-hidden="true">{{ mech.symbol }}</span>
+                    <span>{{ mech.label }}</span>
+                  </span>
+                } @else {
+                  <span class="muted-text">—</span>
+                }
+              </td>
+
+              <td class="action-col">
+                <button
+                  type="button"
+                  class="btn-row-action"
+                  [attr.aria-label]="'Equilibrar preço de ' + item.sku + ' ' + item.description"
+                  (click)="onActionClick(item, $event)"
+                >
+                  Equilibrar preço
+                </button>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <ol class="cannibalization-card-list" aria-label="Produtos canibalizados em visualização móvel">
+      @for (item of victims(); track item.sku) {
+        <li
+          class="victim-card"
+          [class.is-selected]="selectedSku() === item.sku"
+          (click)="onRowClick(item, $event)"
+          (keydown.enter)="onRowClick(item, $event)"
+        >
+          <div class="card-top-row">
+            <span class="sku-code tabular-nums">SKU {{ item.sku }}</span>
+            <span class="tag tabular-nums" [class]="getSeverityClass(item.cannibalizedRevenuePct)">
+              <span aria-hidden="true">▼</span>
+              <span>{{ -item.cannibalizedRevenuePct | signedPercent:'points':1 }}</span>
+            </span>
+          </div>
+
+          <div class="card-title-block">
+            <div class="product-name">{{ item.description }}</div>
+            <div class="product-meta">{{ item.category }} · {{ item.supplier }}</div>
+          </div>
+
+          <div class="card-metrics-grid">
+            <div class="card-metric">
+              <span class="card-metric-label">R$ Perdido</span>
+              <strong class="lost-cell tabular-nums">{{ -item.cannibalizedRevenue | signedBrl }}</strong>
+            </div>
+            <div class="card-metric">
+              <span class="card-metric-label">Preço atual</span>
+              <strong class="tabular-nums">{{ item.currentPrice | brl }}</strong>
+            </div>
+          </div>
+
+          <div class="card-revenue-line tabular-nums">
+            <span class="card-metric-label">Faturamento:</span>
+            <span>{{ item.preRevenue | brl }} → <strong>{{ item.curRevenue | brl }}</strong></span>
+          </div>
+
+          @if (item.topCannibal; as top) {
+            <div class="card-cannibal-block">
+              <span class="card-metric-label">Principal canibalizador:</span>
+              <div class="cannibal-name">{{ top.description }}</div>
+              @if (top.supplier) {
+                <div class="product-meta">Fornecedor: {{ top.supplier }}</div>
+              }
+              <div class="cannibal-meta tabular-nums">
+                <span>
+                  {{ top.migratedClients | ptDecimal:0 }}
+                  {{ top.migratedClients === 1 ? 'cliente migrado' : 'clientes migrados' }}
+                </span>
+                @if (item.cannibalizerCount > 1) {
+                  <span class="more-cannibals">
+                    +{{ item.cannibalizerCount - 1 }}
+                    {{ item.cannibalizerCount - 1 === 1 ? 'outro' : 'outros' }}
+                  </span>
+                }
+              </div>
+              @let mech = getMechanismMeta(top.mechanism);
+              <span class="tag mechanism-tag" [class]="mech.tagClass">
+                <span aria-hidden="true">{{ mech.symbol }}</span>
+                <span>{{ mech.label }}</span>
+              </span>
+            </div>
+          }
+
+          <button
+            type="button"
+            class="btn-card-action"
+            [attr.aria-label]="'Equilibrar preço de ' + item.sku + ' ' + item.description"
+            (click)="onActionClick(item, $event)"
+          >
+            Equilibrar preço
+          </button>
+        </li>
+      }
+    </ol>
+
+    <app-list-pager
+      [page]="page()"
+      [totalPages]="totalPages()"
+      [totalItems]="totalFilteredCount()"
+      [offset]="pageOffset()"
+      [itemCount]="victims().length"
+      (pageChange)="pageChange.emit($event)"
+    />
+  }
+</section>

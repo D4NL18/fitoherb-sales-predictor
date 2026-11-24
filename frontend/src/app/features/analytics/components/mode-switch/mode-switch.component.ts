@@ -6,8 +6,8 @@ import { Component, ElementRef, input, output, viewChildren } from '@angular/cor
 import { CrossSellMode } from '../../services/cross-sell.store';
 
 /** Segmento do controle, com os ids do tab e do painel controlado. */
-export interface ModeOption {
-  mode: CrossSellMode;
+export interface ModeOption<T extends string = CrossSellMode> {
+  mode: T;
   label: string;
   tabId: string;
   panelId: string;
@@ -19,12 +19,12 @@ export interface ModeOption {
   templateUrl: './mode-switch.component.html',
   styleUrl: './mode-switch.component.scss',
 })
-export class ModeSwitchComponent {
+export class ModeSwitchComponent<T extends string = CrossSellMode> {
   private readonly tabs = viewChildren<ElementRef<HTMLButtonElement>>('tab');
 
-  readonly options = input.required<ModeOption[]>();
-  readonly mode = input.required<CrossSellMode>();
-  readonly modeChange = output<CrossSellMode>();
+  readonly options = input.required<ModeOption<T>[]>();
+  readonly mode = input.required<T>();
+  readonly modeChange = output<T>();
 
   protected onKeydown(event: KeyboardEvent, index: number): void {
     const target = this.targetIndex(event.key, index);
