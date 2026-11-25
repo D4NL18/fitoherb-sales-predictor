@@ -172,6 +172,11 @@ describe('insight-view', () => {
       expect(v.rows[7].bar?.kind).toBe('total');
     });
 
+    it('nota de preço usa variacaoValorPct (contrato 1.1.1)', () => {
+      const i = insight({ cascata: [parcel({ tipo: 'PRECO', detalhe: { variacaoValorPct: 6, valorMedioAnterior: 150, valorMedioAtual: 159 } })] });
+      expect(buildWaterfallView(i, 'revenue').rows[0].note).toBe('Preço médio praticado subiu 6,0%.');
+    });
+
     it('na alta inverte os rótulos de migração', () => {
       const up = insight({ direcao: 'ALTA' });
       expect(buildWaterfallView(up, 'revenue').rows[3].label).toBe('Clientes vindos do mesmo fornecedor');
@@ -349,8 +354,8 @@ describe('insight-view', () => {
         grupoAfim: {
           status: 'AVALIADO',
           afins: [
-            { sku: 3301, descricao: 'A', fornecedor: 'B', sameSupplier: false, affinityScore: 0.804, categoriaGaleria: null, precoAtual: 1, celula: CELL, ganhouClientesDoProduto: true, lancamento: false },
-            { sku: 3305, descricao: 'C', fornecedor: 'ALFA', sameSupplier: true, affinityScore: 0.5, categoriaGaleria: null, precoAtual: 1, celula: CELL, ganhouClientesDoProduto: false, lancamento: false },
+            { sku: 3301, descricao: 'A', fornecedor: 'B', sameSupplier: false, affinityScore: 0.804, categoriaGaleria: null, valorVendaAtual: 1, celula: CELL, ganhouClientesDoProduto: true, lancamento: false },
+            { sku: 3305, descricao: 'C', fornecedor: 'ALFA', sameSupplier: true, affinityScore: 0.5, categoriaGaleria: null, valorVendaAtual: 1, celula: CELL, ganhouClientesDoProduto: false, lancamento: false },
           ],
         },
       });

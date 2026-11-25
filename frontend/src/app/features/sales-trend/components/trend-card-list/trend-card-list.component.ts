@@ -20,6 +20,8 @@ import {
 } from '../../models/sales-trend.model';
 import { SupplierDetailState } from '../../services/sales-trend.store';
 import { TrendCellComponent } from '../trend-cell/trend-cell.component';
+import { ExplainRequest } from '../../insights/models/trend-insights.model';
+import { explainAriaLabel } from '../../insights/utils/insight-view';
 import { TrendRowValuesComponent } from '../trend-row-values/trend-row-values.component';
 import { TrendPagerComponent } from '../trend-pager/trend-pager.component';
 import { TrendErrorBannerComponent } from '../trend-error-banner/trend-error-banner.component';
@@ -146,6 +148,19 @@ import { formatWindowMonthSpan } from '../../utils/trend-format';
                 }
               </div>
 
+              @if (!isSupplierRow(item)) {
+                <div class="card-explain-footer">
+                  <button
+                    type="button"
+                    class="btn-explain"
+                    aria-haspopup="dialog"
+                    [class.is-explaining]="explainingSku() === item.codigo"
+                    [attr.aria-label]="explainLabel(item)"
+                    (click)="onExplain($event, item)"
+                  >Por que?</button>
+                </div>
+              }
+
               <!-- Área Expandida -->
               @if (isExpanded(getItemKey(item))) {
                 <div [id]="cardDetailId(getItemKey(item))" class="card-expanded-region">
@@ -238,6 +253,17 @@ import { formatWindowMonthSpan } from '../../utils/trend-format';
                                     />
                                   </div>
                                 }
+                              </div>
+
+                              <div class="card-explain-footer">
+                                <button
+                                  type="button"
+                                  class="btn-explain"
+                                  aria-haspopup="dialog"
+                                  [class.is-explaining]="explainingSku() === prod.codigo"
+                                  [attr.aria-label]="explainLabel(prod)"
+                                  (click)="onExplain($event, prod)"
+                                >Por que?</button>
                               </div>
 
                               @if (isChildExpanded(item.fornecedorChave, prod.codigo)) {
@@ -475,6 +501,54 @@ import { formatWindowMonthSpan } from '../../utils/trend-format';
       color: var(--text-secondary);
     }
 
+    .card-explain-footer {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      margin-top: var(--space-3);
+    }
+
+    .btn-explain {
+      grid-column: 1 / -1;
+      min-height: 44px;
+      padding: 0 var(--space-3);
+      font-family: var(--font-family-body);
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--brand-primary);
+      background-color: var(--bg-surface);
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-xs);
+      cursor: pointer;
+      transition: background-color var(--transition-fast), border-color var(--transition-fast);
+
+      @media (hover: hover) {
+        &:hover {
+          border-color: var(--brand-primary);
+          background-color: var(--brand-primary-subtle);
+        }
+      }
+
+      &:active {
+        background-color: var(--bg-muted);
+      }
+
+      &.is-explaining {
+        background-color: var(--brand-primary-subtle);
+        border-color: var(--brand-primary);
+      }
+
+      &:focus-visible {
+        outline: 2px solid var(--border-focus);
+        outline-offset: 2px;
+      }
+    }
+
+    @media (min-width: 375px) {
+      .card-explain-footer .btn-explain {
+        grid-column: 1;
+      }
+    }
+
     .card-expanded-region {
       display: flex;
       flex-direction: column;
@@ -584,12 +658,29 @@ export class TrendCardListComponent {
   readonly loading = input<boolean>(false);
 
   readonly sortChange = output<{ window: TrendSortWindow; dir: TrendSortDir }>();
+  readonly explainingSku = input<number | null>(null);
+
   readonly toggleRow = output<string | number>();
+  readonly explain = output<ExplainRequest>();
   readonly detailSortChange = output<{ supplierKey: string; sortBy: TrendSortBy }>();
   readonly detailPageChange = output<{ supplierKey: string; page: number }>();
   readonly detailRetry = output<string>();
 
   private readonly expandedChildSkus = signal<Set<string>>(new Set());
+
+  explainLabel(item: TrendProductRow | TrendDetailRow): string {
+    const cell = item.janelas.find((j) => j.meses === this.sortWindow());
+    return explainAriaLabel(item.descricao, cell?.variacaoPct ?? null, this.sortWindow());
+  }
+
+  onExplain(event: Event, item: TrendProductRow | TrendDetailRow): void {
+    this.explain.emit({
+      sku: item.codigo,
+      descricao: item.descricao,
+      fornecedor: item.fornecedor,
+      triggerEl: event.currentTarget as HTMLElement,
+    });
+  }
 
   isSupplierRow(item: TrendProductRow | TrendSupplierRow | TrendDetailRow): item is TrendSupplierRow {
     return 'fornecedorChave' in item;

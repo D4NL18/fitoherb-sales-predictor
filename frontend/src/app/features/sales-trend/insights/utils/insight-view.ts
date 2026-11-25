@@ -67,6 +67,12 @@ export function panelTitle(direcao: DiagnosisDirection | null, descricao: string
   return `Por que ${descricao} ${verb}?`;
 }
 
+/** Rótulo acessível do botão "Por que?" conforme o sentido da coluna ordenada. */
+export function explainAriaLabel(descricao: string, variacaoPct: number | null, windowMonths: number): string {
+  const verb = variacaoPct === null ? 'mudou' : variacaoPct < 0 ? 'caiu' : variacaoPct > 0 ? 'subiu' : 'mudou';
+  return `Por que ${descricao} ${verb} em ${windowMonths} ${windowMonths === 1 ? 'mês' : 'meses'}? Abrir diagnóstico`;
+}
+
 export function formatIsoDateTime(iso: string | null | undefined): string {
   if (!iso) return '';
   const d = new Date(iso);
@@ -123,6 +129,8 @@ export interface WaterfallView {
   title: string;
   subtitle: string;
   caption: string;
+  /** Posição do zero no eixo (0..100) para a linha de referência. */
+  zeroX: number;
   rows: WaterfallRowView[];
 }
 
@@ -166,7 +174,7 @@ function parcelNote(p: CascadeParcel, rise: boolean): string | null {
       break;
     }
     case 'PRECO': {
-      const v = detailNumber(p.detalhe, 'variacaoPrecoPct');
+      const v = detailNumber(p.detalhe, 'variacaoValorPct');
       if (v !== null) {
         parts.push(`Preço médio praticado ${v >= 0 ? 'subiu' : 'caiu'} ${formatDecimal(Math.abs(v), 1)}%.`);
       }
@@ -207,7 +215,7 @@ export function buildWaterfallView(insight: ProductInsight, metric: TrendMetric)
     subtitle: `Valores em ${unitLabel} na escala do período atual. p.p. = pontos percentuais da variação de ${variation}.`,
     caption: `Decomposição da variação de ${variation} de ${insight.produto.descricao}, por causa`,
   };
-  if (!summary) return { title: '', rows: [], ...base };
+  if (!summary) return { title: '', rows: [], zeroX: 0, ...base };
 
   const cover = summary.coberturaExplicacaoPct;
   const title =
@@ -292,7 +300,7 @@ export function buildWaterfallView(insight: ProductInsight, metric: TrendMetric)
     expandable: false, items: [], itemsTitle: '',
   });
 
-  return { title, rows, ...base };
+  return { title, rows, zeroX: ((0 - min) / range) * 100, ...base };
 }
 
 // ---------- bloco de IA ----------

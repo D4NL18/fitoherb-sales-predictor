@@ -120,7 +120,7 @@ export interface AffineItem {
   sameSupplier: boolean;
   affinityScore: number;
   categoriaGaleria: string | null;
-  precoAtual: number | null;
+  valorVendaAtual: number | null;
   celula: TrendCell;
   ganhouClientesDoProduto: boolean;
   lancamento: boolean;
@@ -294,6 +294,14 @@ export interface InsightQueryParams {
   window?: TrendSortWindow;
   baseMonth?: string;
   comparisonMode?: TrendComparisonMode;
+}
+
+/** Pedido de abertura do painel emitido pelas linhas/cartões de produto. */
+export interface ExplainRequest {
+  sku: number;
+  descricao: string;
+  fornecedor: string | null;
+  triggerEl: HTMLElement;
 }
 
 export interface GenerateOptions {

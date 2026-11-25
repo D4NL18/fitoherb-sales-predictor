@@ -12,6 +12,8 @@ import {
   TrendSortWindow,
 } from '../../models/sales-trend.model';
 import { TrendCellComponent } from '../trend-cell/trend-cell.component';
+import { ExplainRequest } from '../../insights/models/trend-insights.model';
+import { explainAriaLabel } from '../../insights/utils/insight-view';
 
 @Component({
   selector: 'tr[appTrendRow]',
@@ -41,9 +43,20 @@ import { TrendCellComponent } from '../trend-cell/trend-cell.component';
           <span class="product-sku">{{ row().codigo }}</span>
           <span class="product-desc">{{ row().descricao }}</span>
         </div>
-        @if (row().fornecedor && level() === 'parent') {
-          <span class="product-supplier">{{ row().fornecedor }}</span>
-        }
+        <div class="entity-footer">
+          @if (row().fornecedor && level() === 'parent') {
+            <span class="product-supplier">{{ row().fornecedor }}</span>
+          }
+          @if (explainable()) {
+            <button
+              type="button"
+              class="btn-explain"
+              aria-haspopup="dialog"
+              [attr.aria-label]="explainLabel()"
+              (click)="onExplain($event)"
+            >Por que?</button>
+          }
+        </div>
       </div>
     </td>
 
@@ -59,6 +72,7 @@ import { TrendCellComponent } from '../trend-cell/trend-cell.component';
       </td>
     }
   `,
+  host: { '[class.is-explaining]': 'explaining()' },
   styles: [`
     :host {
       border-bottom: 1px solid var(--border-subtle);
@@ -147,6 +161,50 @@ import { TrendCellComponent } from '../trend-cell/trend-cell.component';
       overflow-wrap: anywhere;
     }
 
+    .entity-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-2);
+      flex-wrap: wrap;
+    }
+
+    .btn-explain {
+      margin-left: auto;
+      min-height: 32px;
+      padding: 0 var(--space-2);
+      font-family: var(--font-family-body);
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--brand-primary);
+      background-color: var(--bg-surface);
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-xs);
+      cursor: pointer;
+      transition: background-color var(--transition-fast), border-color var(--transition-fast);
+
+      @media (hover: hover) {
+        &:hover {
+          border-color: var(--brand-primary);
+          background-color: var(--brand-primary-subtle);
+        }
+      }
+
+      &:active {
+        background-color: var(--bg-muted);
+      }
+
+      &:focus-visible {
+        outline: 2px solid var(--border-focus);
+        outline-offset: 2px;
+      }
+    }
+
+    :host(.is-explaining) {
+      background-color: var(--brand-primary-subtle);
+      box-shadow: inset 3px 0 0 var(--brand-primary);
+    }
+
     .product-supplier {
       font-size: 0.75rem;
       color: var(--text-secondary);
@@ -173,7 +231,26 @@ export class TrendRowComponent {
   readonly isExpanded = input<boolean>(false);
   readonly ariaControlsId = input<string | null>(null);
 
+  /** Mostra o botão "Por que?" (linhas de produto; D-3). */
+  readonly explainable = input<boolean>(true);
+  readonly explaining = input<boolean>(false);
+
   readonly toggle = output<void>();
+  readonly explain = output<ExplainRequest>();
+
+  readonly explainLabel = computed(() => {
+    const cell = this.row().janelas.find((j) => j.meses === this.sortWindow());
+    return explainAriaLabel(this.row().descricao, cell?.variacaoPct ?? null, this.sortWindow());
+  });
+
+  onExplain(event: Event): void {
+    this.explain.emit({
+      sku: this.row().codigo,
+      descricao: this.row().descricao,
+      fornecedor: this.row().fornecedor,
+      triggerEl: event.currentTarget as HTMLElement,
+    });
+  }
 
   readonly expandAriaLabel = computed(() => {
     const isExp = this.isExpanded();

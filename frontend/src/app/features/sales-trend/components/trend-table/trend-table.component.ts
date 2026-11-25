@@ -21,6 +21,7 @@ import { SupplierDetailState } from '../../services/sales-trend.store';
 import { formatWindowMonthSpan } from '../../utils/trend-format';
 import { TrendColumnHeaderComponent } from '../trend-column-header/trend-column-header.component';
 import { TrendRowComponent } from '../trend-row/trend-row.component';
+import { ExplainRequest } from '../../insights/models/trend-insights.model';
 import { TrendCellComponent } from '../trend-cell/trend-cell.component';
 import { TrendRowValuesComponent } from '../trend-row-values/trend-row-values.component';
 import { TrendSupplierGroupComponent } from '../trend-supplier-group/trend-supplier-group.component';
@@ -111,7 +112,9 @@ import { TrendSupplierGroupComponent } from '../trend-supplier-group/trend-suppl
                 [params]="params()"
                 [isExpanded]="isExpanded(getItemKey(item))"
                 [ariaControlsId]="rowValuesId(getItemKey(item))"
+                [explaining]="explainingSku() === asProductRow(item).codigo"
                 (toggle)="toggleRow.emit(getItemKey(item))"
+                (explain)="explain.emit($event)"
               ></tr>
               @if (isExpanded(getItemKey(item))) {
                 <tr [id]="rowValuesId(getItemKey(item))" class="expanded-detail-row">
@@ -138,7 +141,9 @@ import { TrendSupplierGroupComponent } from '../trend-supplier-group/trend-suppl
               [params]="params()"
               [windowMetas]="columns()"
               [isExpanded]="isExpanded(asSupplierRow(item).fornecedorChave)"
+              [explainingSku]="explainingSku()"
               (toggle)="toggleRow.emit(asSupplierRow(item).fornecedorChave)"
+              (explain)="explain.emit($event)"
               (sortChange)="detailSortChange.emit({ supplierKey: asSupplierRow(item).fornecedorChave, sortBy: $event })"
               (pageChange)="detailPageChange.emit({ supplierKey: asSupplierRow(item).fornecedorChave, page: $event })"
               (retry)="detailRetry.emit(asSupplierRow(item).fornecedorChave)"
@@ -301,7 +306,10 @@ export class TrendTableComponent {
   readonly totalRow = input<TrendTotalRow | null>(null);
   readonly loading = input<boolean>(false);
 
+  readonly explainingSku = input<number | null>(null);
+
   readonly sort = output<TrendSortWindow>();
+  readonly explain = output<ExplainRequest>();
   readonly toggleRow = output<string | number>();
   readonly detailSortChange = output<{ supplierKey: string; sortBy: TrendSortBy }>();
   readonly detailPageChange = output<{ supplierKey: string; page: number }>();
