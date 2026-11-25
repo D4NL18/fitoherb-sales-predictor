@@ -409,6 +409,10 @@ Ordem do `POST /generate`, da etapa mais barata à mais cara; cada etapa que res
   - Até 15 min de defasagem do índice entre instâncias após um sync.
   - Primeira venda por mês (não por dia) no Lançamento Afim.
   - Dependências novas (`google-genai`, `google-cloud-storage`) aumentam a imagem; importação preguiçosa limita o efeito no cold start.
+  - **Exceção de tratamento de erro por rota (Etapa 4, reviewer):** o módulo usa um `APIRoute` customizado (`api/route.py`) em vez do Global Error Handler central (`architecture-error-handling-rules.md` §4), coerente com o isolamento do ADR-003. Mensagem fixa, sem eco de parâmetros, sem stacktrace; só `type(exc).__name__` vai ao log. Aceita como exceção documentada.
+  - **Dívida técnica (reviewer, T7, não bloqueante):** funções com mais de 3 parâmetros (`InsightsService.__init__` com 10, `llm_orchestrator` com 9, `_analysis`, `_base_data`, `compute_cost`, `budget`) devem migrar para objetos de contexto; `evidence_adapter.py` (563 linhas) deve ser dividido por fonte de evidência (SRP).
+- **PC-01 (privacidade; registro exigido, pendente de comprovação oficial):** registrar, a partir da documentação oficial do Vertex AI/Gemini 4, (a) a retenção de dados pelo Google, (b) a ausência de treino com os dados do cliente e (c) as condições do *grounding* com Google Search (CP-10). Até a confirmação, vale só a decisão por Vertex via ADC, sem nível gratuito. Região: fixar `TREND_AI_LOCATION` em us/eu no deploy (hoje `global`) e registrar aqui (LGPD A-2). Responsáveis: `architect`/`devops`.
+- **Sugestões de busca do Google (F-06):** `sugestoesBuscaHtml` é persistido no GCS, mas anulado na resposta pública (`_public_diagnosis`). Só liberar no CP-10 com CSP `frame-src`/`frame-ancestors` e `sandbox` sem `allow-scripts`/`allow-same-origin`.
 
 ---
 

@@ -410,7 +410,7 @@ A resposta é **válida** se não houver violação bloqueante. Um fator descart
 Para cada fonte de cada fator externo:
 1. `url` precisa estar na allow-list da mesma geração: `citations[].url ∪ search_result_urls` (no modo 2 chamadas, as URLs citadas na etapa 1). Comparação por URL normalizada (sem `utm_*`, sem fragmento, host em minúsculas); redirecionamentos `grounding-api-redirect` são aceitos se constarem da lista. Fora dela → `FONTE_NAO_CITADA`.
 2. `dataPublicacao` ausente ou inválida → tentar extrair `AAAA/MM/DD` ou `AAAA-MM` do caminho da URL; sem nenhuma → `SEM_DATA`.
-3. Data fora de `[início da PRE − EXTERNAL_SOURCE_LOOKBACK_DAYS, dataReferencia]` → `FORA_DO_PERIODO`. Se a data do modelo e a da URL divergirem em mais de 31 dias, vale a da URL (`origemData = URL`).
+3. Data fora de `[início da PRE − EXTERNAL_SOURCE_LOOKBACK_DAYS, dataReferencia]` → `FORA_DO_PERIODO`. A data do modelo prevalece como `dataPublicacao` (`origemData = MODELO`; `URL` só quando o modelo não informa). Rigor adotado (Etapa 4, alinhado a `validation.py` e `test_validation.py`): se **qualquer** data conhecida (modelo ou URL) estiver fora do período, a fonte é rejeitada; não há desempate pela URL.
 4. Fator externo que ficar sem nenhuma fonte válida vai para `hipotesesNaoConfirmadas` com o motivo da primeira fonte rejeitada (`SEM_FONTE` se não havia fonte).
 5. Esquema `http`/`https` apenas; `javascript:`, `data:` e IPs literais são descartados (defesa de link).
 

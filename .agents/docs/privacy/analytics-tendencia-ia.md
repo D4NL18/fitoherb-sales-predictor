@@ -121,6 +121,7 @@ Cada condição tem um teste automatizado ou verificação objetiva. O `reviewer
 - **R-01:** bucket e, se Vertex AI, endpoint do modelo em `southamerica-east1` quando o *grounding* permitir; se não permitir, registrar no ADR-009.
 - **R-02:** reavaliar regra de dominância por UF se a quebra regional passar a ser exibida em valores absolutos fora do painel.
 - **R-03:** incluir no ROPA e no aviso interno de privacidade o Google como operador de IA da ferramenta.
+- **A-4 (PENDENTE, documento de privacidade, auditoria Etapa 4, 2026-11-25):** o Google (Vertex AI/Gemini) ainda não consta como operador de IA no ROPA nem no aviso interno de privacidade (concretiza R-03). Responsável: encarregado/`privacy_officer`; sem alteração de código. Gravidade baixa, a fechar antes da ativação em produção.
 - **R-04:** o aviso fixo da tela ("Diagnóstico gerado por IA… confira as fontes") atende à transparência; mantê-lo.
 
 ---
