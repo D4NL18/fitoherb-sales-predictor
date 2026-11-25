@@ -24,6 +24,7 @@
 | :--- | :--- |
 | 1.0.0 | Primeira versão do desenho (nunca implantada). |
 | **1.1.0** | **Removidos:** `deep` no corpo do `POST`, `meta.tipoAnalise`, `meta.escalonadoAutomaticamente`, `meta.ia.escalonamentoPrevisto`, aviso `ESCALONAMENTO_NEGADO_POR_ORCAMENTO`, o modelo `gemini-4-neon`, o botão "Análise aprofundada", `diagnosticoIa.desatualizado`, aviso `DIAGNOSTICO_DESATUALIZADO`, `503 TIA-004` de IA (viram `200` com template), `credencialConfigurada` e valores em dólar de `meta.ia.orcamento` e de `health`. **Acrescentados:** `meta.origem` (`llm`\|`cache`\|`template`\|`fallback`) no `POST`, `diagnosticoIa.origem`, `meta.motivoTemplate`, `meta.ia.{geraComIa, motivoTemplate, podeForcar, diagnosticoVencido, orcamento.nivel}`, `diagnosticoIa.explicacao` (≤ 160), aviso `SEM_BUSCA_EXTERNA`, motivo `LIMITE_DIARIO` em `429 TIA-004`, códigos oficiais `TIA-006` (401) e `TIA-007` (409). **Alterados:** `modelo` ∈ {`gemini-4-hydrogen`, `gemini-3.8-flash`}; `promptVersion = "tia-v2"`; chave do diagnóstico com `evidenceHash` no lugar de `dataReferencia`; limites do diagnóstico (5 fatores, 2 fontes por fator, 3 hipóteses, 3 recomendações, `resumo` ≤ 400); texto da IA **sem números**; migração lida **sempre** com 4 datas. Mudança incompatível com a 1.0.0, que nunca teve consumidor. |
+| 1.1.1 | **Renomeadas** as chaves que continham `preco` para nao colidir com a varredura de custos do 4.4 (T-7.2.9), sem expor preco de IA: `afins[].precoAtual` -> `valorVendaAtual`; `detalhe` do fator `PRECO`: `precoMedioAnterior`/`precoMedioAtual`/`variacaoPrecoPct` -> `valorMedioAnterior`/`valorMedioAtual`/`variacaoValorPct`. Sao preco de venda do produto (dado de negocio), nao custo de IA. Sem consumidor implantado. |
 
 ---
 
@@ -216,7 +217,7 @@ O estado do botão de IA fica em `meta.ia` (2.1).
 | `cortada` | boolean | P-169.2 |
 | `confianca` | enum \| `null` | P-169.4 |
 | `motivoNaoAvaliado` / `motivoSemEfeito` | enum \| `null` | 2.4 |
-| `detalhe` | objeto \| `null` | Evidência da parcela: `SAZONALIDADE` → `{ indiceAtual, indiceAnterior, forca }`; `PRECO` → `{ precoMedioAnterior, precoMedioAtual, variacaoPrecoPct, elasticidade, observacoes[] }`; `CLIENTES_PERDIDOS` → `{ clientesPerdidosQtd }`; migração → `null` (ver `itens`) |
+| `detalhe` | objeto \| `null` | Evidência da parcela: `SAZONALIDADE` → `{ indiceAtual, indiceAnterior, forca }`; `PRECO` → `{ valorMedioAnterior, valorMedioAtual, variacaoValorPct, elasticidade, observacoes[] }`; `CLIENTES_PERDIDOS` → `{ clientesPerdidosQtd }`; migração → `null` (ver `itens`) |
 | `itens` | `MigracaoItem[]` | Só nas parcelas de migração (`PRODUTO_NOVO`, `CANIBALIZACAO_*`); lista vazia nas demais |
 
 `MigracaoItem`: `{ sku, descricao, fornecedor, sameSupplier, affinityScore, lancamento, receitaMigrada, clientesMigrados, confianca, mecanismo, netMarginImpact }`. `receitaMigrada` é o `netRev` (R$) do par já ajustado por `k`; `null` no `QUALITATIVO` (só a contagem aparece). `clientesMigrados` = `netClients` como **inteiro quando ≥ 3** ou a faixa **`"<3"`** abaixo disso (LGPD-TIA-06; nunca o valor exato 1 ou 2). A mesma regra vale para `detalhe.clientesPerdidosQtd` de `CLIENTES_PERDIDOS` e para `clientesMigrados` em `impactoEmOutrosProdutos`.
@@ -235,7 +236,7 @@ O estado do botão de IA fica em `meta.ia` (2.1).
 
 #### 3.1.4 `AfimItem`
 
-`{ sku, descricao, fornecedor, sameSupplier, affinityScore, categoriaGaleria, precoAtual, celula: TrendCell, ganhouClientesDoProduto, lancamento }`. `celula` é a **mesma** `TrendCell` do contrato `analytics-sales-trend.md` §4 (mesma janela, métrica e modo), para a tela reusar o componente de célula da Tendência (Design Plan Q-D3). `grupoAfim.status`: `AVALIADO`, `SEM_GRUPO_AFIM`, `NAO_AVALIADO`.
+`{ sku, descricao, fornecedor, sameSupplier, affinityScore, categoriaGaleria, valorVendaAtual, celula: TrendCell, ganhouClientesDoProduto, lancamento }`. `celula` é a **mesma** `TrendCell` do contrato `analytics-sales-trend.md` §4 (mesma janela, métrica e modo), para a tela reusar o componente de célula da Tendência (Design Plan Q-D3). `grupoAfim.status`: `AVALIADO`, `SEM_GRUPO_AFIM`, `NAO_AVALIADO`.
 
 #### 3.1.5 `ImpactoEmOutrosProdutos`
 
@@ -304,10 +305,10 @@ O estado do botão de IA fica em `meta.ia` (2.1).
       "status": "AVALIADO",
       "afins": [
         { "sku": 5140, "descricao": "CHÁ DE HIBISCO COM CANELA 80G", "fornecedor": "NATURAL ÔMEGA", "sameSupplier": false, "affinityScore": 0.712,
-          "categoriaGaleria": "Chás e Infusões", "precoAtual": 18.9, "celula": { "meses": 1, "atual": 26.0, "anterior": 22.0, "variacaoPct": 18.2, "status": "VARIACAO", "baseParcial": false, "baseBaixa": false, "devolucaoLiquida": false, "atualPorDia": null, "anteriorPorDia": null },
+          "categoriaGaleria": "Chás e Infusões", "valorVendaAtual": 18.9, "celula": { "meses": 1, "atual": 26.0, "anterior": 22.0, "variacaoPct": 18.2, "status": "VARIACAO", "baseParcial": false, "baseBaixa": false, "devolucaoLiquida": false, "atualPorDia": null, "anteriorPorDia": null },
           "ganhouClientesDoProduto": true, "lancamento": false },
         { "sku": 5188, "descricao": "CHÁ MISTO EMAGRECEDOR 60G", "fornecedor": "NATURAL ÔMEGA", "sameSupplier": false, "affinityScore": 0.534,
-          "categoriaGaleria": "Chás e Infusões", "precoAtual": 15.5, "celula": { "meses": 1, "atual": 18.0, "anterior": 18.0, "variacaoPct": 0.0, "status": "VARIACAO", "baseParcial": false, "baseBaixa": false, "devolucaoLiquida": false, "atualPorDia": null, "anteriorPorDia": null },
+          "categoriaGaleria": "Chás e Infusões", "valorVendaAtual": 15.5, "celula": { "meses": 1, "atual": 18.0, "anterior": 18.0, "variacaoPct": 0.0, "status": "VARIACAO", "baseParcial": false, "baseBaixa": false, "devolucaoLiquida": false, "atualPorDia": null, "anteriorPorDia": null },
           "ganhouClientesDoProduto": false, "lancamento": false }
       ]
     },
@@ -348,7 +349,7 @@ O estado do botão de IA fica em `meta.ia` (2.1).
         "motivoNaoAvaliado": null, "motivoSemEfeito": null, "detalhe": { "indiceAtual": 0.94, "indiceAnterior": 1.0, "forca": "MODERADA" }, "itens": [] },
       { "tipo": "PRECO", "status": "AVALIADO", "valor": 119.04, "pontosPercentuais": 1.0, "valorReceita": null, "sentido": "POSITIVO", "explicativa": true, "cortada": false, "confianca": "MEDIA",
         "motivoNaoAvaliado": null, "motivoSemEfeito": null,
-        "detalhe": { "precoMedioAnterior": 150.0, "precoMedioAtual": 144.0, "variacaoPrecoPct": -4.0, "elasticidade": -1.3, "observacoes": [] }, "itens": [] },
+        "detalhe": { "valorMedioAnterior": 150.0, "valorMedioAtual": 144.0, "variacaoValorPct": -4.0, "elasticidade": -1.3, "observacoes": [] }, "itens": [] },
       { "tipo": "PRODUTO_NOVO", "status": "SEM_EFEITO", "valor": null, "pontosPercentuais": null, "valorReceita": null, "sentido": null, "explicativa": null, "cortada": false, "confianca": null,
         "motivoNaoAvaliado": null, "motivoSemEfeito": "NAO_SE_APLICA_A_ALTA", "detalhe": null, "itens": [] },
       { "tipo": "CANIBALIZACAO_MESMO_FORNECEDOR", "status": "AVALIADO", "valor": 480.0, "pontosPercentuais": 4.0, "valorReceita": null, "sentido": "POSITIVO", "explicativa": true, "cortada": false, "confianca": "MEDIA",
@@ -383,11 +384,11 @@ O estado do botão de IA fica em `meta.ia` (2.1).
     "grupoAfim": {
       "status": "AVALIADO",
       "afins": [
-        { "sku": 3305, "descricao": "CREATINA PURA 150G", "fornecedor": "VITA GAMA", "sameSupplier": true, "affinityScore": 0.861, "categoriaGaleria": "Suplementos", "precoAtual": 79.9,
+        { "sku": 3305, "descricao": "CREATINA PURA 150G", "fornecedor": "VITA GAMA", "sameSupplier": true, "affinityScore": 0.861, "categoriaGaleria": "Suplementos", "valorVendaAtual": 79.9,
           "celula": { "meses": 3, "atual": 2400.0, "anterior": 2000.0, "variacaoPct": 20.0, "status": "VARIACAO", "baseParcial": false, "baseBaixa": false, "devolucaoLiquida": false, "atualPorDia": null, "anteriorPorDia": null }, "ganhouClientesDoProduto": false, "lancamento": false },
-        { "sku": 2045, "descricao": "CREATINA MONOHIDRATADA 300G", "fornecedor": "LABORATÓRIO ALFA", "sameSupplier": false, "affinityScore": 0.804, "categoriaGaleria": "Suplementos", "precoAtual": 159.9,
+        { "sku": 2045, "descricao": "CREATINA MONOHIDRATADA 300G", "fornecedor": "LABORATÓRIO ALFA", "sameSupplier": false, "affinityScore": 0.804, "categoriaGaleria": "Suplementos", "valorVendaAtual": 159.9,
           "celula": { "meses": 3, "atual": 26000.0, "anterior": 40000.0, "variacaoPct": -35.0, "status": "VARIACAO", "baseParcial": false, "baseBaixa": false, "devolucaoLiquida": false, "atualPorDia": null, "anteriorPorDia": null }, "ganhouClientesDoProduto": false, "lancamento": false },
-        { "sku": 3120, "descricao": "CREATINA CREAPURE 250G", "fornecedor": "NUTRI BETA", "sameSupplier": false, "affinityScore": 0.655, "categoriaGaleria": "Suplementos", "precoAtual": 189.0,
+        { "sku": 3120, "descricao": "CREATINA CREAPURE 250G", "fornecedor": "NUTRI BETA", "sameSupplier": false, "affinityScore": 0.655, "categoriaGaleria": "Suplementos", "valorVendaAtual": 189.0,
           "celula": { "meses": 3, "atual": 3600.0, "anterior": 0.0, "variacaoPct": null, "status": "NOVO", "baseParcial": false, "baseBaixa": false, "devolucaoLiquida": false, "atualPorDia": null, "anteriorPorDia": null }, "ganhouClientesDoProduto": false, "lancamento": true }
       ]
     },
@@ -439,7 +440,7 @@ Mesma forma; as parcelas e blocos que dependem de afinidade ficam `NAO_AVALIADO`
         "motivoNaoAvaliado": null, "motivoSemEfeito": null, "detalhe": { "indiceAtual": 0.94, "indiceAnterior": 1.0, "forca": "MODERADA" }, "itens": [] },
       { "tipo": "PRECO", "status": "AVALIADO", "valor": -1161.6, "pontosPercentuais": -2.9, "valorReceita": null, "sentido": "NEGATIVO", "explicativa": true, "cortada": false, "confianca": "MEDIA",
         "motivoNaoAvaliado": null, "motivoSemEfeito": null,
-        "detalhe": { "precoMedioAnterior": 150.0, "precoMedioAtual": 159.0, "variacaoPrecoPct": 6.0, "elasticidade": -1.4, "observacoes": [] }, "itens": [] },
+        "detalhe": { "valorMedioAnterior": 150.0, "valorMedioAtual": 159.0, "variacaoValorPct": 6.0, "elasticidade": -1.4, "observacoes": [] }, "itens": [] },
       { "tipo": "PRODUTO_NOVO", "status": "NAO_AVALIADO", "valor": null, "pontosPercentuais": null, "valorReceita": null, "sentido": null, "explicativa": null, "cortada": false, "confianca": null,
         "motivoNaoAvaliado": "INDICE_AFINIDADE_INDISPONIVEL", "motivoSemEfeito": null, "detalhe": null, "itens": [] },
       { "tipo": "CANIBALIZACAO_MESMO_FORNECEDOR", "status": "NAO_AVALIADO", "valor": null, "pontosPercentuais": null, "valorReceita": null, "sentido": null, "explicativa": null, "cortada": false, "confianca": null,
@@ -539,7 +540,7 @@ Campo `deep` enviado por cliente antigo é ignorado (parâmetros desconhecidos),
         "motivoNaoAvaliado": null, "motivoSemEfeito": null, "detalhe": { "indiceAtual": 0.94, "indiceAnterior": 1.0, "forca": "MODERADA" }, "itens": [] },
       { "tipo": "PRECO", "status": "AVALIADO", "valor": -1161.6, "pontosPercentuais": -2.9, "valorReceita": null, "sentido": "NEGATIVO", "explicativa": true, "cortada": false, "confianca": "MEDIA",
         "motivoNaoAvaliado": null, "motivoSemEfeito": null,
-        "detalhe": { "precoMedioAnterior": 150.0, "precoMedioAtual": 159.0, "variacaoPrecoPct": 6.0, "elasticidade": -1.4, "observacoes": [] }, "itens": [] },
+        "detalhe": { "valorMedioAnterior": 150.0, "valorMedioAtual": 159.0, "variacaoValorPct": 6.0, "elasticidade": -1.4, "observacoes": [] }, "itens": [] },
       { "tipo": "PRODUTO_NOVO", "status": "AVALIADO", "valor": -3100.0, "pontosPercentuais": -7.8, "valorReceita": null, "sentido": "NEGATIVO", "explicativa": true, "cortada": false, "confianca": "MEDIA",
         "motivoNaoAvaliado": null, "motivoSemEfeito": null, "detalhe": null,
         "itens": [
@@ -581,15 +582,15 @@ Campo `deep` enviado por cliente antigo é ignorado (parâmetros desconhecidos),
     "grupoAfim": {
       "status": "AVALIADO",
       "afins": [
-        { "sku": 2046, "descricao": "CREATINA MONOHIDRATADA 150G", "fornecedor": "LABORATÓRIO ALFA", "sameSupplier": true, "affinityScore": 0.902, "categoriaGaleria": "Suplementos", "precoAtual": 89.9,
+        { "sku": 2046, "descricao": "CREATINA MONOHIDRATADA 150G", "fornecedor": "LABORATÓRIO ALFA", "sameSupplier": true, "affinityScore": 0.902, "categoriaGaleria": "Suplementos", "valorVendaAtual": 89.9,
           "celula": { "meses": 3, "atual": 10200.0, "anterior": 9000.0, "variacaoPct": 13.3, "status": "VARIACAO", "baseParcial": false, "baseBaixa": false, "devolucaoLiquida": false, "atualPorDia": null, "anteriorPorDia": null }, "ganhouClientesDoProduto": true, "lancamento": false },
-        { "sku": 3301, "descricao": "CREATINA PURA 300G", "fornecedor": "VITA GAMA", "sameSupplier": false, "affinityScore": 0.804, "categoriaGaleria": "Suplementos", "precoAtual": 144.0,
+        { "sku": 3301, "descricao": "CREATINA PURA 300G", "fornecedor": "VITA GAMA", "sameSupplier": false, "affinityScore": 0.804, "categoriaGaleria": "Suplementos", "valorVendaAtual": 144.0,
           "celula": { "meses": 3, "atual": 13800.0, "anterior": 12000.0, "variacaoPct": 15.0, "status": "VARIACAO", "baseParcial": false, "baseBaixa": false, "devolucaoLiquida": false, "atualPorDia": null, "anteriorPorDia": null }, "ganhouClientesDoProduto": true, "lancamento": false },
-        { "sku": 3120, "descricao": "CREATINA CREAPURE 250G", "fornecedor": "NUTRI BETA", "sameSupplier": false, "affinityScore": 0.655, "categoriaGaleria": "Suplementos", "precoAtual": 189.0,
+        { "sku": 3120, "descricao": "CREATINA CREAPURE 250G", "fornecedor": "NUTRI BETA", "sameSupplier": false, "affinityScore": 0.655, "categoriaGaleria": "Suplementos", "valorVendaAtual": 189.0,
           "celula": { "meses": 3, "atual": 3600.0, "anterior": 0.0, "variacaoPct": null, "status": "NOVO", "baseParcial": false, "baseBaixa": false, "devolucaoLiquida": false, "atualPorDia": null, "anteriorPorDia": null }, "ganhouClientesDoProduto": true, "lancamento": true },
-        { "sku": 3415, "descricao": "CREATINA 100% 500G", "fornecedor": "NUTRI BETA", "sameSupplier": false, "affinityScore": 0.588, "categoriaGaleria": "Suplementos", "precoAtual": 219.0,
+        { "sku": 3415, "descricao": "CREATINA 100% 500G", "fornecedor": "NUTRI BETA", "sameSupplier": false, "affinityScore": 0.588, "categoriaGaleria": "Suplementos", "valorVendaAtual": 219.0,
           "celula": { "meses": 3, "atual": 6300.0, "anterior": 6000.0, "variacaoPct": 5.0, "status": "VARIACAO", "baseParcial": false, "baseBaixa": false, "devolucaoLiquida": false, "atualPorDia": null, "anteriorPorDia": null }, "ganhouClientesDoProduto": false, "lancamento": false },
-        { "sku": 2210, "descricao": "CREATINA CAPS 120", "fornecedor": "LABORATÓRIO ALFA", "sameSupplier": true, "affinityScore": 0.531, "categoriaGaleria": "Suplementos", "precoAtual": 99.0,
+        { "sku": 2210, "descricao": "CREATINA CAPS 120", "fornecedor": "LABORATÓRIO ALFA", "sameSupplier": true, "affinityScore": 0.531, "categoriaGaleria": "Suplementos", "valorVendaAtual": 99.0,
           "celula": { "meses": 3, "atual": 2400.0, "anterior": 3000.0, "variacaoPct": -20.0, "status": "VARIACAO", "baseParcial": false, "baseBaixa": false, "devolucaoLiquida": false, "atualPorDia": null, "anteriorPorDia": null }, "ganhouClientesDoProduto": false, "lancamento": false }
       ]
     },
