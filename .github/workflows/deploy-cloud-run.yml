@@ -106,8 +106,9 @@ jobs:
           DB_USER: ${{ secrets.DB_USER }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
           AUTH_REQUIRED: ${{ secrets.AUTH_REQUIRED || 'true' }}
-          AUTH_USERNAME: ${{ secrets.AUTH_USERNAME || 'fitoherb' }}
-          AUTH_PASSWORD: ${{ secrets.AUTH_PASSWORD || 'Fito1997@' }}
+          # AUTH_USERNAME e AUTH_PASSWORD NAO passam mais pelo GitHub: o Cloud Run
+          # le direto do Google Secret Manager (--set-secrets abaixo). Sem valor padrao no codigo.
+          # Guia: .agents/docs/devops/secret-manager-setup.md
         run: |
           gcloud run deploy ${{ env.SERVICE_NAME }} \
             --image=${{ env.IMAGE_NAME }}:${{ github.sha }} \
@@ -121,4 +122,5 @@ jobs:
             --memory=2Gi \
             --concurrency=80 \
             --timeout=300 \
-            --set-env-vars="ENV=production,ENVIRONMENT=production,AUTH_REQUIRED=${AUTH_REQUIRED},AUTH_USERNAME=${AUTH_USERNAME},AUTH_PASSWORD=${AUTH_PASSWORD},DB_HOST=${DB_HOST},DB_PORT=${DB_PORT},DB_NAME=${DB_NAME},DB_USER=${DB_USER},DB_PASSWORD=${DB_PASSWORD},DB_SCHEMA=Externo01,DB_DRIVER=ODBC Driver 17 for SQL Server"
+            --set-secrets="AUTH_USERNAME=fitoherb-auth-username:latest,AUTH_PASSWORD=fitoherb-auth-password:latest" \
+            --set-env-vars="ENV=production,ENVIRONMENT=production,AUTH_REQUIRED=${AUTH_REQUIRED},DB_HOST=${DB_HOST},DB_PORT=${DB_PORT},DB_NAME=${DB_NAME},DB_USER=${DB_USER},DB_PASSWORD=${DB_PASSWORD},DB_SCHEMA=Externo01,DB_DRIVER=ODBC Driver 17 for SQL Server"
