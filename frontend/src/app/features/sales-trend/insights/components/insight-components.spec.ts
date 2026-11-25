@@ -1,7 +1,7 @@
 /**
  * Testes dos componentes do painel "Por que?" (T-7.3.2): cascata, grupo afim, bloco de IA e diálogo.
  */
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { AiDiagnosisBlockComponent } from './ai-diagnosis-block.component';
 import { AffineGroupComponent } from './affine-group.component';
@@ -148,7 +148,7 @@ describe('AiDiagnosisBlockComponent', () => {
     expect((el.querySelector('button.btn') as HTMLButtonElement).disabled).toBeTrue();
     expect(text(el.querySelector('button.btn') as HTMLElement)).toBe('Gerando…');
     expect(el.querySelector('[data-testid="skeleton-ai"]')).not.toBeNull();
-    expect(text(el.querySelector('[role="status"]') as HTMLElement)).toContain('Costuma levar de 10 a 30 segundos');
+    expect(text(el.querySelector('.progress-text') as HTMLElement)).toContain('Costuma levar de 10 a 30 segundos');
     expect(text(el)).not.toContain('%');
   });
 
@@ -365,6 +365,65 @@ describe('TrendInsightPanelComponent', () => {
     radios.find((b) => b.textContent?.includes('6 meses'))!.click();
     expect(w as number | null).toBe(6);
   });
+
+  it('seletor de janela ocupado usa aria-disabled, mantém o foco e não emite windowChange', () => {
+    setup({ ...loaded(), status: 'loading', reloading: true });
+    let w: number | null = null;
+    fixture.componentInstance.windowChange.subscribe((v) => (w = v));
+    const radios = Array.from(el.querySelectorAll<HTMLButtonElement>('app-segmented-control button'));
+    expect(radios.every((b) => !b.disabled && b.getAttribute('aria-disabled') === 'true')).toBeTrue();
+    const target = radios.find((b) => b.textContent?.includes('6 meses'))!;
+    target.focus();
+    target.click();
+    expect(w as number | null).toBeNull();
+    expect(document.activeElement).toBe(target);
+  });
+
+  it('recarregar: skeleton só no lugar da cascata, sem skeleton do painel inteiro', () => {
+    setup({ ...loaded(), status: 'loading', reloading: true });
+    expect(el.querySelector('[data-testid="skeleton-waterfall"]')).not.toBeNull();
+    expect(el.querySelector('[data-testid="skeleton-panel"]')).toBeNull();
+    expect(el.querySelector('.ip-body')!.getAttribute('aria-busy')).toBe('true');
+  });
+
+  it('aria-describedby só existe depois do GET', () => {
+    setup({ status: 'loading', insight: null, meta: null, ai: null });
+    expect(el.querySelector('aside')!.hasAttribute('aria-describedby')).toBeFalse();
+  });
+
+  it('deixa navbar e página inert enquanto aberto e restaura ao destruir', () => {
+    const shell = document.createElement('div');
+    shell.innerHTML = '<header id="nav"></header><main id="main"></main>';
+    document.body.appendChild(shell);
+    TestBed.configureTestingModule({ imports: [TrendInsightPanelComponent], providers: [provideRouter([])] });
+    fixture = TestBed.createComponent(TrendInsightPanelComponent);
+    shell.querySelector('#main')!.appendChild(fixture.nativeElement);
+    fixture.componentRef.setInput('context', ctx);
+    fixture.detectChanges();
+    expect(shell.querySelector('#nav')!.hasAttribute('inert')).toBeTrue();
+    fixture.destroy();
+    expect(shell.querySelector('#nav')!.hasAttribute('inert')).toBeFalse();
+    shell.remove();
+  });
+
+  it('Tab com o foco fora do painel (ex.: body) volta para dentro', () => {
+    setup(loaded());
+    (document.activeElement as HTMLElement | null)?.blur();
+    const ev = new KeyboardEvent('keydown', { key: 'Tab', cancelable: true });
+    document.dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBeTrue();
+    expect(el.querySelector('aside')!.contains(document.activeElement)).toBeTrue();
+  });
+
+  it('anúncio de troca de janela vai à região viva e é limpo depois', fakeAsync(() => {
+    setup({ ...loaded(), ai: null });
+    fixture.componentRef.setInput('context', { ...ctx, window: 6 });
+    fixture.detectChanges();
+    expect(text(el.querySelector('[data-testid="panel-live"]') as HTMLElement)).toContain('Janela alterada para');
+    tick(4100);
+    fixture.detectChanges();
+    expect(text(el.querySelector('[data-testid="panel-live"]') as HTMLElement)).not.toContain('Janela alterada para');
+  }));
 
   it('carregando: skeleton com a geometria do painel e título provisório (sem spinner)', () => {
     setup({ status: 'loading', insight: null, meta: null, ai: null });

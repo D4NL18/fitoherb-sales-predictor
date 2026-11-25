@@ -488,7 +488,8 @@ export function deriveAiBlock(
     };
   }
 
-  return { ...view, state: 'vazio', showFixedNotice: true };
+  // Aviso fixo já no estado vazio (plano §7): o usuário sabe, antes de clicar, que o texto é gerado por IA.
+  return { ...view, state: 'vazio', showFixedNotice: ia.geraComIa };
 }
 
 function savedFooter(diagnosis: AiDiagnosis | null, ia: InsightAiState): string | null {

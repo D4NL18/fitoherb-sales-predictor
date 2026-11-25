@@ -52,9 +52,11 @@ const PARCEL_KEYS: readonly string[] = [
         }
         @case ('vazio') {
           <div class="empty-state" data-testid="ai-vazio">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-              <path d="M6 3h9l4 4v14H6z"></path><path d="M9 12h7M9 16h7M9 8h3"></path>
-            </svg>
+            <span class="empty-icon" aria-hidden="true">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M6 3h9l4 4v14H6z"></path><path d="M9 12h7M9 16h7M9 8h3"></path>
+              </svg>
+            </span>
             <h4 class="empty-title">Ainda não há análise com IA para esta janela</h4>
             <p class="plain-text">{{ view().emptyText }}</p>
           </div>
@@ -62,7 +64,7 @@ const PARCEL_KEYS: readonly string[] = [
         @case ('gerando') {
           <div class="generating" data-testid="ai-gerando">
             <app-trend-insight-skeleton part="ai" />
-            <p class="progress-text" role="status">
+            <p class="progress-text">
               {{ view().slow ? slowText : generatingText }}
               @if (view().elapsedSeconds > 0) {
                 <span class="elapsed" aria-hidden="true">{{ view().elapsedSeconds }} s</span>
@@ -79,7 +81,7 @@ const PARCEL_KEYS: readonly string[] = [
           </div>
         }
         @case ('limite') {
-          <div class="warn-box" role="alert" data-testid="ai-limite">
+          <div class="warn-box" data-testid="ai-limite">
             <p class="plain-text">{{ view().message }}</p>
             @if (view().retryRemaining !== null) {
               <span class="elapsed" aria-hidden="true">{{ view().retryRemaining }} s</span>
@@ -87,7 +89,7 @@ const PARCEL_KEYS: readonly string[] = [
           </div>
         }
         @case ('erro') {
-          <div class="error-box" role="alert" data-testid="ai-erro">
+          <div class="error-box" data-testid="ai-erro">
             <p class="plain-text">{{ view().message }}</p>
             @if (view().showRetry) {
               <button #retryBtn type="button" class="btn btn-secondary" (click)="retry.emit()">Tentar de novo</button>
@@ -236,6 +238,7 @@ const PARCEL_KEYS: readonly string[] = [
     .note.block { display: block; }
     .aged-note, .footer-meta, .help-text { margin: 0; font-size: 0.75rem; color: var(--text-secondary); }
     .empty-state { display: flex; flex-direction: column; gap: var(--space-2); color: var(--text-secondary); }
+    .empty-icon { display: inline-flex; align-items: center; justify-content: center; width: 48px; height: 48px; background-color: var(--bg-muted); border-radius: var(--radius-xs); color: var(--text-secondary); }
     .empty-title { margin: 0; font-size: 0.95rem; color: var(--text-primary); font-family: var(--font-family-headline); }
     .progress-text { margin: 0; font-size: 0.85rem; color: var(--text-secondary); }
     .elapsed { font-family: var(--font-family-mono); margin-left: var(--space-2); font-variant-numeric: tabular-nums; }
@@ -257,6 +260,8 @@ const PARCEL_KEYS: readonly string[] = [
     .factor-explain { margin: 0; font-size: 0.85rem; overflow-wrap: anywhere; }
     .micro-badge { font-size: 0.7rem; font-weight: 600; color: var(--feedback-info-bg); border: 1px solid var(--feedback-info-bg); border-radius: var(--radius-xs); padding: 0 var(--space-1); }
     .link-btn { align-self: flex-start; padding: 0; background: none; border: 0; color: var(--brand-primary); font-size: 0.8125rem; text-decoration: underline; cursor: pointer; min-height: 24px; }
+    @media (hover: hover) { .link-btn:hover { text-decoration-thickness: 2px; } }
+    .link-btn:active { color: var(--brand-primary-active); }
     .link-btn:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
     .hypotheses { border: 1px dashed var(--border-strong); background-color: var(--bg-canvas); padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-2); }
     .hypotheses .note { color: var(--text-muted); }
@@ -271,6 +276,7 @@ const PARCEL_KEYS: readonly string[] = [
       .btn-secondary:hover:not(:disabled) { background-color: var(--bg-subtle); }
     }
     .btn-primary:active:not(:disabled) { background-color: var(--brand-primary-active); }
+    .btn-secondary:active:not(:disabled) { background-color: var(--bg-muted); }
     .btn:disabled { opacity: 0.55; cursor: not-allowed; }
     .btn:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
     @media (max-width: 767.98px) { .btn { min-height: 44px; } }

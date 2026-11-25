@@ -205,6 +205,11 @@ describe('insight-view', () => {
       expect(v.button?.disabled).toBeFalse();
     });
 
+    it('vazio mostra o aviso fixo de IA só quando a geração usa IA', () => {
+      expect(deriveAiBlock(insight(), AI_STATE, undefined, 0).showFixedNotice).toBeTrue();
+      expect(deriveAiBlock(insight(), { ...AI_STATE, geraComIa: false, motivoTemplate: 'IA_DESLIGADA' }, undefined, 0).showFixedNotice).toBeFalse();
+    });
+
     it('geraComIa=false troca para "Gerar resumo automático" com a ajuda do motivo e não desabilita', () => {
       const v = deriveAiBlock(insight(), { ...AI_STATE, geraComIa: false, motivoTemplate: 'GATE_RESIDUO_BAIXO' }, undefined, 0);
       expect(v.button?.label).toBe('Gerar resumo automático');
