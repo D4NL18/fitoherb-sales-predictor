@@ -741,6 +741,15 @@ def _get_cannibalization_catalog_cached() -> Tuple[dict, _date]:
     return catalog_data, now_dt
 
 
+def get_cannibalization_catalog() -> dict:
+    """
+    Catalogo ativo da Canibalizacao (SKU texto -> descricao, fornecedor, estoque atual, preco), com o mesmo
+    cache de 6 h da F6. Superficie publica para outros modulos (F7) nao tocarem em funcoes privadas.
+    """
+    catalog_data, _reference = _get_cannibalization_catalog_cached()
+    return catalog_data
+
+
 def _get_cached_substitutes_for_sku(
     sku_str: str,
     catalog: dict,
