@@ -24,9 +24,9 @@ class OidcVerifier(Protocol):
 
 def get_oidc_verifier() -> OidcVerifier:
     """Dependencia substituivel nos testes; a implementacao do Google fica fora do pacote `api`."""
-    from src.modules.trend_insights.auth.oidc_verifier import GoogleOidcVerifier
+    from src.modules.trend_insights.auth.oidc_verifier import shared_verifier
 
-    return GoogleOidcVerifier()
+    return shared_verifier()
 
 
 def get_affinity_sync_runner() -> Callable[[bool], Dict[str, Any]]:
