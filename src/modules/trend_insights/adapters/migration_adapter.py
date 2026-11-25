@@ -25,6 +25,7 @@ class TrendMigrationSnapshot:
 
     migration: Any
     lost_by_sku: Mapping[str, LostCustomersAggregate]
+    lost_unavailable_reason: Optional[str] = None  # MES_BASE_ANTIGO / FONTE_INDISPONIVEL: clientes perdidos nao avaliados
 
 
 def _read_split_window_rows(*dates):
@@ -44,6 +45,7 @@ def build_migration_snapshot(
     lost_customer_codes: AbstractSet[int],
     read_rows: Callable[..., Iterable[tuple]] = _read_split_window_rows,
     engine: Callable[..., Any] = compute_directional_migration,
+    lost_unavailable_reason: Optional[str] = None,
 ) -> Union[TrendMigrationSnapshot, NotEvaluated]:
     if not _previous_coverage_ok(spec):
         return NotEvaluated("JANELA_ANTERIOR_INCOMPLETA")
@@ -55,4 +57,4 @@ def build_migration_snapshot(
     migration = engine(scaled, catalog, affinity_map=affinity_map)
     lost = aggregate_lost_customers(scaled, lost_customer_codes, affinity_map) if lost_customer_codes else {}
     del scaled
-    return TrendMigrationSnapshot(migration=migration, lost_by_sku=lost)
+    return TrendMigrationSnapshot(migration=migration, lost_by_sku=lost, lost_unavailable_reason=lost_unavailable_reason)

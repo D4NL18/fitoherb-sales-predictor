@@ -11,9 +11,11 @@ from typing import Any, Dict, List, Optional
 
 from src.modules.analytics.service import product_affinity_service
 from src.modules.trend_insights.adapters.evidence_adapter import EvidenceBuilder, make_migration_builder
+from src.modules.trend_insights.adapters.factor_adapter import FactorSources
 from src.modules.trend_insights.config import TrendInsightsSettings
 from src.modules.trend_insights.llm.gemini_client import GeminiVertexClient
 from src.modules.trend_insights.object_storage.gcs_object_store import GcsObjectStore, UnavailableObjectStore
+from src.modules.trend_insights.service.evidence_cache import EvidenceCache
 from src.modules.trend_insights.service.generation_guard import GenerationGuard
 from src.modules.trend_insights.service.insights_service import InsightsService
 from src.modules.trend_insights.service.llm_orchestrator import LlmOrchestrator
@@ -60,9 +62,10 @@ def _build_service() -> InsightsService:
     lease = GcsInFlightLease(object_store, _utc_now)
     guard = GenerationGuard(settings, _utc_now)
     orchestrator = LlmOrchestrator(llm, ledger, insights, lease, guard, settings, _utc_now, time.sleep)
-    cache = MigrationCache(make_migration_builder(), _utc_now)
+    sources = FactorSources(EvidenceCache(_utc_now))
+    cache = MigrationCache(make_migration_builder(factor_sources=sources), _utc_now)
     return InsightsService(
-        evidence_provider=EvidenceBuilder(cache), orchestrator=orchestrator, insight_store=insights, ledger=ledger,
+        evidence_provider=EvidenceBuilder(cache, sources), orchestrator=orchestrator, insight_store=insights, ledger=ledger,
         lease=lease, settings=settings, clock=_utc_now, index_status_provider=_index_status,
         migration_cache_status_provider=lambda: _migration_status(cache),
     )
