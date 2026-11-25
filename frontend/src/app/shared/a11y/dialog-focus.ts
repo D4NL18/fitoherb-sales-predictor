@@ -24,6 +24,13 @@ export function trapFocus(event: KeyboardEvent, container: HTMLElement, doc: Doc
   const last = focusables[focusables.length - 1];
   const active = doc.activeElement;
 
+  // Foco fora do diálogo (ex.: clique em área não focável e Tab): traz de volta para dentro.
+  if (!active || !container.contains(active)) {
+    event.preventDefault();
+    (event.shiftKey ? last : first).focus();
+    return;
+  }
+
   if (event.shiftKey && active === first) {
     event.preventDefault();
     last.focus();
@@ -42,4 +49,25 @@ export function lockBodyScroll(doc: Document): () => void {
   return () => {
     doc.body.style.overflow = previous;
   };
+}
+
+/**
+ * Torna `inert` tudo que está fora do diálogo: os irmãos de `container` e de cada ancestral até o body
+ * (navbar, `main`, conteúdo da página). Devolve a função que restaura, sem remover o que já era `inert`.
+ */
+export function inertOutside(container: HTMLElement, doc: Document): () => void {
+  const changed: Element[] = [];
+  let node: Element | null = container;
+  while (node && node !== doc.body) {
+    const parent: Element | null = node.parentElement;
+    if (!parent) break;
+    for (const sibling of Array.from(parent.children)) {
+      if (sibling !== node && !sibling.hasAttribute('inert')) {
+        sibling.setAttribute('inert', '');
+        changed.push(sibling);
+      }
+    }
+    node = parent;
+  }
+  return () => changed.forEach((el) => el.removeAttribute('inert'));
 }

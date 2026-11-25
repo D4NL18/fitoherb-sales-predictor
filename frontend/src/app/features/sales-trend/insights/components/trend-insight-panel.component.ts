@@ -15,11 +15,12 @@ import {
   inject,
   input,
   output,
+  signal,
   viewChild,
 } from '@angular/core';
 import { DOCUMENT } from '@angular/common';
 import { RouterLink } from '@angular/router';
-import { lockBodyScroll, trapFocus } from '../../../../shared/a11y/dialog-focus';
+import { inertOutside, lockBodyScroll, trapFocus } from '../../../../shared/a11y/dialog-focus';
 import { InlineNoticeComponent } from '../../components/inline-notice/inline-notice.component';
 import { SegmentedControlComponent, SegmentOption } from '../../components/segmented-control/segmented-control.component';
 import { TrendEmptyStateComponent } from '../../components/trend-empty-state/trend-empty-state.component';
@@ -82,7 +83,7 @@ function formatMonthYear(ym: string): string {
       role="dialog"
       aria-modal="true"
       [attr.aria-labelledby]="titleId"
-      [attr.aria-describedby]="summaryId"
+      [attr.aria-describedby]="insight() ? summaryId : null"
     >
       <header class="ip-header">
         <div class="ip-header-top">
@@ -123,9 +124,6 @@ function formatMonthYear(ym: string): string {
         }
 
         @if (insight(); as data) {
-          @if (reloading()) {
-            <app-trend-insight-skeleton part="panel" />
-          }
           <div [id]="summaryId" class="ip-section first">
             @for (n of notices(); track n.key) {
               <app-inline-notice
@@ -155,7 +153,12 @@ function formatMonthYear(ym: string): string {
 
           @if (data.modoDiagnostico === 'QUANTITATIVO') {
             <div class="ip-section">
-              <app-attribution-waterfall #waterfallCmp [view]="waterfall()!" (navigate)="closePanel.emit()" />
+              @if (reloading()) {
+                <!-- Recarregando: skeleton só no lugar da cascata (mesma altura de linhas), sem empurrar o conteúdo. -->
+                <app-trend-insight-skeleton part="waterfall" />
+              } @else {
+                <app-attribution-waterfall #waterfallCmp [view]="waterfall()!" (navigate)="closePanel.emit()" />
+              }
               <div class="ip-sub"><app-insight-signals [signals]="signals()" /></div>
             </div>
           } @else if (data.modoDiagnostico === 'QUALITATIVO') {
@@ -235,7 +238,7 @@ function formatMonthYear(ym: string): string {
     .ip-window { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
     .ip-window-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-secondary); }
     .ip-body { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: var(--space-4) var(--space-5); }
-    .ip-body.is-reloading > :not(app-trend-insight-skeleton) { opacity: 0.55; }
+    .ip-body.is-reloading { opacity: 0.55; }
     .ip-section { padding-block: var(--space-5); border-top: 1px solid var(--border-subtle); }
     .ip-section.first { border-top: 0; padding-top: 0; display: flex; flex-direction: column; gap: var(--space-3); }
     .ip-sub { margin-top: var(--space-4); }
@@ -250,6 +253,7 @@ function formatMonthYear(ym: string): string {
 export class TrendInsightPanelComponent implements AfterViewInit {
   private readonly document = inject(DOCUMENT);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   readonly context = input.required<InsightContext>();
   readonly insight = input<ProductInsight | null>(null);
@@ -282,12 +286,14 @@ export class TrendInsightPanelComponent implements AfterViewInit {
   private unlockScroll: (() => void) | null = null;
   private previousAiState: AiBlockView['state'] | null = null;
   private previousWindow: number | null = null;
-  private windowAnnouncement = '';
+  private readonly windowAnnouncement = signal('');
+  private announcementTimer: ReturnType<typeof setTimeout> | null = null;
+  private restoreInert: (() => void) | null = null;
 
   protected readonly metric = computed<TrendMetric>(() => this.meta()?.metrica ?? this.context().metric);
 
   protected readonly windowOptions = computed<SegmentOption<TrendSortWindow>[]>(() =>
-    WINDOW_OPTIONS.map((o) => ({ value: o.value, label: o.label, disabled: this.status() === 'loading' })),
+    WINDOW_OPTIONS.map((o) => ({ value: o.value, label: o.label, busy: this.status() === 'loading' })),
   );
 
   protected readonly windowLabel = computed(() => WINDOW_OPTIONS.find((o) => o.value === this.context().window)?.label ?? '');
@@ -380,7 +386,7 @@ export class TrendInsightPanelComponent implements AfterViewInit {
       case 'limite':
         return view.message ?? '';
       default:
-        return this.windowAnnouncement || `Diagnóstico de ${this.context().descricao} aberto.`;
+        return this.windowAnnouncement() || `Diagnóstico de ${this.context().descricao} aberto.`;
     }
   });
 
@@ -389,6 +395,7 @@ export class TrendInsightPanelComponent implements AfterViewInit {
       const state = this.ai()?.state ?? null;
       const prev = this.previousAiState;
       this.previousAiState = state;
+      if (prev !== state) this.clearAnnouncement();
       if (prev === state || prev === null) return;
       queueMicrotask(() => {
         const block = this.aiBlockRef();
@@ -403,15 +410,17 @@ export class TrendInsightPanelComponent implements AfterViewInit {
     effect(() => {
       const w = this.context().window;
       if (this.previousWindow !== null && this.previousWindow !== w) {
-        this.windowAnnouncement = `Janela alterada para ${this.windowLabel()}.`;
+        this.announceWindow(`Janela alterada para ${this.windowLabel()}.`);
         this.bodyRef()?.nativeElement.scrollTo?.({ top: 0 });
       }
       this.previousWindow = w;
-    });
+    }, { allowSignalWrites: true });
 
     this.unlockScroll = lockBodyScroll(this.document);
     this.destroyRef.onDestroy(() => {
       this.unlockScroll?.();
+      this.restoreInert?.();
+      this.clearAnnouncement();
       const trigger = this.returnFocusTo();
       queueMicrotask(() => {
         if (trigger && trigger.isConnected) trigger.focus();
@@ -420,7 +429,21 @@ export class TrendInsightPanelComponent implements AfterViewInit {
     });
   }
 
+  private announceWindow(message: string): void {
+    this.windowAnnouncement.set(message);
+    if (this.announcementTimer) clearTimeout(this.announcementTimer);
+    this.announcementTimer = setTimeout(() => this.windowAnnouncement.set(''), 4000);
+  }
+
+  private clearAnnouncement(): void {
+    if (this.announcementTimer) clearTimeout(this.announcementTimer);
+    this.announcementTimer = null;
+    if (this.windowAnnouncement()) this.windowAnnouncement.set('');
+  }
+
   ngAfterViewInit(): void {
+    // Navbar, `main` e a página ficam inert: o Tab não escapa do diálogo (aria-modal não basta em todos os leitores).
+    this.restoreInert = inertOutside(this.host.nativeElement, this.document);
     // D-5: foco no título (conteúdo longo), não no botão Fechar.
     queueMicrotask(() => this.titleRef()?.nativeElement.focus());
   }

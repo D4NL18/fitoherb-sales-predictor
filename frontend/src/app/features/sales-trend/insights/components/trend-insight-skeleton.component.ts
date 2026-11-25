@@ -28,6 +28,16 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
           <span class="skeleton-line sk-affine"></span>
         }
       </div>
+    } @else if (part() === 'waterfall') {
+      <div class="sk-wrap" aria-hidden="true" data-testid="skeleton-waterfall">
+        @for (n of rows; track n) {
+          <div class="sk-row">
+            <span class="skeleton-line sk-label"></span>
+            <span class="skeleton-line sk-bar"></span>
+            <span class="skeleton-line sk-value"></span>
+          </div>
+        }
+      </div>
     } @else {
       <div class="sk-wrap" aria-hidden="true" data-testid="skeleton-ai">
         <span class="skeleton-line sk-ai-title"></span>
@@ -61,7 +71,7 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
   `],
 })
 export class TrendInsightSkeletonComponent {
-  readonly part = input<'panel' | 'ai'>('panel');
+  readonly part = input<'panel' | 'waterfall' | 'ai'>('panel');
   protected readonly rows = [1, 2, 3, 4, 5, 6, 7];
   protected readonly affineRows = [1, 2, 3, 4];
   protected readonly aiLines = [1, 2, 3];
