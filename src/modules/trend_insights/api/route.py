@@ -13,11 +13,13 @@ from fastapi.routing import APIRoute
 
 from src.modules.trend_insights.domain.constants import CONTRACT_VERSION, LOGGER_NAME
 from src.modules.trend_insights.domain.exceptions import (
+    AffinitySyncBusy,
     GenerationRefused,
     InsufficientBaseError,
     InvalidInsightParametersError,
     NoRelevantVariationError,
     ProductNotFoundError,
+    SchedulerUnauthorized,
 )
 from src.modules.trend_insights.domain.ports import TrendSourceUnavailable
 
@@ -29,6 +31,8 @@ MESSAGES = {
     "TIA-003": "Não há base de vendas suficiente para diagnosticar esta janela.",
     "TIA-003-VARIACAO": "Não há variação relevante para analisar.",
     "TIA-004": "Limite de análises com IA atingido. A parte numérica continua disponível.",
+    "TIA-006": "Credencial inválida.",
+    "TIA-007": "Já existe uma sincronização do índice em andamento.",
     "ANL-001": "Base de vendas indisponível no momento. Tente novamente em instantes.",
     "INTERNAL": "Erro interno. Tente novamente em instantes.",
 }
@@ -76,6 +80,10 @@ class InsightsAPIRoute(APIRoute):
                     "TIA-004", MESSAGES["TIA-004"], 429, motivo=exc.motivo,
                     headers={"Retry-After": str(exc.retry_after_seconds)},
                 )
+            except SchedulerUnauthorized:
+                return error_response("TIA-006", MESSAGES["TIA-006"], 401, headers={"WWW-Authenticate": "Bearer"})
+            except AffinitySyncBusy:
+                return error_response("TIA-007", MESSAGES["TIA-007"], 409)
             except TrendSourceUnavailable:
                 return error_response("ANL-001", MESSAGES["ANL-001"], 503)
             except Exception as exc:  # ultima barreira: corpo generico, so o tipo vai ao log

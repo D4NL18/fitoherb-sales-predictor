@@ -85,3 +85,22 @@ class TrendInsightsSettings:
             gcp_project=env.get("GOOGLE_CLOUD_PROJECT") or None,
             vertex_location=env.get("TREND_AI_LOCATION") or DEFAULT_VERTEX_LOCATION,
         )
+
+
+@dataclass(frozen=True)
+class SchedulerAuthSettings:
+    """Audiencia e conta de servico do Cloud Scheduler aceitas pela rota interna (DA-06). Sem elas a rota fica fechada."""
+
+    audience: str
+    invoker_email: str
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(self.audience and self.invoker_email)
+
+    @classmethod
+    def from_env(cls, env: Mapping[str, str]) -> "SchedulerAuthSettings":
+        return cls(
+            audience=(env.get("AFFINITY_SYNC_AUDIENCE") or "").strip(),
+            invoker_email=(env.get("AFFINITY_SYNC_INVOKER_SA") or "").strip(),
+        )

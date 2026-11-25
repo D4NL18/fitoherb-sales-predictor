@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 
 from src.modules.analytics.service import product_affinity_service
 from src.modules.trend_insights.adapters.evidence_adapter import EvidenceBuilder, make_migration_builder
+from src.modules.trend_insights.adapters.affinity_sync_adapter import run_affinity_sync
 from src.modules.trend_insights.adapters.factor_adapter import FactorSources
 from src.modules.trend_insights.config import TrendInsightsSettings
 from src.modules.trend_insights.llm.gemini_client import GeminiVertexClient
@@ -32,13 +33,19 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _index_origin() -> str:
+    """De onde o indice de afinidade e lido: GCS quando `AFFINITY_INDEX_GCS_URI` esta configurada."""
+    return "GCS" if os.getenv("AFFINITY_INDEX_GCS_URI", "").strip() else "LOCAL"
+
+
 def _index_status() -> Dict[str, Any]:
     index = product_affinity_service.get_loaded_affinity_index()
     if index is None:
-        return {"disponivel": False, "lastSyncAt": None, "totalActiveSkus": 0, "origem": "LOCAL"}
+        return {"disponivel": False, "lastSyncAt": None, "totalActiveSkus": 0, "origem": _index_origin()}
     meta = index.get("meta") or {}
-    return {"disponivel": True, "lastSyncAt": meta.get("generatedAt"), "totalActiveSkus": len(index.get("skus") or {}),
-            "origem": "LOCAL"}
+    return {"disponivel": True, "lastSyncAt": meta.get("last_sync_at") or meta.get("generatedAt"),
+            "totalActiveSkus": len(index.get("skus") or {}),
+            "origem": _index_origin()}
 
 
 def _migration_status(cache: MigrationCache) -> List[Dict[str, Any]]:
@@ -77,3 +84,8 @@ def get_default_service() -> InsightsService:
         if _SERVICE is None:
             _SERVICE = _build_service()
         return _SERVICE
+
+
+def get_affinity_sync_runner():
+    """Executor da sincronizacao do indice usado pela rota interna (sem estado, sem conexao ao importar)."""
+    return run_affinity_sync

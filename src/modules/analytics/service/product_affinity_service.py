@@ -249,6 +249,12 @@ def _refresh_when_generation_changed(store: AffinityIndexStore) -> bool:
     return True
 
 
+def get_loaded_generation() -> Optional[int]:
+    """Geração do objeto GCS do índice em memória (`None` no armazenamento local ou sem índice)."""
+    with _AFFINITY_LOCK:
+        return _LOADED_GENERATION
+
+
 def _notify_index_changed() -> None:
     for listener in list(_LISTENERS):
         listener()

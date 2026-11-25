@@ -26,6 +26,14 @@ class InvalidInsightParametersError(TrendInsightsError):
         self.fields = tuple(fields)
 
 
+class SchedulerUnauthorized(TrendInsightsError):
+    """TIA-006: token OIDC ausente, invalido, expirado, audiencia ou chamador diferente (sem dizer qual)."""
+
+
+class AffinitySyncBusy(TrendInsightsError):
+    """TIA-007: outra sincronizacao do indice de afinidade em andamento (lease ocupado)."""
+
+
 class BudgetDenied(TrendInsightsError):
     """Reserva negada: o teto mensal ou diario nao comporta a chamada."""
 
