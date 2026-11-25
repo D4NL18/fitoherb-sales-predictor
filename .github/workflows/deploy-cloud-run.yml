@@ -122,3 +122,27 @@ jobs:
             --concurrency=80 \
             --timeout=300 \
             --set-env-vars="ENV=production,ENVIRONMENT=production,AUTH_REQUIRED=${AUTH_REQUIRED},AUTH_USERNAME=${AUTH_USERNAME},AUTH_PASSWORD=${AUTH_PASSWORD},DB_HOST=${DB_HOST},DB_PORT=${DB_PORT},DB_NAME=${DB_NAME},DB_USER=${DB_USER},DB_PASSWORD=${DB_PASSWORD},DB_SCHEMA=Externo01,DB_DRIVER=ODBC Driver 17 for SQL Server"
+
+      # F7 (Tendencia com IA): somente variaveis NAO secretas. So roda depois que a infra
+      # (infra/trend-insights/01..04) existir e a variavel de repositorio TREND_INSIGHTS_BUCKET for definida.
+      # Passo separado porque o delimitador "^;;^" e necessario (o JSON de precos contem virgulas) e
+      # --set-env-vars/--update-env-vars sao mutuamente exclusivos no gcloud.
+      - name: Configurar variaveis da F7 - Tendencia com IA (nao secretas)
+        if: ${{ vars.TREND_INSIGHTS_BUCKET != '' }}
+        env:
+          F7_BUCKET: ${{ vars.TREND_INSIGHTS_BUCKET }}
+          F7_AI_ENABLED: ${{ vars.TREND_AI_ENABLED || 'true' }}
+          F7_AI_LOCATION: ${{ vars.TREND_AI_LOCATION || 'us-central1' }}
+          F7_MONTHLY_BUDGET: ${{ vars.TREND_AI_MONTHLY_BUDGET_USD || '1.80' }}
+          F7_DAILY_BUDGET: ${{ vars.TREND_AI_DAILY_BUDGET_USD || '0.20' }}
+          F7_INVOKER_SA: ${{ vars.AFFINITY_SYNC_INVOKER_SA }}
+          F7_RUNTIME_SA: ${{ vars.CLOUD_RUN_RUNTIME_SA }}
+        run: |
+          set -euo pipefail
+          SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} --region=${{ env.GAR_LOCATION }} --format='value(status.url)')
+          PRICING=$(python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1])), separators=(",", ":")))' infra/trend-insights/pricing.json)
+          SA_FLAG=""
+          if [ -n "${F7_RUNTIME_SA}" ]; then SA_FLAG="--service-account=${F7_RUNTIME_SA}"; fi
+          gcloud run services update ${{ env.SERVICE_NAME }} \
+            --region=${{ env.GAR_LOCATION }} ${SA_FLAG} \
+            --update-env-vars="^;;^GOOGLE_CLOUD_PROJECT=${{ env.PROJECT_ID }};;TREND_INSIGHTS_BUCKET=${F7_BUCKET};;AFFINITY_INDEX_GCS_URI=gs://${F7_BUCKET}/affinity/product_affinity_index.json;;AFFINITY_SYNC_AUDIENCE=${SERVICE_URL};;AFFINITY_SYNC_INVOKER_SA=${F7_INVOKER_SA};;TREND_AI_ENABLED=${F7_AI_ENABLED};;TREND_AI_LOCATION=${F7_AI_LOCATION};;TREND_AI_MODEL_DEFAULT=gemini-4-hydrogen;;TREND_AI_MODEL_FALLBACK=gemini-3.8-flash;;TREND_AI_MONTHLY_BUDGET_USD=${F7_MONTHLY_BUDGET};;TREND_AI_DAILY_BUDGET_USD=${F7_DAILY_BUDGET};;TREND_AI_PRICING_JSON=${PRICING}"
