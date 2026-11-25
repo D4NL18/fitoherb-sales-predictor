@@ -1321,6 +1321,10 @@ def reset_cannibalization_report_cache() -> None:
         _CAN_SUB_CACHE.clear()
 
 
+# Quando a geração do índice de afinidade muda (outra instância sincronizou), os relatórios em cache ficam velhos.
+product_affinity_service.register_index_changed_listener(reset_cannibalization_report_cache)
+
+
 def _get_cannibalization_migration_snapshot_cached(
     window_days: int,
     ref_date: _date,

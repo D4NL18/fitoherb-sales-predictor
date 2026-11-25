@@ -2,8 +2,9 @@
 Serviço de Índice Incremental de Afinidade de Produtos (F6 v2.1 + Produto Novo).
 
 Gerencia:
-- Carga do índice persistido em disco (`data/cache/product_affinity_index.json`).
-- Sincronização incremental diária às 00:00 (ou sob demanda): detecta SKUs novos,
+- Carga do índice persistido: em disco (`data/cache/product_affinity_index.json`) ou, com
+  `AFFINITY_INDEX_GCS_URI`, no GCS com concorrência otimista (`AffinityIndexStore`, ADR-009 DA-06).
+- Sincronização incremental (Cloud Scheduler 00:00 ou sob demanda, com lease no GCS): detecta SKUs novos,
   alterados e desativados via `content_hash`, recalcula apenas o necessário e remove
   produtos inativos.
 - Consulta em O(1) da lista decrescente de afinidades por SKU para Canibalização e
@@ -18,8 +19,17 @@ import os
 from pathlib import Path
 import threading
 import time
-from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
+from src.core.object_storage import (
+    GcsJsonStorage,
+    ObjectPreconditionFailed,
+    ObjectStorageUnavailable,
+    NEW_OBJECT_GENERATION,
+    parse_gcs_uri,
+    release_lease,
+    try_acquire_lease,
+)
 from src.modules.analytics.domain.product_affinity import (
     DEFAULT_CANNIBALIZATION_AFFINITY_THRESHOLD,
     DEFAULT_TOP_K_AFFINITIES,
@@ -43,6 +53,126 @@ DEFAULT_INDEX_PATH: Path = _REPO_ROOT / "data" / "cache" / "product_affinity_ind
 
 _AFFINITY_LOCK = threading.Lock()
 _LOADED_INDEX: Optional[Dict[str, Any]] = None
+_LOADED_GENERATION: Optional[int] = None
+_LAST_CHECK_AT: Optional[datetime] = None
+_STORE_OVERRIDE: Optional["AffinityIndexStore"] = None
+_GCS_STORES: Dict[str, "AffinityIndexStore"] = {}
+_INDEX_CLOCK: Callable[[], datetime] = lambda: datetime.now(timezone.utc)
+_LISTENERS: List[Callable[[], None]] = []
+
+AFFINITY_INDEX_GCS_URI_ENV = "AFFINITY_INDEX_GCS_URI"
+AFFINITY_INDEX_REFRESH_MINUTES = 15
+AFFINITY_SYNC_LEASE_PATH = "locks/affinity-sync.lock"
+AFFINITY_SYNC_LEASE_TTL_SECONDS = 300
+
+
+class AffinitySyncBusyError(Exception):
+    """Outra sincronização do índice está em andamento (lease GCS ocupado)."""
+
+
+class AffinityIndexConflictError(Exception):
+    """O objeto do índice mudou durante a sincronização (412): nada foi sobrescrito."""
+
+
+def _is_valid_index(data: Any) -> bool:
+    return isinstance(data, dict) and isinstance(data.get("affinities"), dict)
+
+
+class LocalAffinityIndexStore:
+    """Índice em arquivo local (comportamento original, sem refresh por geração nem lease)."""
+
+    supports_refresh = False
+
+    def __init__(self, index_path: Path):
+        self._path = index_path
+
+    def load(self) -> Optional[Tuple[Dict[str, Any], Optional[int]]]:
+        data = _load_index_from_disk(self._path)
+        return None if data is None else (data, None)
+
+    def current_generation(self) -> Optional[int]:
+        return None
+
+    def save(self, payload: Dict[str, Any], expected_generation: Optional[int]) -> Optional[int]:
+        _save_index_atomic(payload, self._path)
+        return None
+
+    def try_acquire_sync_lease(self) -> bool:
+        return True
+
+    def release_sync_lease(self) -> None:
+        return None
+
+
+class GcsAffinityIndexStore:
+    """Índice em um objeto GCS: leitura por geração, escrita com `if_generation_match` e lease de sincronização."""
+
+    supports_refresh = True
+
+    def __init__(self, storage: GcsJsonStorage, path: str, clock: Callable[[], datetime]):
+        self._storage = storage
+        self.path = path
+        self._clock = clock
+
+    def load(self) -> Optional[Tuple[Dict[str, Any], Optional[int]]]:
+        found = self._storage.read_json(self.path)
+        if found is None or not _is_valid_index(found[0]):
+            return None  # ausente ou inválido: nunca reconstrói na partida (P-130.5)
+        return found[0], found[1]
+
+    def current_generation(self) -> Optional[int]:
+        return self._storage.get_generation(self.path)
+
+    def save(self, payload: Dict[str, Any], expected_generation: Optional[int]) -> Optional[int]:
+        match = NEW_OBJECT_GENERATION if expected_generation is None else expected_generation
+        try:
+            return self._storage.write_json(self.path, payload, if_generation_match=match)
+        except ObjectPreconditionFailed:
+            logger.warning("[AFFINITY] Conflito de geração (412) ao gravar o índice; nada foi sobrescrito.")
+            raise AffinityIndexConflictError() from None
+
+    def try_acquire_sync_lease(self) -> bool:
+        return try_acquire_lease(self._storage, AFFINITY_SYNC_LEASE_PATH, AFFINITY_SYNC_LEASE_TTL_SECONDS, self._clock)
+
+    def release_sync_lease(self) -> None:
+        try:
+            release_lease(self._storage, AFFINITY_SYNC_LEASE_PATH)
+        except ObjectStorageUnavailable:
+            logger.warning("[AFFINITY] Não foi possível liberar o lease; ele expira sozinho.")
+
+
+AffinityIndexStore = Any  # contrato estrutural: LocalAffinityIndexStore e GcsAffinityIndexStore
+
+
+def configure_index_store(store: Optional[AffinityIndexStore], clock: Optional[Callable[[], datetime]] = None) -> None:
+    """Injeta um store (testes) ou limpa a injeção; `clock` controla a janela de refresh de 15 min."""
+    global _STORE_OVERRIDE, _INDEX_CLOCK
+    _STORE_OVERRIDE = store
+    _GCS_STORES.clear()
+    _INDEX_CLOCK = clock or (lambda: datetime.now(timezone.utc))
+
+
+def register_index_changed_listener(listener: Callable[[], None]) -> None:
+    """Avisado quando a geração do índice muda (ex.: limpar o cache do relatório de canibalização)."""
+    if listener not in _LISTENERS:
+        _LISTENERS.append(listener)
+
+
+def clear_index_changed_listeners() -> None:
+    _LISTENERS.clear()
+
+
+def get_index_store(index_path: Path = DEFAULT_INDEX_PATH) -> AffinityIndexStore:
+    """GCS quando `AFFINITY_INDEX_GCS_URI` existe e o caminho é o padrão; senão, o arquivo local (P-130.4)."""
+    if _STORE_OVERRIDE is not None:
+        return _STORE_OVERRIDE
+    uri = os.getenv(AFFINITY_INDEX_GCS_URI_ENV, "").strip()
+    if not uri or index_path != DEFAULT_INDEX_PATH:
+        return LocalAffinityIndexStore(index_path)
+    if uri not in _GCS_STORES:
+        bucket, path = parse_gcs_uri(uri)
+        _GCS_STORES[uri] = GcsAffinityIndexStore(GcsJsonStorage(bucket), path, _INDEX_CLOCK)
+    return _GCS_STORES[uri]
 
 
 def _utc_now_iso() -> str:
@@ -81,18 +211,63 @@ def _save_index_atomic(payload: Dict[str, Any], index_path: Path = DEFAULT_INDEX
 
 def reset_product_affinity_memory_cache() -> None:
     """Limpa o cache em memória (apoio a testes)."""
-    global _LOADED_INDEX
+    global _LOADED_INDEX, _LOADED_GENERATION, _LAST_CHECK_AT
     with _AFFINITY_LOCK:
         _LOADED_INDEX = None
+        _LOADED_GENERATION = None
+        _LAST_CHECK_AT = None
+
+
+def _refresh_due() -> bool:
+    return _LAST_CHECK_AT is None or _INDEX_CLOCK() - _LAST_CHECK_AT >= timedelta(minutes=AFFINITY_INDEX_REFRESH_MINUTES)
+
+
+def _load_into_memory(store: AffinityIndexStore) -> None:
+    """Carrega o índice do store; falha de armazenamento mantém o que já está em memória."""
+    global _LOADED_INDEX, _LOADED_GENERATION, _LAST_CHECK_AT
+    _LAST_CHECK_AT = _INDEX_CLOCK()
+    try:
+        loaded = store.load()
+    except ObjectStorageUnavailable:
+        logger.warning("[AFFINITY] Armazenamento do índice indisponível; mantendo o estado atual.")
+        return
+    _LOADED_INDEX, _LOADED_GENERATION = (None, None) if loaded is None else loaded
+
+
+def _refresh_when_generation_changed(store: AffinityIndexStore) -> bool:
+    """Só metadados a cada 15 min; recarrega quando a geração do objeto mudou. Devolve se houve mudança."""
+    global _LAST_CHECK_AT
+    _LAST_CHECK_AT = _INDEX_CLOCK()
+    try:
+        generation = store.current_generation()
+    except ObjectStorageUnavailable:
+        logger.warning("[AFFINITY] Não foi possível verificar a geração do índice; mantendo o atual.")
+        return False
+    if generation == _LOADED_GENERATION:
+        return False
+    _load_into_memory(store)
+    return True
+
+
+def _notify_index_changed() -> None:
+    for listener in list(_LISTENERS):
+        listener()
 
 
 def get_loaded_affinity_index(index_path: Path = DEFAULT_INDEX_PATH) -> Optional[Dict[str, Any]]:
-    """Retorna o índice de afinidade carregado em memória (lendo do disco na 1ª chamada)."""
-    global _LOADED_INDEX
+    """Índice em memória: 1ª chamada lê do store; no GCS, relê quando a geração muda (≤ 1 vez a cada 15 min)."""
+    changed = False
     with _AFFINITY_LOCK:
+        store = get_index_store(index_path)
         if _LOADED_INDEX is None:
-            _LOADED_INDEX = _load_index_from_disk(index_path)
-        return _LOADED_INDEX
+            if not store.supports_refresh or _refresh_due():
+                _load_into_memory(store)
+        elif store.supports_refresh and _refresh_due():
+            changed = _refresh_when_generation_changed(store)
+        index = _LOADED_INDEX
+    if changed:
+        _notify_index_changed()
+    return index
 
 
 def get_affinity_lookup_map(
@@ -119,9 +294,46 @@ def get_affinity_lookup_map(
     return lookup
 
 
+def _previous_index_for_sync(store: AffinityIndexStore) -> Tuple[Optional[Dict[str, Any]], Optional[int]]:
+    """Índice anterior + geração: no GCS sempre fresco (sob o lease); no local, a memória tem prioridade."""
+    if not store.supports_refresh and _LOADED_INDEX is not None:
+        return _LOADED_INDEX, _LOADED_GENERATION
+    loaded = store.load()
+    return (None, None) if loaded is None else loaded
+
+
 def sync_product_affinity_index(
     force: bool = False,
     index_path: Path = DEFAULT_INDEX_PATH,
+    catalog_loader: Optional[Callable[[], Mapping[str, Mapping[str, Any]]]] = None,
+    gallery_loader: Optional[Callable[[], Sequence[Mapping[str, Any]]]] = None,
+    top_k: int = DEFAULT_TOP_K_AFFINITIES,
+) -> Dict[str, Any]:
+    """
+    Sincroniza o índice sob o lease do store (no GCS só uma instância sincroniza por vez).
+
+    Raises:
+        AffinitySyncBusyError: outra sincronização em andamento.
+        AffinityIndexConflictError: o objeto mudou durante a sincronização; nada foi sobrescrito.
+        ObjectStorageUnavailable: GCS inacessível.
+    """
+    store = get_index_store(index_path)
+    if not store.try_acquire_sync_lease():
+        raise AffinitySyncBusyError()
+    try:
+        return _run_sync(store, force, catalog_loader, gallery_loader, top_k)
+    except AffinityIndexConflictError:
+        with _AFFINITY_LOCK:
+            _load_into_memory(store)
+        _notify_index_changed()
+        raise
+    finally:
+        store.release_sync_lease()
+
+
+def _run_sync(
+    store: AffinityIndexStore,
+    force: bool = False,
     catalog_loader: Optional[Callable[[], Mapping[str, Mapping[str, Any]]]] = None,
     gallery_loader: Optional[Callable[[], Sequence[Mapping[str, Any]]]] = None,
     top_k: int = DEFAULT_TOP_K_AFFINITIES,
@@ -134,7 +346,7 @@ def sync_product_affinity_index(
     - Remove desativados, atualiza apenas novos/alterados e recalcula a matriz
       de afinidade somente quando houver alteração (ou `force=True`).
     """
-    global _LOADED_INDEX
+    global _LOADED_INDEX, _LOADED_GENERATION
     started = time.perf_counter()
 
     fetch_catalog = catalog_loader or sales_repository.fetch_cannibalization_catalog
@@ -182,7 +394,7 @@ def sync_product_affinity_index(
         }
 
     with _AFFINITY_LOCK:
-        previous_index = _LOADED_INDEX if _LOADED_INDEX is not None else _load_index_from_disk(index_path)
+        previous_index, previous_generation = _previous_index_for_sync(store)
         prev_skus = (previous_index or {}).get("skus") or {}
         previous_hashes = {
             str(sku): str(meta.get("content_hash") or "")
@@ -247,7 +459,7 @@ def sync_product_affinity_index(
                 "skus": merged_skus,
                 "affinities": affinities,
             }
-            _save_index_atomic(new_index, index_path)
+            _LOADED_GENERATION = store.save(new_index, previous_generation)
             _LOADED_INDEX = new_index
             summary = dict(new_index["meta"])
         else:
@@ -267,6 +479,7 @@ def sync_product_affinity_index(
             )
             previous_index["meta"] = prev_meta_block
             _LOADED_INDEX = previous_index
+            _LOADED_GENERATION = previous_generation
             summary = prev_meta_block
 
     logger.info(
