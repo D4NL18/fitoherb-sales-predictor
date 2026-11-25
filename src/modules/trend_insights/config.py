@@ -15,7 +15,10 @@ ALLOWED_MODELS = (PRIMARY_MODEL, FALLBACK_MODEL)
 DEFAULT_MONTHLY_BUDGET_USD = 1.80
 DEFAULT_DAILY_BUDGET_USD = 0.20
 DEFAULT_MAX_OUTPUT_TOKENS = 2500
-DEFAULT_VERTEX_LOCATION = "global"
+# Processamento so em regiao controlada (parecer LGPD A-2): o endpoint `global` nao fixa onde o dado e processado.
+DEFAULT_VERTEX_LOCATION = "us-central1"
+PERMITTED_LOCATION_PREFIXES = ("us-", "europe-", "southamerica-east1")
+PERMITTED_MULTI_REGIONS = ("us", "eu")
 _FALSE_VALUES = ("false", "0", "no", "off")
 
 
@@ -53,6 +56,14 @@ def _read_pricing(env: Mapping[str, str]) -> Optional[PricingTable]:
     return table
 
 
+def _read_location(env: Mapping[str, str]) -> str:
+    value = (env.get("TREND_AI_LOCATION") or "").strip() or DEFAULT_VERTEX_LOCATION
+    if value in PERMITTED_MULTI_REGIONS or value.startswith(PERMITTED_LOCATION_PREFIXES):
+        return value
+    raise SettingsError("Regiao do Vertex fora das regioes permitidas (us, eu ou southamerica-east1).",
+                        field="TREND_AI_LOCATION")
+
+
 @dataclass(frozen=True)
 class TrendInsightsSettings:
     ai_enabled: bool
@@ -83,7 +94,7 @@ class TrendInsightsSettings:
             max_output_tokens=int(_read_float(env, "TREND_AI_MAX_OUTPUT_TOKENS_DEFAULT", DEFAULT_MAX_OUTPUT_TOKENS)),
             bucket_name=env.get("TREND_INSIGHTS_BUCKET") or None,
             gcp_project=env.get("GOOGLE_CLOUD_PROJECT") or None,
-            vertex_location=env.get("TREND_AI_LOCATION") or DEFAULT_VERTEX_LOCATION,
+            vertex_location=_read_location(env),
         )
 
 
