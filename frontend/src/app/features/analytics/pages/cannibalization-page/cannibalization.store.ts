@@ -3,7 +3,6 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { EMPTY, Subject, catchError, switchMap, takeUntil, tap, timer } from 'rxjs';
 import {
   CannibalizationDetailResponse,
-  CannibalizationMechanism,
   CannibalizationReportResponse,
   CannibalizationSortKey,
   CannibalizationVictimSummary,
@@ -22,34 +21,6 @@ export const SLOW_QUERY_NOTICE_MS = 4000;
 export const DEFAULT_PAGE_SIZE = 20;
 export const DEFAULT_WINDOW_DAYS: CannibalizationWindowDays = 90;
 export const DEFAULT_SORT_KEY: CannibalizationSortKey = 'reduction-desc';
-
-export interface MechanismVisualMeta {
-  tagClass: 'tag-warning' | 'tag-info' | 'tag-positive';
-  borderToken: string;
-  symbol: string;
-  label: string;
-}
-
-export const MECHANISM_VISUAL_META: Record<CannibalizationMechanism, MechanismVisualMeta> = {
-  PRECO_MENOR_DESTROI_MARGEM: {
-    tagClass: 'tag-warning',
-    borderToken: 'var(--feedback-warning-bg)',
-    symbol: '▲',
-    label: 'Reajustar canibalizador',
-  },
-  PRECO_MENOR_MARGEM_PRESERVADA: {
-    tagClass: 'tag-info',
-    borderToken: 'var(--feedback-info-bg)',
-    symbol: '▼',
-    label: 'Ajustar preço da vítima',
-  },
-  MIGRACAO_POR_VALOR: {
-    tagClass: 'tag-positive',
-    borderToken: 'var(--feedback-positive-bg)',
-    symbol: '↗',
-    label: 'Migração por valor',
-  },
-};
 
 export function normalizeFilterText(value: string): string {
   return value
