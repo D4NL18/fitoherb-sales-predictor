@@ -331,7 +331,8 @@ class EvidenceBuilder:
     @staticmethod
     def _index_generation() -> str:
         index = product_affinity_service.get_loaded_affinity_index()
-        return str(((index or {}).get("meta") or {}).get("generatedAt") or "none")
+        meta = (index or {}).get("meta") or {}
+        return str(meta.get("last_sync_at") or meta.get("generatedAt") or "none")
 
     def _parcels(self, ctx: "_Context", migration, promotions) -> List[RawParcel]:
         raws = [self._seasonal_parcel(ctx), self._price_parcel(ctx, promotions)]

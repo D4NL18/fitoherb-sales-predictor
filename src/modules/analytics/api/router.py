@@ -590,10 +590,14 @@ def trigger_product_affinity_sync(
         description="Se true, força reconstrução completa mesmo sem mudanças no hash.",
     ),
 ):
+    from fastapi import HTTPException
     from src.modules.analytics.api import mappers
     from src.modules.analytics.service import product_affinity_service
 
-    summary = product_affinity_service.sync_product_affinity_index(force=force)
+    try:
+        summary = product_affinity_service.sync_product_affinity_index(force=force)
+    except (product_affinity_service.AffinitySyncBusyError, product_affinity_service.AffinityIndexConflictError):
+        raise HTTPException(status_code=409, detail="Já existe uma sincronização do índice em andamento.") from None
     if summary.get("recomputed"):
         analytics_service.reset_cannibalization_report_cache()
     return {
