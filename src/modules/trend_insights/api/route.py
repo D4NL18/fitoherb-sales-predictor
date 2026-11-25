@@ -50,12 +50,12 @@ def error_response(
 
 
 def _validation_fields(exc: RequestValidationError) -> list:
-    fields = []
+    """Nomes dos campos invalidos, sem repeticao e na ordem em que aparecem."""
+    names = []
     for error in exc.errors():
         location = error.get("loc", ())
-        name = str(location[-1]) if location else "body"
-        fields.append(name if name not in fields else None)
-    return [name for name in fields if name]
+        names.append(str(location[-1]) if location else "body")
+    return list(dict.fromkeys(names))
 
 
 class InsightsAPIRoute(APIRoute):
