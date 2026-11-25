@@ -1,0 +1,20 @@
+{
+  "rule": [
+    {
+      "action": {"type": "Delete"},
+      "condition": {"age": 90, "matchesPrefix": ["insights/"]}
+    },
+    {
+      "action": {"type": "Delete"},
+      "condition": {"age": 400, "matchesPrefix": ["ai-budget/"]}
+    },
+    {
+      "action": {"type": "Delete"},
+      "condition": {"age": 1, "matchesPrefix": ["locks/"]}
+    },
+    {
+      "action": {"type": "AbortIncompleteMultipartUpload"},
+      "condition": {"age": 1}
+    }
+  ]
+}
