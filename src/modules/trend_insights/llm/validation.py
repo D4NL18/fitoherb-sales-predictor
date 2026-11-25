@@ -6,6 +6,7 @@ evidencia avaliada; fator externo so com fonte citada pela busca, com data valid
 """
 import json
 import re
+import ipaddress
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Any, Dict, FrozenSet, List, Mapping, Optional, Tuple
@@ -36,8 +37,9 @@ TOP_LEVEL_KEYS = frozenset({"resumo", "fatores", "hipotesesNaoConfirmadas", "rec
 MAX_SKUS_PER_FACTOR = 10
 MAX_SOURCE_TITLE_CHARS = 200
 _URL_DATE = re.compile(r"/(20\d{2})[/-](0[1-9]|1[0-2])(?:[/-](0[1-9]|[12]\d|3[01]))?(?:/|$|-)")
-_ALLOWED_SCHEMES = ("http", "https")
-_IP_HOST = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
+_ALLOWED_SCHEME = "https"
+_INTERNAL_HOST_SUFFIXES = (".local", ".localhost", ".internal", ".lan", ".home", ".corp", ".intranet")
+_NUMERIC_HOST = re.compile(r"^(0x[0-9a-f]+|\d+)(\.(0x[0-9a-f]+|\d+))*$", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -49,6 +51,7 @@ class ValidationContext:
     cited_urls: FrozenSet[str]
     lookback_start: date
     reference_date: date
+    cited_titles: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -114,9 +117,26 @@ def _date_from_url(url: str) -> Optional[date]:
 def _is_safe_url(url: Any) -> bool:
     if not isinstance(url, str):
         return False
-    parsed = urlparse(url.strip())
-    host = parsed.hostname or ""
-    return parsed.scheme in _ALLOWED_SCHEMES and bool(host) and not _IP_HOST.match(host)
+    try:
+        parsed = urlparse(url.strip())
+        host = (parsed.hostname or "").lower().rstrip(".")
+        port = parsed.port
+    except ValueError:  # IPv6 malformado ou porta invalida
+        return False
+    if parsed.scheme != _ALLOWED_SCHEME or not host or parsed.username or parsed.password:
+        return False
+    if port not in (None, 443) or ":" in host or _NUMERIC_HOST.match(host):  # IPv6 e IPv4 (inclusive hex/inteiro)
+        return False
+    if "." not in host or host == "localhost" or host.endswith(_INTERNAL_HOST_SUFFIXES):
+        return False
+    return not _is_non_public_ip(host)
+
+
+def _is_non_public_ip(host: str) -> bool:
+    try:
+        return not ipaddress.ip_address(host).is_global
+    except ValueError:
+        return False
 
 
 def _resolve_date(model_date: Optional[date], url_date: Optional[date]) -> Tuple[Optional[date], Optional[str]]:
@@ -137,7 +157,8 @@ def _check_source(raw: Any, context: ValidationContext) -> Tuple[Optional[Dict[s
     source = {
         "url": url,
         "dominio": urlparse(url).hostname,
-        "titulo": str(raw.get("titulo") or "")[:MAX_SOURCE_TITLE_CHARS],
+        # o titulo vem da citacao do grounding; so sem ela cai no texto do modelo (que nao decide o rotulo do link)
+        "titulo": str(context.cited_titles.get(url) or raw.get("titulo") or "")[:MAX_SOURCE_TITLE_CHARS],
         "dataPublicacao": resolved.isoformat() if resolved else None,
         "origemData": origin,
     }

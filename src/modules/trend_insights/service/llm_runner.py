@@ -89,6 +89,7 @@ class LlmRunner:
         return ValidationContext(
             modo=evidence.mode, package_skus=evidence.package_skus, evaluated_types=evidence.evaluated_types,
             parcel_values=evidence.parcel_values, cited_urls=cited,
+            cited_titles={c.url: c.title for c in response.citations if c.title},
             lookback_start=previous_start - timedelta(days=EXTERNAL_SOURCE_LOOKBACK_DAYS),
             reference_date=evidence.data_referencia,
         )
