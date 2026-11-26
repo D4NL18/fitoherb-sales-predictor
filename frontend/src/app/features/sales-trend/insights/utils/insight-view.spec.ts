@@ -109,8 +109,9 @@ describe('insight-view', () => {
       expect(sourceDomain('lixo', 'a.com')).toBe('a.com');
     });
 
-    it('safeHref só aceita http(s)', () => {
+    it('safeHref só aceita https', () => {
       expect(safeHref('https://a.com/x')).toBe('https://a.com/x');
+      expect(safeHref('http://a.com/x')).toBeNull();
       expect(safeHref('javascript:alert(1)')).toBeNull();
     });
 

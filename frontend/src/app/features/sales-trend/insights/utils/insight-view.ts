@@ -54,11 +54,11 @@ export function sourceDomain(url: string, fallback: string): string {
   }
 }
 
-/** Só devolve URLs http(s); qualquer outro esquema vira `null` (sem link). */
+/** Só devolve URLs https; qualquer outro esquema (inclusive http) vira `null` (sem link). */
 export function safeHref(url: string): string | null {
   try {
     const u = new URL(url);
-    return u.protocol === 'https:' || u.protocol === 'http:' ? u.href : null;
+    return u.protocol === 'https:' ? u.href : null;
   } catch {
     return null;
   }

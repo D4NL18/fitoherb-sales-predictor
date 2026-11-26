@@ -1,6 +1,6 @@
 /**
  * Fonte citada pela IA (Design Plan §7.1): link externo com `rel="noopener noreferrer"`, domínio visível e data.
- * O título vem da citação (texto puro, nunca innerHTML); URLs fora de http(s) não viram link.
+ * O título vem da citação (texto puro, nunca innerHTML); URLs fora de https não viram link.
  */
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
 import { SourceRef } from '../models/trend-insights.model';
