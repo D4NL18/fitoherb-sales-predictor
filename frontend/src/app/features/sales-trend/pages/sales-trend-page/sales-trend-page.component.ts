@@ -4,7 +4,7 @@
  */
 import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import {
   TrendSortBy,
   TrendSortDir,
@@ -26,6 +26,9 @@ import { PeriodLegendComponent } from '../../components/period-legend/period-leg
 import { ReadingGuideComponent } from '../../components/reading-guide/reading-guide.component';
 import { InlineNoticeComponent } from '../../components/inline-notice/inline-notice.component';
 import { getDisplayErrorMessage } from '../../utils/trend-error';
+import { TrendInsightsStore } from '../../insights/services/trend-insights.store';
+import { TrendInsightPanelComponent } from '../../insights/components/trend-insight-panel.component';
+import { ExplainRequest } from '../../insights/models/trend-insights.model';
 
 @Component({
   selector: 'app-sales-trend-page',
@@ -42,16 +45,17 @@ import { getDisplayErrorMessage } from '../../utils/trend-error';
     PeriodLegendComponent,
     ReadingGuideComponent,
     InlineNoticeComponent,
+    TrendInsightPanelComponent,
   ],
-  providers: [SalesTrendStore],
+  providers: [SalesTrendStore, TrendInsightsStore],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <section class="trend-page" aria-label="Tendência de Vendas">
-      <div class="trend-container">
+      <div class="trend-container" [attr.inert]="insights.context() ? '' : null">
         <!-- Hero da Feature -->
         <header class="feature-hero">
           <div class="hero-main">
-            <h1 class="hero-title">Tendência de Vendas</h1>
+            <h1 class="hero-title" tabindex="-1">Tendência de Vendas</h1>
             <p class="hero-subtitle">
               {{ subtitleText() }}
             </p>
@@ -179,6 +183,8 @@ import { getDisplayErrorMessage } from '../../utils/trend-error';
             [details]="store.expandedSuppliers()"
             [totalRow]="store.currentMeta?.total || null"
             [loading]="store.status() === 'loading'"
+            [explainingSku]="insights.context()?.sku ?? null"
+            (explain)="onExplain($event)"
             (sort)="store.setSort($event)"
             (toggleRow)="onToggleRow($event)"
             (detailSortChange)="onDetailSort($event)"
@@ -201,6 +207,8 @@ import { getDisplayErrorMessage } from '../../utils/trend-error';
             [details]="store.expandedSuppliers()"
             [totalRow]="store.currentMeta?.total || null"
             [loading]="store.status() === 'loading'"
+            [explainingSku]="insights.context()?.sku ?? null"
+            (explain)="onExplain($event)"
             (sortChange)="onMobileSort($event)"
             (toggleRow)="onToggleRow($event)"
             (detailSortChange)="onDetailSort($event)"
@@ -240,6 +248,29 @@ import { getDisplayErrorMessage } from '../../utils/trend-error';
           {{ liveRegionText() }}
         </div>
       </div>
+
+      <!-- Painel "Por que?" (F7): abrir nunca aciona IA -->
+      @if (insights.context(); as ctx) {
+        <app-trend-insight-panel
+          [context]="ctx"
+          [insight]="insights.insight()"
+          [meta]="insights.meta()"
+          [status]="insights.status()"
+          [reloading]="insights.reloading()"
+          [slowLoading]="insights.slowLoading()"
+          [errorMessage]="insights.errorMessage()"
+          [canRetry]="insights.canRetry()"
+          [ai]="insights.aiBlock()"
+          [returnFocusTo]="explainTrigger()"
+          (closePanel)="onCloseInsights()"
+          (windowChange)="insights.setWindow($event)"
+          (retry)="insights.retry()"
+          (generate)="insights.generate()"
+          (requestRegenerate)="insights.requestRegenerate()"
+          (confirmRegenerate)="insights.confirmRegenerate()"
+          (cancelConfirm)="insights.cancelConfirm()"
+        />
+      }
     </section>
   `,
   styles: [`
@@ -341,7 +372,11 @@ import { getDisplayErrorMessage } from '../../utils/trend-error';
 export class SalesTrendPageComponent implements OnInit {
   readonly store = inject(SalesTrendStore);
   readonly viewport = inject(ViewportService);
+  readonly insights = inject(TrendInsightsStore);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+
+  readonly explainTrigger = signal<HTMLElement | null>(null);
 
   formatIsoDate = formatIsoDate;
 
@@ -351,6 +386,39 @@ export class SalesTrendPageComponent implements OnInit {
   ngOnInit(): void {
     const params = queryParamsToState(this.route.snapshot.queryParams);
     this.store.init(params);
+
+    // D-8: link compartilhável ?porque={sku} (só dígitos); o GET resolve o produto.
+    const porque = this.route.snapshot.queryParams['porque'];
+    if (typeof porque === 'string' && /^\d{1,10}$/.test(porque)) {
+      this.openInsights(Number(porque), `produto ${porque}`, null, false);
+    }
+  }
+
+  onExplain(req: ExplainRequest): void {
+    this.explainTrigger.set(req.triggerEl);
+    this.openInsights(req.sku, req.descricao, req.fornecedor, true);
+  }
+
+  onCloseInsights(): void {
+    this.insights.close();
+    void this.router.navigate([], { queryParams: { porque: null }, queryParamsHandling: 'merge', replaceUrl: true });
+  }
+
+  private openInsights(sku: number, descricao: string, fornecedor: string | null, syncUrl: boolean): void {
+    const query = this.store.query();
+    const meta = this.store.currentMeta;
+    this.insights.openPanel({
+      sku,
+      descricao,
+      fornecedor,
+      window: query.sortWindow ?? 3,
+      metric: query.metric ?? 'revenue',
+      baseMonth: meta?.mesBase ?? query.baseMonth,
+      comparisonMode: query.comparisonMode ?? 'point',
+    });
+    if (syncUrl) {
+      void this.router.navigate([], { queryParams: { porque: String(sku) }, queryParamsHandling: 'merge', replaceUrl: true });
+    }
   }
 
   readonly subtitleText = computed(() => {

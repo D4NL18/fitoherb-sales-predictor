@@ -7,7 +7,8 @@
 | Campo | Valor |
 | :--- | :--- |
 | **Feature** | Relatório Global de Canibalização por Migração de Clientes e Equilíbrio de Preço (v2) |
-| **Módulo** | `analytics` (`src/modules/analytics/domain/cannibalization.py`) |
+| **Módulo** | `analytics` (`src/modules/analytics/domain/cannibalization_report.py`; índice de afinidade em `domain/product_affinity.py` + `service/product_affinity_service.py`) |
+| **Revisão 2026-11-24 (Analista, F7)** | Documentação alinhada ao código em produção (#13): a migração não exige mais o mesmo `Tipo`; é ponderada pelo **Índice de Afinidade Semântica** e agnóstica de fornecedor (P-129.4, P-130 reescritos; nova seção P-130.4 a P-130.12) |
 | **Branch** | `feature/analytics-canibalizacao` |
 | **Faixa de Regras** | `P-128` a `P-138` (revisão v2 — pivô de DiD isolado para Relatório Global de Migração) |
 | **Prefixo de Erro** | `CAN-XXX` (`CAN-001`, `CAN-003`, `CAN-004`, `CAN-005`) + `ANL-001` (503) |
@@ -20,10 +21,10 @@
 
 - **User Story Relacionada:** US-F6 (v2) — *Como gestor comercial ou precificador da Fitoherb, quero visualizar um relatório global dos produtos que estão sendo canibalizados dentro da mesma categoria, identificando exatamente quais produtos estão capturando seus clientes (migração direcional líquida), quanto de faturamento (% e R$) foi perdido para a canibalização e qual ajuste de equilíbrio de preço devo aplicar entre vítima e canibalizador para estancar a erosão de margem.*
 - **Objetivo da Feature:**
-  1. **Diagnóstico Global de Vítimas:** Listar todos os produtos ativos que perderam faturamento relevante entre períodos comparáveis (`PRE` vs `CUR`) por migração comprovada de clientes para outros itens da mesma categoria (`Tipo`).
+  1. **Diagnóstico Global de Vítimas:** Listar todos os produtos ativos que perderam faturamento relevante entre períodos comparáveis (`PRE` vs `CUR`) por migração comprovada de clientes para **produtos afins** (Índice de Afinidade Semântica, score ≥ 0,50), de qualquer fornecedor. *(Revisão 2026-11-24: o texto original dizia "mesma categoria (`Tipo`)", critério substituído no código.)*
   2. **Atribuição por Migração Direcional Líquida:** Medir a migração real de clientes que reduziram/pararam o produto A (`PRE`) e passaram/aumentaram a comprar o produto B (`CUR`), descontando o fluxo reverso ($B \to A$) para eliminar ruído bidirecional.
   3. **Diagnóstico de Mecanismo e Equilíbrio de Preço:** Comparar preço e margem unitária de cada par `(Vítima A, Canibalizador B)`, classificar se há destruição de margem e sugerir preços de equilíbrio (`suggestedVictimPrice`, `suggestedCannibalPrice`) que reduzam o gap de preço em ~40% preservando a margem mínima de contribuição.
-- **Fora do escopo:** Alteração automática de tabelas de preço no ERP, exposição de códigos/nomes de clientes (LGPD), análise de canibalização entre categorias (`Tipo`) distintas.
+- **Fora do escopo:** Alteração automática de tabelas de preço no ERP, exposição de códigos/nomes de clientes (LGPD), migração entre produtos **não afins** (score abaixo de 0,50 ou bloqueados pelas travas de compatibilidade, P-130.8). O `Tipo` do ERP deixou de delimitar a migração.
 
 ---
 
@@ -47,6 +48,10 @@
 | `MAX_CANNIBAL_PRICE_HIKE_PCT` | `0.12` (12%) | P-135 | Teto máximo de reajuste sugerido no preço do canibalizador para evitar choque de demanda |
 | `MAX_CANNIBALIZERS_PER_VICTIM` | `10` | P-136 | Limite máximo de canibalizadores retornados por vítima no detalhe |
 | `CACHE_TTL_HOURS` | `6` | P-137 | TTL do cache em memória indexado por `windowDays` |
+| `DEFAULT_TOP_K_AFFINITIES` | `25` | P-130.9 | Vizinhos afins guardados por SKU no índice (`product_affinity.py`) |
+| `MIN_STORED_AFFINITY_SCORE` | `0.30` | P-130.9 | Piso de score para um vizinho ser guardado no índice |
+| `DEFAULT_CANNIBALIZATION_AFFINITY_THRESHOLD` | `0.50` | P-130.11 | Score mínimo para um par entrar na migração (e no Grupo Afim da F7 e no Produto Novo) |
+| `GALLERY_MATCH_MIN_SCORE` | `0.50` | P-130.5 | Score mínimo para vincular um SKU do ERP a um produto da galeria pública |
 
 ---
 
@@ -68,34 +73,68 @@
 
 ### `P-129`: Critérios de Elegibilidade de Produto Vítima (Canibalizado)
 
-- **Declaração Mandatória:** Um SKU ativo $A$ só é reportado como vítima de canibalização se apresentar retração real de faturamento e pelo menos um canibalizador válido na mesma categoria.
+- **Declaração Mandatória:** Um SKU ativo $A$ só é reportado como vítima de canibalização se apresentar retração real de faturamento e pelo menos um canibalizador válido entre os seus produtos afins (P-130.11).
 - **Sub-regras:**
-  - **P-129.1 (Catálogo Ativo e Categoria):** $A$ deve existir no catálogo ativo (`Externo01.Produto`) com atributo `Tipo` não vazio.
+  - **P-129.1 (Catálogo Ativo e Categoria):** $A$ deve existir no catálogo ativo (`Externo01.Produto`) com atributo `Tipo` não vazio. *(O código ainda exige `Tipo` preenchido para a vítima ser elegível; o `Tipo` não restringe mais quem é canibalizador.)*
   - **P-129.2 (Relevância Financeira Prévia):** O faturamento líquido total de $A$ em `PRE` deve satisfazer $R_A^{PRE} \ge \text{MIN\_PRE\_REVENUE}$ (`R$ 500,00`).
   - **P-129.3 (Queda Mínima de Faturamento):**
     $$\text{revenueDrop}_A = R_A^{PRE} - R_A^{CUR} > 0$$
     $$\text{revenueDropPct}_A = \frac{\text{revenueDrop}_A}{R_A^{PRE}} \times 100 \ge \text{minDropPct}$$
     com `minDropPct` padrão `5.0%`.
-  - **P-129.4 (Existência de Canibalizador):** $A$ deve possuir ao menos um SKU $B \neq A$ do mesmo `Tipo` que atenda integralmente `P-131`.
+  - **P-129.4 (Existência de Canibalizador):** $A$ deve possuir ao menos um SKU $B \neq A$ **afim** (P-130.11), ativo, de qualquer fornecedor e de qualquer `Tipo`, que atenda integralmente `P-131`. *(Revisão 2026-11-24: substitui "do mesmo `Tipo`".)*
 
 ---
 
-### `P-130`: Cálculo da Migração Direcional Bruta de Clientes na Mesma Categoria
+### `P-130`: Cálculo da Migração Direcional Bruta de Clientes entre Produtos Afins (agnóstica de fornecedor)
 
-- **Declaração Mandatória:** A transferência de demanda entre dois produtos $A$ e $B$ da mesma categoria (`Tipo`) DEVE ser mensurada individualmente por cliente $c$ em memória volátil, garantindo conservação de fluxo (sem dupla contagem de receita perdida).
+> *Revisão 2026-11-24 (Analista, F7):* a versão anterior desta regra descrevia a migração "na mesma categoria (`Tipo`)" com alocação por `F_{c,T}`. O código em produção (`compute_directional_migration(rows, catalog, affinity_map)`) usa o **Índice de Afinidade Semântica** como critério de substituição e pondera o fluxo pelo `affinityScore`, sem olhar `Tipo` nem fornecedor. O texto abaixo reflete o código.
+
+- **Declaração Mandatória:** A transferência de demanda entre dois produtos **afins** $A$ e $B$ (de qualquer fornecedor e de qualquer `Tipo`) DEVE ser mensurada individualmente por cliente $c$ em memória volátil, ponderada pela afinidade do par e com conservação de fluxo nos dois lados (sem dupla contagem de receita perdida ou ganha).
 - **Sub-regras:**
-  - **P-130.1 (Perdas e Ganhos por Cliente na Categoria $T$):** Para cada cliente $c$ e categoria $T$:
-    - Perda no item $A \in T$: $L_{c,A} = \max(0, R_{c,A}^{PRE} - R_{c,A}^{CUR})$
-    - Ganho no item $B \in T$: $G_{c,B} = \max(0, R_{c,B}^{CUR} - R_{c,B}^{PRE})$
-    - Perda total do cliente na categoria: $L_{c,T} = \sum_{j \in T} L_{c,j}$
-    - Ganho total do cliente na categoria: $G_{c,T} = \sum_{k \in T} G_{c,k}$
-  - **P-130.2 (Alocação Proporcional Sem Dupla Contagem):** Quando $L_{c,A} > 0$ e $G_{c,B} > 0$ (com $A \neq B$):
-    $$F_{c,T} = \min(L_{c,T}, G_{c,T})$$
-    $$M_c(A \to B) = F_{c,T} \times \frac{L_{c,A}}{L_{c,T}} \times \frac{G_{c,B}}{G_{c,T}}$$
-    Garante-se matematicamente que $\sum_B M_c(A \to B) \le L_{c,A}$ e $\sum_A M_c(A \to B) \le G_{c,B}$.
+  - **P-130.1 (Perdas e Ganhos por Cliente):** só entram linhas de SKUs ativos do catálogo com saldo positivo em alguma janela (saldos negativos já truncados em 0, P-128.2) e clientes com pelo menos 2 SKUs no recorte. Para cada cliente $c$ e SKU $j$, com $d_{c,j} = R_{c,j}^{PRE} - R_{c,j}^{CUR}$:
+    - Perda: $L_{c,A} = d_{c,A}$ quando $d_{c,A} > 0$;
+    - Ganho: $G_{c,B} = -d_{c,B}$ quando $d_{c,B} < 0$.
+  - **P-130.2 (Alocação ponderada pela afinidade, sem dupla contagem):**
+    1. **Ganhos compatíveis de $A$:** os $B$ com ganho no cliente e $\text{aff}(A,B) > 0$ no mapa de afinidade (que só contém pares com score ≥ 0,50, P-130.11). Peso de cada um: $w_{c,B} = G_{c,B} \times \text{aff}(A,B)$.
+    2. **Distribuição da perda de $A$:** $T_c(A \to B) = L_{c,A} \times \dfrac{w_{c,B}}{\sum_{B'} w_{c,B'}}$.
+    3. **Teto pelo ganho de $B$:** com $I_{c,B} = \sum_{A} T_c(A \to B)$ (tudo o que chega em $B$ vindo de várias perdas):
+       $$M_c(A \to B) = T_c(A \to B) \times \min\left(1, \frac{G_{c,B}}{I_{c,B}}\right)$$
+    Garante-se que $\sum_B M_c(A \to B) \le L_{c,A}$ e $\sum_A M_c(A \to B) \le G_{c,B}$. O fornecedor não entra no cálculo: um substituto de outro fornecedor pesa o mesmo que um do mesmo fornecedor com o mesmo score.
   - **P-130.3 (Agregação Bruta do Par $A \to B$):**
-    $$\text{grossRev}(A \to B) = \sum_{c} M_c(A \to B)$$
-    $$N_{\text{gross}}(A \to B) = \left|\{c : L_{c,A} > 0 \land G_{c,B} > 0\}\right|$$
+    $$\text{grossRev}(A \to B) = \sum_{c} M_c(A \to B), \qquad N_{\text{gross}}(A \to B) = \left|\{c : M_c(A \to B) > 0\}\right|$$
+  - **P-130.3a (Fallback sem índice):** se o índice de afinidade não estiver carregado (`affinity_map = None`), a F6 usa como compatível todo $B$ que compartilha ao menos um token de família de produto com $A$ (`extract_product_family_tokens`, sem marca, gramatura e sabor), com peso $w_{c,B} = G_{c,B}$. Consumidores novos (ex.: F7, P-153.3) podem proibir esse fallback.
+
+#### Índice de Afinidade Semântica (sub-regras P-130.4 a P-130.12)
+
+> Fonte única de "produto semelhante" do projeto: usada pela Canibalização (P-130.2), pelo Produto Novo (cold start) e pelo Diagnóstico de Tendência com IA (F7, Grupo Afim). Código: `analytics/domain/product_affinity.py` e `analytics/service/product_affinity_service.py`.
+
+- **P-130.4 (Finalidade e princípio):** o índice DEVE devolver, para cada SKU ativo, a lista em ordem decrescente dos produtos mais substituíveis por ele, com score em $[0, 1]$, **com peso igual entre fornecedores**: tokens de nomes de fornecedor/marca (do ERP e da galeria) são removidos de todo texto vetorizado.
+- **P-130.5 (Vínculo ERP × galeria pública):** cada SKU ativo é vinculado a, no máximo, um produto da galeria do fitoherb.com.br (`gallery_client.fetch_fitoherb_gallery_products`) quando:
+  - o fornecedor normalizado (só letras e números) é igual, ou um contém o outro;
+  - a cobertura dos tokens nucleares do nome do ERP no nome da galeria é ≥ 0,50;
+  - a forma física é compatível (iguais, ou o par pó × líquido), os modificadores críticos (`zero`, `kids`, `kit`, `proteica`, `creapure`, `dark`, `hair`, `sem_cafeina`) são idênticos e não há composto (`+`, `c/`, `com`) de um lado só com tokens extras;
+  - o score `0,40 × Jaccard + 0,30 × cobertura do nome ERP + 0,30 × cobertura nuclear` é ≥ `GALLERY_MATCH_MIN_SCORE` (0,50); vence o maior score.
+  O vínculo traz `gallery_name`, `gallery_description`, `gallery_category` e `presentation`.
+- **P-130.6 (Documento de afinidade):** cada SKU vira um texto em dois canais, `núcleo ||| descrição rica`:
+  - **Núcleo:** se o nome tem **função primária** (`detect_primary_function`, lista ordenada e mutuamente exclusiva, ex.: `acessorio`, `barraproteina`, `pretreino_sem_cafeina`, `pretreino`, `creatina_composta`, `creatina`, `whey`, `colageno_tipo2`, `colageno_pele`, `omega`, `polivitaminico`, `termogenico`, `cha_infusao`), o núcleo é só essa função (para que nomes fantasia de fornecedores diferentes fiquem próximos); em `cha_infusao`, função + ervas do nome; sem função, os tokens nucleares do ERP e da galeria. Se o nome for sigla/fantasia, a função pode vir da abertura da descrição da galeria (só pré-treino, e nunca para cápsula, chá, barra ou acessório).
+  - **Descrição rica:** até 120 palavras da descrição da galeria (sem stopwords, sem quantidades, sem tokens de fornecedor), a categoria da galeria e até 20 palavras de apresentação.
+  - Um `content_hash` (SHA-256, 24 caracteres) do documento detecta mudanças.
+- **P-130.7 (Vetorização e score):** TF-IDF por canal, normalizado (L2) e combinado com pesos **0,80 núcleo + 0,15 palavras da descrição (1 e 2-gramas) + 0,05 caracteres da descrição (3 a 5-gramas)**; score = similaridade de cosseno, arredondada em 4 casas. *(A docstring de `_vectorize_documents` ainda cita 60/40; vale o código: 80/15/5.)*
+- **P-130.8 (Travas de compatibilidade):** antes da seleção, cada par recebe um multiplicador:
+  - **0 (bloqueado):** funções primárias diferentes; um lado com função "isolada" (acessório, barras, antissépticos, vinagres, óleo essencial, sabonete, shampoo, condicionador, creme, óleo capilar, chá, polivitamínicos, ômega+Q10) e o outro com função diferente ou sem função; termo negado de um lado presente no núcleo do outro (ex.: "sem cafeína" × cafeína); público diferente (`kids`, `gestante`, `senior`, `mulher`, `homem`, `geral`); modificador `zero` ou `proteica` de um lado só; formas incompatíveis (acessório, tópicos, óleo essencial, comestíveis não cápsula como barra/goma/bala/chá/sachê/spray com outra forma, cápsula × pó/líquido/spray, pó × líquido); em chá, óleo essencial, óleo capilar ou par sem função, ausência de token nuclear comum;
+  - **0,50:** composto multiativo × produto isolado com núcleos diferentes;
+  - **1,0:** demais pares.
+- **P-130.9 (Seleção de vizinhos):** para cada SKU guardam-se os até `DEFAULT_TOP_K_AFFINITIES` (25) vizinhos com score ≥ `MIN_STORED_AFFINITY_SCORE` (0,30) após as travas, em ordem decrescente.
+- **P-130.10 (Persistência e sincronismo):**
+  - o índice (`meta`, `skus`, `affinities`) é salvo em `data/cache/product_affinity_index.json` por escrita atômica (arquivo temporário + troca) e mantido em memória após a 1ª leitura;
+  - o sincronismo incremental (`sync_product_affinity_index`) lê catálogo ativo e galeria, compara `content_hash` com o índice anterior (novos, alterados, removidos, inalterados) e, se houver qualquer mudança, ou `force=true`, ou não houver índice, **recalcula a matriz inteira** preservando documento e hash dos inalterados (o preço é sempre atualizado); sem mudança, só atualiza `last_check_at`;
+  - dispara às 00:00 (horário local) por um laço dentro do processo da API e sob demanda em `POST /api/v1/analytics/affinity/sync?force=`; quando recalcula, limpa o cache do relatório de Canibalização;
+  - **não há reconstrução automática na partida:** se o arquivo não existir (ex.: cold start no Cloud Run com disco efêmero), o índice fica indisponível até o próximo sincronismo, e a Canibalização usa o fallback de P-130.3a. A ida do índice para o GCS com Cloud Scheduler é a tarefa 7.0 (c) da F7 (Q-8).
+- **P-130.11 (Consumo):**
+  - **Migração:** `get_affinity_lookup_map(min_score = DEFAULT_CANNIBALIZATION_AFFINITY_THRESHOLD)` devolve `{A: {B: score}}` só com pares ≥ 0,50, ou `None` sem índice;
+  - **Lista de afins:** `get_product_affinities(sku, top_k)` devolve os vizinhos com `description`, `supplier`, `category`, `galleryCategory`, `currentPrice`, `affinityScore` e `sameSupplier` (fornecedor igual ao do SKU, comparado em maiúsculas sem espaços nas pontas; falso se o SKU não tem fornecedor); `None` se não houver índice ou o SKU não estiver nele. Exposto em `GET /api/v1/analytics/affinity/{sku}?topK=` (1 a 50, padrão 20; 404 se ausente);
+  - **Produto Novo:** `find_similar_for_new_product(name, description, category, top_k=10)` vetoriza o candidato contra os documentos indexados (score ≥ 0,30).
+- **P-130.12 (Limitações conhecidas):** SKUs sem vínculo com a galeria têm documento mais pobre (só nome do ERP); o score é relativo ao vocabulário do catálogo atual (muda quando o catálogo muda); o índice não cobre produtos descontinuados.
 
 ---
 

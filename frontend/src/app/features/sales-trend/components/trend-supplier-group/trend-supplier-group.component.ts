@@ -25,6 +25,7 @@ import {
 import { SupplierDetailState } from '../../services/sales-trend.store';
 import { TrendCellComponent } from '../trend-cell/trend-cell.component';
 import { TrendRowComponent } from '../trend-row/trend-row.component';
+import { ExplainRequest } from '../../insights/models/trend-insights.model';
 import { TrendRowValuesComponent } from '../trend-row-values/trend-row-values.component';
 import { TrendPagerComponent } from '../trend-pager/trend-pager.component';
 import { TrendErrorBannerComponent } from '../trend-error-banner/trend-error-banner.component';
@@ -177,7 +178,9 @@ import { TrendErrorBannerComponent } from '../trend-error-banner/trend-error-ban
             [params]="params()"
             [isExpanded]="isChildExpanded(prod.codigo)"
             [ariaControlsId]="childValuesId(prod.codigo)"
+            [explaining]="explainingSku() === prod.codigo"
             (toggle)="toggleChild(prod.codigo)"
+            (explain)="explain.emit($event)"
             (keydown.escape)="onCollapseKey($event)"
           ></tr>
           @if (isChildExpanded(prod.codigo)) {
@@ -447,7 +450,10 @@ export class TrendSupplierGroupComponent {
   readonly windowMetas = input<TrendWindowMeta[] | null>(null);
   readonly isExpanded = input<boolean>(false);
 
+  readonly explainingSku = input<number | null>(null);
+
   readonly toggle = output<void>();
+  readonly explain = output<ExplainRequest>();
   readonly sortChange = output<TrendSortBy>();
   readonly pageChange = output<number>();
   readonly retry = output<void>();

@@ -3,8 +3,10 @@ import {
   Component,
   OnInit,
   computed,
+  effect,
   inject,
   signal,
+  untracked,
 } from '@angular/core';
 import { ActivatedRoute, Params, Router } from '@angular/router';
 import { ErrorBannerComponent } from '../../components/error-banner/error-banner.component';
@@ -88,6 +90,24 @@ export class CannibalizationPageComponent implements OnInit {
     };
   });
 
+  private pendingOpenSku: string | null = null;
+
+  constructor() {
+    // Q-D2 (F7): abre o drawer de equilíbrio da vítima indicada em ?abrir={sku}, uma única vez, após o relatório carregar.
+    effect(() => {
+      const victims = this.store.victims();
+      if (this.pendingOpenSku === null || this.store.loading() || victims.length === 0) return;
+      const target = victims.find((v) => v.sku === this.pendingOpenSku);
+      this.pendingOpenSku = null;
+      if (target) {
+        untracked(() => {
+          this.drawerTriggerEl.set(null);
+          this.store.openDrawer(target);
+        });
+      }
+    });
+  }
+
   ngOnInit(): void {
     const params = this.route.snapshot.queryParamMap;
     const initialWindow = parseWindowDays(params.get('periodo'));
@@ -95,6 +115,7 @@ export class CannibalizationPageComponent implements OnInit {
     const initialSupplier = sanitizeTextParam(params.get('fornecedor'));
     const initialCategory = sanitizeTextParam(params.get('categoria'));
     const initialSort = parseSortKey(params.get('ordenar'));
+    this.pendingOpenSku = parseSkuParam(params.get('abrir'));
 
     if (initialSearch) this.store.setSearchQuery(initialSearch);
     if (initialSupplier) this.store.setSupplier(initialSupplier);
@@ -214,4 +235,9 @@ function parseSortKey(raw: string | null): CannibalizationSortKey {
     return raw as CannibalizationSortKey;
   }
   return DEFAULT_SORT_KEY;
+}
+
+function parseSkuParam(raw: string | null): string | null {
+  if (!raw) return null;
+  return /^\d{1,20}$/.test(raw.trim()) ? raw.trim() : null;
 }

@@ -7,6 +7,11 @@ import os
 import secrets
 from fastapi import Response
 
+# Unica rota dispensada do Basic: o Cloud Scheduler envia token OIDC, validado pela propria rota (ADR-009 DA-06).
+# Metodo e caminho exatos; qualquer outro /internal/* continua exigindo Basic.
+OIDC_EXEMPT_METHOD = "POST"
+OIDC_EXEMPT_PATH = "/internal/v1/affinity-index/sync"
+
 
 class HTTPBasicAuthASGIMiddleware:
     """
@@ -26,6 +31,10 @@ class HTTPBasicAuthASGIMiddleware:
 
         # Requisições OPTIONS (CORS preflight) sempre são liberadas
         if scope.get("method") == "OPTIONS":
+            await self.app(scope, receive, send)
+            return
+
+        if scope.get("method") == OIDC_EXEMPT_METHOD and scope.get("path") == OIDC_EXEMPT_PATH:
             await self.app(scope, receive, send)
             return
 

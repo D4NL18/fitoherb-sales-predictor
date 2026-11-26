@@ -12,11 +12,11 @@ import {
   SignedBrlPipe,
   SignedPercentPipe,
 } from '../../../../pipes/pt-br-format.pipes';
+import { getReductionSeverityTag } from '../../cannibalization.store';
 import {
   MECHANISM_VISUAL_META,
   MechanismVisualMeta,
-  getReductionSeverityTag,
-} from '../../cannibalization.store';
+} from '../../../../utils/cannibalization-mechanism';
 import { SearchableComboboxComponent } from '../searchable-combobox/searchable-combobox.component';
 
 export type ReportSortableColumn =

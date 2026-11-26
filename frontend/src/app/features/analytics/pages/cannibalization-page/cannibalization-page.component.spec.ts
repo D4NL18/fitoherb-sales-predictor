@@ -552,4 +552,46 @@ describe('CannibalizationPageComponent (v2)', () => {
     ) as HTMLButtonElement;
     expect(normalizeText(activeBtn.textContent)).toBe('90 dias');
   }));
+
+  it('abre o drawer de equilíbrio de preço quando a URL traz ?abrir={sku} de uma vítima do relatório (F7 Q-D2)', fakeAsync(() => {
+    void router.navigateByUrl('/analytics/canibalizacao?periodo=90&abrir=100235');
+    tick();
+
+    const fixtureWithUrl = TestBed.createComponent(CannibalizationPageComponent);
+    fixtureWithUrl.detectChanges();
+    httpMock
+      .expectOne((r) => r.url === '/api/v1/analytics/cannibalization/report')
+      .flush(createReportResponse(90));
+    fixtureWithUrl.detectChanges();
+    tick();
+    fixtureWithUrl.detectChanges();
+
+    httpMock
+      .expectOne((r) => r.url === '/api/v1/analytics/cannibalization/report/100235')
+      .flush(createDetailResponse('100235'));
+    fixtureWithUrl.detectChanges();
+
+    expect(
+      fixtureWithUrl.nativeElement.querySelector('app-price-equilibrium-drawer [role="dialog"]'),
+    ).not.toBeNull();
+  }));
+
+  it('ignora ?abrir com valor inválido ou SKU ausente do relatório, sem abrir o drawer', fakeAsync(() => {
+    void router.navigateByUrl('/analytics/canibalizacao?abrir=<script>');
+    tick();
+
+    const fixtureWithUrl = TestBed.createComponent(CannibalizationPageComponent);
+    fixtureWithUrl.detectChanges();
+    httpMock
+      .expectOne((r) => r.url === '/api/v1/analytics/cannibalization/report')
+      .flush(createReportResponse(90));
+    fixtureWithUrl.detectChanges();
+    tick();
+    fixtureWithUrl.detectChanges();
+
+    expect(
+      fixtureWithUrl.nativeElement.querySelector('app-price-equilibrium-drawer [role="dialog"]'),
+    ).toBeNull();
+    httpMock.expectNone((r) => r.url.includes('/report/'));
+  }));
 });

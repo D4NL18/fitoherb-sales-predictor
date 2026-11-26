@@ -1233,6 +1233,15 @@ def _get_cannibalization_catalog_cached() -> Tuple[dict, _date]:
     return catalog_data, now_dt
 
 
+def get_cannibalization_catalog() -> dict:
+    """
+    Catalogo ativo da Canibalizacao (SKU texto -> descricao, fornecedor, estoque atual, preco), com o mesmo
+    cache de 6 h da F6. Superficie publica para outros modulos (F7) nao tocarem em funcoes privadas.
+    """
+    catalog_data, _reference = _get_cannibalization_catalog_cached()
+    return catalog_data
+
+
 def _get_cached_substitutes_for_sku(
     sku_str: str,
     catalog: dict,
@@ -1802,6 +1811,10 @@ def reset_cannibalization_report_cache() -> None:
         _CAN_REPORT_SNAPSHOT_CACHE.clear()
     with _CAN_CACHE_LOCK:
         _CAN_SUB_CACHE.clear()
+
+
+# Quando a geração do índice de afinidade muda (outra instância sincronizou), os relatórios em cache ficam velhos.
+product_affinity_service.register_index_changed_listener(reset_cannibalization_report_cache)
 
 
 def _get_cannibalization_migration_snapshot_cached(

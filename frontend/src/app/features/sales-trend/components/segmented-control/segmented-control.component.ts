@@ -10,6 +10,8 @@ export interface SegmentOption<T = string> {
   label: string;
   count?: number;
   disabled?: boolean;
+  /** Ocupado: bloqueia a seleção mas mantém o foco no botão (`aria-disabled`, sem `disabled`). */
+  busy?: boolean;
 }
 
 @Component({
@@ -33,6 +35,7 @@ export interface SegmentOption<T = string> {
           [attr.aria-checked]="opt.value === value()"
           [attr.tabindex]="idx === activeTabIndex() ? 0 : -1"
           [disabled]="opt.disabled"
+          [attr.aria-disabled]="opt.busy ? 'true' : null"
           (click)="select(opt.value)"
           (keydown)="onKeyDown($event, idx)"
         >
@@ -94,7 +97,7 @@ export interface SegmentOption<T = string> {
       white-space: nowrap;
       transition: background-color var(--transition-fast), color var(--transition-fast);
 
-      &:hover:not([aria-checked="true"]):not(:disabled) {
+      &:hover:not([aria-checked="true"]):not(:disabled):not([aria-disabled="true"]) {
         background-color: var(--bg-subtle);
         color: var(--text-primary);
       }
@@ -109,7 +112,8 @@ export interface SegmentOption<T = string> {
         outline-offset: 2px;
       }
 
-      &:disabled {
+      &:disabled,
+      &[aria-disabled="true"] {
         opacity: 0.45;
         cursor: not-allowed;
       }
@@ -158,6 +162,9 @@ export class SegmentedControlComponent<T = string> {
   });
 
   select(val: T): void {
+    if (this.options().some((o) => o.busy)) {
+      return;
+    }
     if (val !== this.value()) {
       this.valueChange.emit(val);
     }
@@ -202,6 +209,9 @@ export class SegmentedControlComponent<T = string> {
     }
 
     if (targetIndex >= 0 && !opts[targetIndex].disabled) {
+      if (opts[targetIndex].busy) {
+        return;
+      }
       this.select(opts[targetIndex].value);
       const btnList = this.buttons();
       btnList[targetIndex]?.nativeElement.focus();

@@ -5,6 +5,8 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute } from '@angular/router';
 import { of, throwError } from 'rxjs';
 import { signal } from '@angular/core';
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { SalesTrendPageComponent } from './sales-trend-page.component';
 import { SalesTrendService } from '../../services/sales-trend.service';
 import { ViewportService } from '../../services/viewport.service';
@@ -126,6 +128,8 @@ describe('SalesTrendPageComponent (F-12)', () => {
     await TestBed.configureTestingModule({
       imports: [SalesTrendPageComponent],
       providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
         { provide: SalesTrendService, useValue: serviceMock },
         { provide: ViewportService, useValue: { isCompact: isCompactSignal } },
         {
@@ -205,5 +209,24 @@ describe('SalesTrendPageComponent (F-12)', () => {
     fixture.detectChanges();
     expect(el.querySelector('.empty-title')?.textContent?.trim()).toBe('Sem movimentação no período');
     expect(el.querySelector('.empty-action-btn')).toBeNull();
+  });
+
+  describe('painel "Por que?" (F7)', () => {
+    it('botão "Por que?" na linha abre o painel com GET e nunca chama o POST', () => {
+      const http = TestBed.inject(HttpTestingController);
+      const el = fixture.nativeElement as HTMLElement;
+      const btn = el.querySelector('button.btn-explain') as HTMLButtonElement;
+      expect(btn).not.toBeNull();
+      expect(btn.getAttribute('aria-label')).toContain('Por que CHÁ VERDE 100G');
+      btn.click();
+      fixture.detectChanges();
+
+      const req = http.expectOne((r) => r.url === '/api/v1/sales-trend/insights/product/1001');
+      expect(req.request.method).toBe('GET');
+      expect(el.querySelector('app-trend-insight-panel [role="dialog"]')).not.toBeNull();
+      expect(el.querySelector('.trend-container')?.hasAttribute('inert')).toBeTrue();
+      http.expectNone((r) => r.url.endsWith('/generate'));
+      req.flush(null, { status: 500, statusText: 'Err' });
+    });
   });
 });

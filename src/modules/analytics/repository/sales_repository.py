@@ -848,3 +848,134 @@ def fetch_customer_sku_window_sales(
                     }
                 )
     return result
+
+
+# ------------------------------------------------------------------ F7 — leituras aditivas com 4 datas (P-153.1, P-167; ADR-009 DA-04)
+
+_CUSTOMER_SKU_SPLIT_WINDOW_SALES_SQL = f"""
+SELECT
+    base.customer_code,
+    base.sku,
+    SUM(CASE WHEN base.period_flag = 0 THEN base.net_qty ELSE 0 END) AS pre_qty,
+    SUM(CASE WHEN base.period_flag = 0 THEN base.net_rev ELSE 0 END) AS pre_rev,
+    SUM(CASE WHEN base.period_flag = 1 THEN base.net_qty ELSE 0 END) AS cur_qty,
+    SUM(CASE WHEN base.period_flag = 1 THEN base.net_rev ELSE 0 END) AS cur_rev
+FROM (
+    SELECT
+        [Cod Cliente] AS customer_code,
+        [Cod Produto] AS sku,
+        CASE WHEN [Data] >= ? THEN 1 ELSE 0 END AS period_flag,
+        CASE WHEN [Operação] LIKE '{RETURN_OPERATION_PATTERN}' THEN -ABS([Qtd Venda]) ELSE [Qtd Venda] END AS net_qty,
+        CASE WHEN [Operação] LIKE '{RETURN_OPERATION_PATTERN}' THEN -ABS([Valor Venda]) ELSE [Valor Venda] END AS net_rev
+    FROM Externo01.Vendas
+    WHERE ([Operação] = '{SALE_OPERATION}' OR [Operação] LIKE '{RETURN_OPERATION_PATTERN}')
+      AND (([Data] >= ? AND [Data] < ?) OR ([Data] >= ? AND [Data] < ?))
+      AND [Cod Cliente] IS NOT NULL
+      AND [Cod Produto] IS NOT NULL
+) AS base
+GROUP BY base.customer_code, base.sku
+HAVING SUM(CASE WHEN base.period_flag = 0 THEN base.net_rev ELSE 0 END) > 0
+    OR SUM(CASE WHEN base.period_flag = 1 THEN base.net_rev ELSE 0 END) > 0
+""".strip()
+
+_SKU_REGION_WINDOW_SALES_SQL = f"""
+SELECT
+    [UF] AS uf,
+    SUM(CASE WHEN [Data] < ? THEN CASE WHEN [Operação] LIKE '{RETURN_OPERATION_PATTERN}' THEN -ABS([Qtd Venda]) ELSE [Qtd Venda] END ELSE 0 END) AS pre_qty,
+    SUM(CASE WHEN [Data] < ? THEN CASE WHEN [Operação] LIKE '{RETURN_OPERATION_PATTERN}' THEN -ABS([Valor Venda]) ELSE [Valor Venda] END ELSE 0 END) AS pre_rev,
+    SUM(CASE WHEN [Data] >= ? THEN CASE WHEN [Operação] LIKE '{RETURN_OPERATION_PATTERN}' THEN -ABS([Qtd Venda]) ELSE [Qtd Venda] END ELSE 0 END) AS cur_qty,
+    SUM(CASE WHEN [Data] >= ? THEN CASE WHEN [Operação] LIKE '{RETURN_OPERATION_PATTERN}' THEN -ABS([Valor Venda]) ELSE [Valor Venda] END ELSE 0 END) AS cur_rev,
+    COUNT(DISTINCT [Cod Cliente]) AS clients
+FROM Externo01.Vendas
+WHERE ([Operação] = '{SALE_OPERATION}' OR [Operação] LIKE '{RETURN_OPERATION_PATTERN}')
+  AND [Cod Produto] = ?
+  AND (([Data] >= ? AND [Data] < ?) OR ([Data] >= ? AND [Data] < ?))
+  AND [Cod Cliente] IS NOT NULL
+  AND [UF] IS NOT NULL
+GROUP BY [UF]
+""".strip()
+
+
+def _validate_four_dates(pre_start: date, pre_end: date, cur_start: date, cur_end: date) -> None:
+    """Pré-condição das janelas: `PRE` e `CUR` não vazias, em ordem e sem sobreposição."""
+    if not (pre_start < pre_end <= cur_start < cur_end):
+        raise ValueError("Janelas inválidas: exige-se pre_start < pre_end <= cur_start < cur_end.")
+
+
+def fetch_customer_sku_split_window_sales(
+    pre_start: date,
+    pre_end: date,
+    cur_start: date,
+    cur_end: date,
+) -> List[tuple]:
+    """
+    Variante da leitura de migração com QUATRO datas (F7, P-153.1, ADR-009 DA-04): serve a janelas
+    não contíguas (`point` com X > 1) e contíguas. `PRE` = [pre_start, pre_end), `CUR` = [cur_start, cur_end).
+
+    Mesma blindagem e mesmas colunas da F6 (LGPD-CAN-01); a função da F6 permanece intacta.
+    Devolve tuplas `(customer_code, sku_str, pre_qty, pre_rev, cur_qty, cur_rev)` lidas em blocos
+    (`fetchmany`). O `customer_code` só existe na etapa volátil de quem chama (LGPD-TIA-01).
+
+    Raises:
+        ValueError: datas fora de ordem (antes de executar a consulta).
+    """
+    _validate_four_dates(pre_start, pre_end, cur_start, cur_end)
+    params = (cur_start, pre_start, pre_end, cur_start, cur_end)
+    result: List[tuple] = []
+    with _execute_readonly(_CUSTOMER_SKU_SPLIT_WINDOW_SALES_SQL, params) as cursor:
+        while True:
+            chunk = cursor.fetchmany(FETCH_CHUNK_SIZE)
+            if not chunk:
+                break
+            for row in chunk:
+                if row[0] is None or row[1] is None:
+                    continue
+                result.append(
+                    (
+                        int(row[0]),
+                        str(int(row[1])),
+                        float(row[2] or 0.0),
+                        float(row[3] or 0.0),
+                        float(row[4] or 0.0),
+                        float(row[5] or 0.0),
+                    )
+                )
+    return result
+
+
+def fetch_sku_region_window_sales(
+    sku: int,
+    pre_start: date,
+    pre_end: date,
+    cur_start: date,
+    cur_end: date,
+) -> List[tuple]:
+    """
+    Vendas líquidas de um SKU por UF nas janelas `PRE`/`CUR` (F7, P-167). Devolve só agregados
+    `(uf, pre_qty, pre_rev, cur_qty, cur_rev, clientes_distintos)`; o código do cliente nunca sai do SQL.
+
+    Raises:
+        ValueError: datas fora de ordem (antes de executar a consulta).
+    """
+    _validate_four_dates(pre_start, pre_end, cur_start, cur_end)
+    params = (pre_end, pre_end, cur_start, cur_start, int(sku), pre_start, pre_end, cur_start, cur_end)
+    result: List[tuple] = []
+    with _execute_readonly(_SKU_REGION_WINDOW_SALES_SQL, params) as cursor:
+        while True:
+            chunk = cursor.fetchmany(FETCH_CHUNK_SIZE)
+            if not chunk:
+                break
+            for row in chunk:
+                if row[0] is None:
+                    continue
+                result.append(
+                    (
+                        str(row[0]).strip().upper(),
+                        float(row[1] or 0.0),
+                        float(row[2] or 0.0),
+                        float(row[3] or 0.0),
+                        float(row[4] or 0.0),
+                        int(row[5] or 0),
+                    )
+                )
+    return result

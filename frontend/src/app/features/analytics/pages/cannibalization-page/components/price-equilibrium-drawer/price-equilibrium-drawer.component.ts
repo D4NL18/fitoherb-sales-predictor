@@ -27,20 +27,12 @@ import {
   SignedDecimalPipe,
   SignedPercentPipe,
 } from '../../../../pipes/pt-br-format.pipes';
+import { getReductionSeverityTag } from '../../cannibalization.store';
 import {
   MECHANISM_VISUAL_META,
   MechanismVisualMeta,
-  getReductionSeverityTag,
-} from '../../cannibalization.store';
-
-const FOCUSABLE_SELECTOR = [
-  'a[href]',
-  'button:not([disabled])',
-  'input:not([disabled])',
-  'select:not([disabled])',
-  'textarea:not([disabled])',
-  '[tabindex]:not([tabindex="-1"])',
-].join(', ');
+} from '../../../../utils/cannibalization-mechanism';
+import { lockBodyScroll, trapFocus } from '../../../../../../shared/a11y/dialog-focus';
 
 let nextDrawerId = 0;
 
@@ -76,7 +68,7 @@ export class PriceEquilibriumDrawerComponent {
   protected readonly titleId = `price-equilibrium-drawer-title-${nextDrawerId++}`;
 
   private wasOpen = false;
-  private previousBodyOverflow: string | null = null;
+  private unlockScroll: (() => void) | null = null;
 
   protected readonly isOpen = computed(() => this.victim() !== null);
 
@@ -97,11 +89,12 @@ export class PriceEquilibriumDrawerComponent {
       const open = this.isOpen();
       if (open && !this.wasOpen) {
         this.wasOpen = true;
-        this.lockBodyScroll();
+        this.unlockScroll = lockBodyScroll(this.document);
         queueMicrotask(() => this.closeButton()?.nativeElement.focus());
       } else if (!open && this.wasOpen) {
         this.wasOpen = false;
-        this.unlockBodyScroll();
+        this.unlockScroll?.();
+        this.unlockScroll = null;
         const trigger = this.returnFocusTo();
         queueMicrotask(() => trigger?.focus());
       }
@@ -117,7 +110,8 @@ export class PriceEquilibriumDrawerComponent {
       return;
     }
     if (event.key === 'Tab') {
-      this.trapFocus(event);
+      const panel = this.drawerPanel()?.nativeElement;
+      if (panel) trapFocus(event, panel, this.document);
     }
   }
 
@@ -146,36 +140,5 @@ export class PriceEquilibriumDrawerComponent {
     item: CannibalizerDetail | CannibalizerSummary,
   ): item is CannibalizerDetail {
     return 'victimMarginFloorPrice' in item;
-  }
-
-  private trapFocus(event: KeyboardEvent): void {
-    const panel = this.drawerPanel()?.nativeElement;
-    if (!panel) return;
-    const focusables = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
-    if (focusables.length === 0) return;
-
-    const first = focusables[0];
-    const last = focusables[focusables.length - 1];
-    const active = this.document.activeElement;
-
-    if (event.shiftKey && active === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && active === last) {
-      event.preventDefault();
-      first.focus();
-    }
-  }
-
-  private lockBodyScroll(): void {
-    this.previousBodyOverflow = this.document.body.style.overflow;
-    this.document.body.style.overflow = 'hidden';
-  }
-
-  private unlockBodyScroll(): void {
-    if (this.previousBodyOverflow !== null) {
-      this.document.body.style.overflow = this.previousBodyOverflow;
-      this.previousBodyOverflow = null;
-    }
   }
 }

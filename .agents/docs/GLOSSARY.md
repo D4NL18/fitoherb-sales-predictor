@@ -4,7 +4,7 @@ Este documento é a referência única de terminologia do projeto. Analista, Arq
 
 - **Contexto delimitado:** Previsão de Estoque e Compras (módulo `inventory`).
 - **Contexto delimitado:** Analytics Comercial (módulo `analytics`), seção 3.
-- **Última atualização:** 2026-11-10 (feature P-053, Política Mín/Máx 30/60; feature P-058 a P-071, Analytics Cross-sell; feature P-072 a P-093, Tendência de Vendas, seção 4, com visão por fornecedor, só produtos ativos e independente das demais features).
+- **Última atualização:** 2026-11-24 (seção 6: Índice de Afinidade Semântica, P-130.4 a P-130.12, e Diagnóstico de Motivos da Tendência com IA, F7, P-150 a P-187). Anteriores: 2026-11-10 (P-053, Política Mín/Máx 30/60; P-058 a P-071, Cross-sell; P-072 a P-093, Tendência de Vendas).
 - **Coluna "Identificador no código":** nome atual no contrato JSON ou nome sugerido para os conceitos novos. Os nomes dos campos novos foram confirmados pelo Arquiteto em `api_contracts/inventory.md` (contrato 2.0.0), mantendo `camelCase`.
 
 ---
@@ -147,3 +147,51 @@ Esta seção define os termos ubíquos da feature de Churn de Clientes com Score
 | **Histórico Curto** | Identificador de clientes com menos de 3 pedidos no histórico, ativando amortecimento para 3 meses no divisor. | `pedidos < 3` (P-122) | `historicoCurto` | "cliente novo", "incompleto" |
 | **Produtos Perdidos** | Os até 5 SKUs mais relevantes adquiridos pelo cliente nos últimos 12 meses que não foram comprados nos últimos 60 dias. | P-126.3 | `produtosPerdidos` | "itens cancelados", "devoluções" |
 | **CHU-NNN** | Prefixo dos códigos de erro da feature (`CHU-001` 404 cliente não encontrado; `CHU-002` 422 base insuficiente; `CHU-003` 400 parâmetros inválidos). | P-127 | `CHU-001` a `CHU-003` | — |
+
+---
+
+## 6. Afinidade de Produtos e Diagnóstico de Motivos da Tendência com IA (P-130.4 a P-130.12; F7, P-150 a P-187)
+
+Termos das seções 4 (Tendência) e 5 (Churn) valem aqui com o mesmo significado. Identificadores `camelCase` são sugestões; o Arquiteto confirma em `api_contracts/trend-insights.md`.
+
+| Termo | Definição | Fórmula / Regra | Identificador no código | Não usar |
+| :--- | :--- | :--- | :--- | :--- |
+| **Índice de Afinidade Semântica** | Lista, por SKU ativo, dos produtos mais substituíveis por ele (score 0 a 1), calculada sobre o nome do ERP e a descrição da galeria do fitoherb.com.br, sem peso para fornecedor. Fonte única de "produto semelhante" no projeto. | P-130.4 a P-130.12 | `product_affinity`, `affinities` | "mesma categoria", "mesmo `Tipo`" como critério de substituto; "similaridade TF-IDF do F2" (removida) |
+| **Score de Afinidade** | Similaridade de cosseno entre os documentos de afinidade de dois SKUs, após as travas de compatibilidade. | P-130.7, P-130.8 | `affinityScore` | "probabilidade de troca" |
+| **Produto Afim (Afim)** | Vizinho de um SKU no índice com score ≥ 0,50. | P-130.11, P-154 | `DEFAULT_CANNIBALIZATION_AFFINITY_THRESHOLD` | "concorrente" sozinho (pode ser do mesmo fornecedor) |
+| **Função Primária** | Objetivo funcional do produto detectado pelo nome (ex.: `creatina`, `pretreino`, `colageno_pele`, `cha_infusao`). Produtos com funções diferentes nunca são afins. Também monta a busca externa da IA. | P-130.6, P-180 | `primary_function` | "categoria" (é a da galeria, outro campo) |
+| **Categoria da Galeria** | Categoria do produto na galeria pública do fitoherb.com.br, quando há vínculo. | P-130.5 | `galleryCategory` | `Tipo` (categoria do ERP) |
+| **Mesmo Fornecedor** | Afim com o mesmo `Fornecedor` do SKU no catálogo (comparação em maiúsculas). | P-130.11, P-154.2 | `sameSupplier` | "marca própria", "interno" sem contexto |
+| **Grupo Afim** | O SKU `A` mais os seus afins ativos (score ≥ 0,50). Referência de "mercado" do produto. | P-154 | `grupoAfim` | "categoria", "segmento" |
+| **Participação no Grupo Afim** | Fatia de `A` na venda do Grupo Afim, comparada entre a Janela Anterior e a Atual, em pontos percentuais. | `A ÷ (A + afins)`; P-155 | `participacaoPre`, `participacaoCur`, `deltaParticipacaoPp` | "market share" (não é o mercado total) |
+| **Efeito Mercado / Efeito Participação** | Partes da variação de `A`: o que viria se `A` acompanhasse os afins, e o restante. | `baseAjustada × V_mercado` e `Δobs − efeitoMercado`; P-155 | `efeitoMercado`, `efeitoParticipacao` | — |
+| **Diagnóstico de Mercado** | Classificação da causa dominante: `MERCADO_EM_QUEDA`, `MERCADO_EM_ALTA`, `PERDA_DE_PARTICIPACAO`, `GANHO_DE_PARTICIPACAO`, `MISTO`, `SEM_GRUPO_AFIM`, `NAO_AVALIADO`. | Limiar 0,70; P-156 | `diagnosticoMercado` | "mercado × concorrência" como rótulo de tela |
+| **Base Ajustada** | Total da Janela Anterior levado à escala da Janela Atual pelo fator `k` (cobertura parcial ou modo média), exatamente como na Tendência. | `A_pre × k`; P-151.4 | `baseAjustada`, `k` | "anterior" sem ajuste |
+| **Variação Observada (Δobs)** | Diferença entre a Janela Atual e a Base Ajustada, na métrica da tela. Ponto de partida da cascata. | `A_cur − baseAjustada`; P-151.4 | `deltaObservado` | "delta" sem unidade |
+| **Cascata de Atribuição** | Decomposição da Variação Observada em parcelas por causa, em ordem fixa, com corte para não passar do observado. | P-157 a P-169 | `cascata`, `parcelas[]` | "waterfall" em regras (só rótulo do gráfico) |
+| **Parcela** | Valor atribuído a uma causa na cascata, com sentido, confiança e status (`AVALIADO`, `NAO_AVALIADO`, `SEM_EFEITO`). | P-157 | `parcela`, `tipo`, `confianca`, `status` | "fator" (fator é o item da IA) |
+| **Parcela Explicativa / Compensatória** | Explicativa: no mesmo sentido da variação. Compensatória: no sentido oposto (ex.: sazonalidade prevê alta num produto que caiu). | P-169.2 | `cortada` | — |
+| **Resíduo** | Parte da Variação Observada que nenhuma parcela numérica explica; principal insumo da busca externa. | `Δobs − Σ parcelas`; P-168 | `residuo`, `coberturaExplicacaoPct` | "erro", "outros" |
+| **Lançamento Afim** | Afim cuja 1ª venda cai entre o fim da Janela Anterior e o fim da Janela Atual (e ≥ início da base + 90 dias). Tem prioridade sobre canibalização. | P-160 | `PRODUTO_NOVO` | "SKU Novo (Tendência)" (é o estado da célula do próprio SKU) |
+| **Canibalização Mesmo Fornecedor / Outro Fornecedor** | Receita migrada líquida de `A` para afins que não são lançamento, separada pelo `sameSupplier`. | P-161 | `CANIBALIZACAO_MESMO_FORNECEDOR`, `CANIBALIZACAO_OUTRO_FORNECEDOR` | "canibalização interna" (termo das altas, P-171) |
+| **Clientes Perdidos (Tendência)** | Clientes que compravam `A`, hoje em risco ou inativos no churn e sem ganho em nenhum afim. | P-164 | `CLIENTES_PERDIDOS`, `clientesPerdidosQtd` | "Produtos Perdidos" (termo do churn, por cliente) |
+| **Perda de Participação sem Migração** | Parte do efeito participação que a migração de clientes não explica: afins cresceram com clientes que não eram de `A`. Leitura do resíduo. | P-168.1 | `PERDA_PARTICIPACAO_SEM_MIGRACAO` | — |
+| **Impacto em Outros Produtos** | Nas altas, os afins que perderam venda para `A`, separados em canibalização interna (mesmo fornecedor) e ganho sobre concorrentes (outro fornecedor), com o mecanismo de preço da F6. | P-171 | `impactoEmOutrosProdutos`, `CANIBALIZACAO_INTERNA`, `GANHO_SOBRE_CONCORRENTE` | "vítimas" na tela |
+| **Modo de Diagnóstico** | `QUANTITATIVO` (com valores), `QUALITATIVO` (só sinais: Base Baixa, Sem Base, Novo) ou `SEM_VARIACAO` (nada a explicar). | P-152 | `modoDiagnostico` | — |
+| **Motor de Evidências** | Camada determinística que calcula cascata, grupo afim e diagnóstico de mercado; única fonte de números. | P-157 a P-173 | `trend_insights/domain` | "IA" (não usa LLM) |
+| **Pacote de Evidências** | JSON agregado, sem dado de cliente, enviado ao LLM. | P-179 | `evidencePackage` | "prompt" (o prompt contém o pacote) |
+| **Diagnóstico com IA** | Resultado validado do LLM: resumo, fatores com confiança e fontes, hipóteses e recomendações. Só gerado pelo botão. | P-174 a P-183 | `diagnosticoIa` | "análise automática" |
+| **Fator** | Item do Diagnóstico com IA, de tipo interno (exige parcela) ou externo (`CLIMA`, `POLITICO_REGULATORIO`, `MATERIA_PRIMA`, `CONCORRENCIA_MERCADO`, `OUTRO`; exige fonte). | P-181 | `fatores[]`, `tipo` | "parcela" |
+| **Hipótese Não Confirmada** | Fator externo sem fonte válida, sem data, fora do período, posterior ao período ou sem coerência direcional; exibido separado das evidências. | P-182.4, P-180.5 | `hipotesesNaoConfirmadas` | "fator possível" |
+| **Radar Externo** | Pesquisa na web (1 chamada com busca, sem dado da empresa) que avalia as 8 Dimensões Externas de um assunto (matéria-prima ou categoria) em um mês-base; compartilhado entre produtos e usuários; saída só com `tema` fechado e frase fixa do backend. Sem LLM, vale só em leitura (template). | P-180.3 | `radar`, `radarExterno` | "pesquisa do produto", "notícias" |
+| **Dimensão Externa** | Cada um dos 8 itens fixos do checklist externo (política/regulatório, clima/safra, custo da matéria-prima, oferta/demanda da matéria-prima, câmbio/logística, consumo/mídia/saúde, concorrência, eventos de mercado); sempre devolvida, inclusive como `SEM_EVIDENCIA`. | P-180.4 | `fatoresExternos[]`, `dimensao` | "fator externo" (é o item promovido a `fatores[]`) |
+| **Tema (do Radar)** | Valor de lista fechada que descreve o achado de uma dimensão no radar; a frase exibida é fixa, gerada pelo backend a partir dele. | P-180.3 | `tema`, `RADAR_THEMES` | "nota livre", "resumo da notícia" |
+| **Sem Evidência** | Dimensão avaliada em que nada relevante foi achado; significa "não encontramos evidência na pesquisa feita", nunca "não houve" nem "neutra". | P-180.4, P-180.5 | `SEM_EVIDENCIA` | "neutra", "sem impacto" |
+| **Relação Temporal** | Posição da data da fonte frente à Janela Atual (`ANTERIOR`, `CONTEMPORANEA`, `POSTERIOR`, `SEM_DATA`, `ANTIGA`), calculada pelo backend; só `ANTERIOR` e `CONTEMPORANEA` podem ser causa. | P-180.5 | `relacaoTemporal`, `rotulo` | — |
+| **Resumo por Template** | Resumo determinístico (frases-modelo sobre a cascata), sem LLM e com custo zero, rotulado "Resumo automático (sem IA)". Devolvido quando um gate (P-188), o orçamento, o kill-switch ou a indisponibilidade da IA negam a chamada; é resposta 200, não erro. | P-174.1, P-188 | `meta.ia.origem = "TEMPLATE"`, `motivoTemplate` | "fallback de erro", "análise offline" |
+| **Modelo de Fallback** | `gemini-3.8-flash`, usado em uma única chamada quando o Hydrogen falha por infraestrutura. Substitui o antigo escalonamento para o Neon (removido). | P-177.5, P-183.2 | `TREND_AI_MODEL_FALLBACK` | — |
+| **Hash de Evidência** | `sha256` do pacote de evidências canônico e arredondado; compõe a chave do diagnóstico salvo, de modo que carga nova com a mesma evidência reaproveita o diagnóstico. | P-175 | `evidenceHash` | "data de referência" (já não faz parte da chave) |
+| **Gate de Grounding** | Regra determinística que decide se a busca externa liga (mercado em queda/alta, ou resíduo ≥ 0,30, ou `REGIONAL` com resíduo ≥ 0,15). | P-180.1 | `GROUNDING_MIN_RESIDUAL_SHARE` | — |
+| **Kill-switch da IA** | Variável `TREND_AI_ENABLED=false` que desliga o LLM sem deploy; o botão devolve resumo por template. | P-178.6 | `TREND_AI_ENABLED` | — |
+| **Teto de Gasto com IA** | Limite de custo do LLM e da busca: US$ 1,80/mês e US$ 0,20/dia (meta total da F7 de US$ 2,00/mês com infraestrutura). Alerta e degradação a 80%; ao esgotar, resumo por template e a parte numérica segue. | P-178 | `TREND_AI_MONTHLY_BUDGET_USD`, `TREND_AI_DAILY_BUDGET_USD` | "cota" |
+| **TIA-NNN** | Prefixo dos erros da F7 (`TIA-001` 400 parâmetros; `TIA-002` 404 fora do catálogo ativo; `TIA-003` 422 base insuficiente ou sem variação; `TIA-004` 429 limite de pedidos (por minuto ou por dia); `TIA-005` aviso de índice de afinidade indisponível; `TIA-006` 401 e `TIA-007` 409 só na rota interna de sincronização do índice). | P-186 | `TIA-001` a `TIA-007` | — |

@@ -8,7 +8,7 @@
 | :--- | :--- |
 | **Módulo backend** | `src/modules/sales_trend/` (FastAPI + Pydantic v2), independente do módulo `analytics` (cross-sell) |
 | **Consumidor** | `frontend/src/app/features/sales-trend/` (Angular 18), único consumidor; página `/tendencia-vendas` |
-| **Versão do contrato** | **1.0.0** (`meta.version`, constante `SALES_TREND_CONTRACT_VERSION`). Nada foi implementado, então as revisões de 2026-11-09 e 2026-11-10 não mudam a versão |
+| **Versão do contrato** | **1.0.0** (`meta.version`, constante `SALES_TREND_CONTRACT_VERSION`). Nada foi implementado, então as revisões de 2026-11-09 e 2026-11-10 não mudam a versão. **2026-11-24 (Arquiteto, F7):** documentado o parâmetro `comparisonMode` e o campo `meta.modoComparacao`, que já existiam no código (`query_params.py`, `schemas.py`) e não estavam no contrato; mudança só de documentação, versão mantida (seção 2.6) |
 | **Regras** | P-072 a P-093 (`business_rules/analytics-sales-trend.md`) |
 | **Decisões** | `adr/ADR-003-tendencia-vendas.md` (DA-01 a DA-16) |
 | **Design Plan** | `design/plans/analytics-sales-trend.md` (dúvidas Q-1 a Q-17 respondidas na seção 6) |
@@ -65,6 +65,7 @@ Todas as respostas saem de um **snapshot em memória** (TTL de 6 h, voo único).
 | `mesBaseMaximo` | string `AAAA-MM` | Mês da `dataReferencia` (mês corrente, parcial) | P-074.2 |
 | `mesBaseParcial` | boolean | `true` quando `mesBase == mesBaseMaximo` (a janela atual cobre só os dias fechados do mês corrente) | P-074.3 |
 | `metrica` | `"quantity"` \| `"revenue"` | Métrica efetiva | P-073 |
+| `modoComparacao` | `"point"` \| `"average"` | Eco do `comparisonMode` efetivo (2.6); define como `janelas[].atual`/`anterior` foram montadas | 2.6 |
 | `janelas` | `TrendWindowMeta[4]` | Descrição das 4 janelas, na ordem `1, 3, 6, 12` (2.2) | P-084.3 |
 | `parametros` | `TrendParameters` | Constantes efetivas do domínio, para a tela não fixar números na copy (Q-9). Ver tabela abaixo | A-7, A-2 |
 | `page`, `limit`, `offset`, `totalItems`, `totalPages` | int | Paginação: `page = floor(offset / limit) + 1`; `totalPages = ceil(totalItems / limit)` (0 sem itens) | P-066, P-081.4 |
@@ -105,7 +106,7 @@ Todas as respostas saem de um **snapshot em memória** (TTL de 6 h, voo único).
 | Campo | Tipo | Descrição |
 | :--- | :--- | :--- |
 | `meses` | `1` \| `3` \| `6` \| `12` | Tamanho da janela |
-| `atual` / `anterior` | `TrendWindowSpan` | Janela Atual (termina no Mês-Base) e Janela Anterior (os X meses imediatamente anteriores) |
+| `atual` / `anterior` | `TrendWindowSpan` | Janela Atual e Janela Anterior **conforme o `comparisonMode`** (2.6). Com `point` e `average` a Janela Atual é só o Mês-Base; a Anterior é o mês `M − X` (`point`) ou os X meses `M − X … M − 1` (`average`) |
 | `semBase` | boolean | `true` quando a Janela Anterior tem cobertura < 50% (toda a coluna é `SEM_BASE`, P-076.6, P-078.7) |
 | `baseParcial` | boolean | `true` quando a comparação usa média diária (alguma das janelas com cobertura < 100%) e `semBase = false` (P-076.4) |
 
@@ -152,6 +153,22 @@ O **detalhe do fornecedor** (3.2) tem `limit` padrão **20** (Q-5; a lista fica 
 | `sortBy` / `ordenacao.por` | `contribution`, `variation` | query do detalhe / `meta` |
 | `sortWindow` / `janela` / `meses` | `1`, `3`, `6`, `12` | query (inteiro) / `meta` |
 
+### 2.6 Modo de comparação (`comparisonMode`)
+
+Parâmetro de query aceito por `GET /api/v1/sales-trend` e `GET /api/v1/sales-trend/supplier-products` (`Literal["point", "average"]`, padrão `point`), ecoado em `meta.modoComparacao`. As janelas saem de `month_windows.window_pair(mesBase, X, mode)`; com Mês-Base `M` e janela de `X` meses:
+
+| `comparisonMode` | Janela Atual (`janelas[].atual`) | Janela Anterior (`janelas[].anterior`) | Contíguas? | Como `variacaoPct` compara |
+| :--- | :--- | :--- | :--- | :--- |
+| `point` (padrão) | `[M]` | `[M − X]` (um mês só) | Só com X = 1 | Total do Mês-Base × total do mês `M − X` (mesmo mês do ano em X = 12) |
+| `average` | `[M]` | `[M − X, …, M − 1]` | Sim | Total do Mês-Base × **média mensal** da Janela Anterior (fator `1 ÷ X` quando X > 1 e sem Base Parcial) |
+
+- **Células:** em `average` com X > 1, `anterior` é a **média mensal** da Janela Anterior (não o total) e `baseBaixa` compara essa média com os limiares de P-079.1. Em `point`, `anterior` é o total do mês `M − X`.
+- **Base Parcial (P-076):** quando alguma janela tem cobertura < 100%, a comparação usa média diária (`atualPorDia`, `anteriorPorDia`) nos dois modos, e o fator `1 ÷ X` do `average` não se aplica (a média diária já normaliza).
+- **`semBase`:** cobertura da Janela Anterior < 50%, como antes; em `point` a Janela Anterior é um mês só, então a coluna de 12 meses tem base sempre que `M − 12` estiver dentro da base.
+- **Fornecedor e "Todos os produtos":** a soma líquida dos produtos usa o mesmo modo e as mesmas janelas; `contribuicaoPp`/`contribuicaoValor` no detalhe também.
+- **Modo `range`** (blocos de X meses contra os X meses anteriores) existe no domínio (`window_pair`, padrão da função) mas **não é aceito pela API**: `comparisonMode=range` → `400 TND-001`. Os exemplos das seções 3 e 4 (blocos "ago–out/26 vs mai–jul/26") foram escritos para esse modo, anterior à introdução do parâmetro; com o padrão `point` os cabeçalhos ficam "out/26 vs jul/26".
+- **Consumidores:** a tela da Tendência envia o modo escolhido pelo usuário; a F7 (`sales-trend-insights.md`) aceita o mesmo parâmetro e reaproveita `window_pair` para montar as datas de migração (ADR-009 DA-03/DA-04).
+
 ---
 
 ## 3. Endpoints
@@ -167,6 +184,7 @@ O **detalhe do fornecedor** (3.2) tem `limit` padrão **20** (Q-5; a lista fica 
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `baseMonth` | string | `mesBasePadrao` | Regex `^\d{4}-(0[1-9]\|1[0-2])$` (mês 01 a 12), senão `400`. Depois da leitura do snapshot: `> mesBaseMaximo` → `400 TND-001`; `< mesBaseMinimo` ou mês corrente sem dia fechado → `422 TND-002` | Mês-Base (`AAAA-MM`) | P-074 |
 | `metric` | string | `revenue` | `quantity` \| `revenue` | Métrica líquida de devoluções | P-073 |
+| `comparisonMode` | string | `point` | `point` \| `average`; outro valor → `400 TND-001` (`fields: ["comparisonMode"]`) | Como cada janela de X meses é comparada (2.6). Não muda o universo, só as células, a ordenação e os totais | 2.6 |
 | `groupBy` | string | `product` | `product` \| `supplier` | Visão por produto ou por fornecedor | P-088 |
 | `sortWindow` | integer | `3` | `1`, `3`, `6` ou `12` | Coluna de ordenação | P-080.1 |
 | `sortDir` | string | `desc`; `asc` se `view=falling` | `asc` \| `desc`. Se informado, prevalece sobre o padrão da visão | Sentido da ordenação por %. Com `view=new` não tem efeito (ordem de P-080.2) | P-080.1, P-080.4 |
@@ -377,6 +395,7 @@ Leitura do exemplo: o SKU 1007 é o primeiro porque +200,0% é a maior variaçã
 | `supplierKey` | string | **Sim** | — | 1 a 200 caracteres; ausente ou vazio → `400 TND-001`. Inexistente no universo → `404 TND-003` | `fornecedorChave` devolvida pela lista (valor opaco). Vai na **query string**: o nome pode ter barra, acento e espaço | P-092.1 |
 | `baseMonth` | string | Não | `mesBasePadrao` | Igual a 3.1 | **Deve ser o mesmo da lista** para fechar a conta | P-092.2 |
 | `metric` | string | Não | `revenue` | Igual a 3.1 | Idem | P-092.2 |
+| `comparisonMode` | string | Não | `point` | Igual a 3.1 | **Deve ser o mesmo da lista** para fechar a conta | 2.6 |
 | `sortBy` | string | Não | `contribution` | `contribution` \| `variation` | `contribution`: por `contribuicaoValor` da `sortWindow`; `variation`: por % própria (regras de P-080) | P-092.4 |
 | `sortWindow` | integer | Não | `3` | `1`, `3`, `6` ou `12` | Janela de ordenação | P-092.2 |
 | `sortDir` | string | Não | `desc` | `asc` \| `desc` | Com `contribution`: `desc` = quem mais puxou a alta, `asc` = quem mais puxou a queda | P-092.4 |

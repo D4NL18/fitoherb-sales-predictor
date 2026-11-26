@@ -3,7 +3,6 @@ API RESTful FastAPI para a Plataforma Fitoherb AI Suite.
 Atua como ponto de entrada corporativo e orquestrador de microsserviços/módulos DDD.
 Fitoherb Nordeste Distribuidora.
 """
-import asyncio
 from contextlib import asynccontextmanager
 import logging
 from pathlib import Path
@@ -28,6 +27,8 @@ from src.modules.analytics.api.router import analytics_router
 from src.modules.inventory.api.router import inventory_router
 from src.modules.pricing.api.router import pricing_router
 from src.modules.sales_trend.api.router import sales_trend_router
+from src.modules.trend_insights.api.internal_router import internal_router
+from src.modules.trend_insights.api.router import insights_router
 from src.modules.pricing.api.schemas import (
     AutoTuneData,
     AutoTuneRequest,
@@ -47,9 +48,8 @@ from src.modules.pricing.service.pricing_service import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Inicializa o servidor imediatamente, pré-aquece o cache e agenda o cron diário 00:00 de afinidade."""
+    """Inicializa o servidor e pré-aquece o cache; o índice de afinidade é sincronizado pelo Cloud Scheduler."""
     import threading
-    from src.modules.analytics.service import analytics_service, product_affinity_service
 
     def _warmup():
         try:
@@ -59,28 +59,8 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             print(f"[CACHE] Aviso no pré-aquecimento: {e}", flush=True)
 
-    async def _daily_affinity_cron():
-        """Cron diário às 00:00: atualiza incrementalmente o índice de afinidade (novos/alterados/desativados)."""
-        while True:
-            try:
-                wait_seconds = product_affinity_service.seconds_until_next_midnight()
-                await asyncio.sleep(wait_seconds)
-                summary = await asyncio.to_thread(product_affinity_service.sync_product_affinity_index)
-                if summary.get("recomputed"):
-                    analytics_service.reset_cannibalization_report_cache()
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:
-                logger.warning("[AFFINITY-CRON] Erro no ciclo diário (%s); tentará novamente amanhã.", type(exc).__name__)
-                await asyncio.sleep(60.0)
-
     threading.Thread(target=_warmup, daemon=True).start()
-    cron_task = asyncio.create_task(_daily_affinity_cron())
-    try:
-        yield
-    finally:
-        cron_task.cancel()
-        await asyncio.gather(cron_task, return_exceptions=True)
+    yield
 
 
 app = FastAPI(
@@ -111,6 +91,10 @@ app.include_router(analytics_router, prefix="/api/v1")
 register_analytics_error_handlers(app)
 # Tendência de Vendas (ADR-003)
 app.include_router(sales_trend_router, prefix="/api/v1")
+# Diagnóstico de motivos da Tendência com IA (F7, ADR-009)
+app.include_router(insights_router, prefix="/api/v1")
+# Rota de maquina do Cloud Scheduler (OIDC, isenta do Basic so neste metodo e caminho): ADR-009 DA-06.
+app.include_router(internal_router)
 
 
 # Montagem do Frontend Angular compilado para Produção (P-033)
