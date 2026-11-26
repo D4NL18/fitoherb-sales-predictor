@@ -203,6 +203,7 @@ def test_radar_block_builder_respects_limit_with_worst_case_and_has_no_urls_titl
     dims = [{"dimensao": d, "status": "AVALIADA", "movimento": "SUBIU", "intensidade": "FORTE", "tema": "OUTRO",
              "fonteIds": ["F1", "F2"]} for d in DIMENSIONS]
     doc = {**plant_doc(), "dimensoes": dims}
+    doc["radarHash"] = store.compute_radar_hash(dims, doc["fontes"])  # leitura recalcula o hash (S-3)
     block = payload.build_radar_block(store.StoredRadar.from_json(doc), "abcd1234")
     assert len(block) <= 2000 and "http" not in block and "noticias.exemplo" not in block
     assert block.count("dimensao") >= 8 and "<radar_externo_abcd1234>" in block

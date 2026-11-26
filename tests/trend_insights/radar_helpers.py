@@ -61,17 +61,19 @@ def radar_doc(*, slug: str = DEFAULT_SLUG, termo: str = DEFAULT_TERMO, tipo: str
               source_date: Optional[str] = "2026-09-20", dimensions: Optional[List[Dict[str, Any]]] = None,
               origem_data: str = "MODELO") -> Dict[str, Any]:
     now = (clock or FakeClock())()
+    dims = dimensions if dimensions is not None else radar_dimensions()
+    sources = [{"id": "F1", "url": SOURCE_URL, "dominio": "noticias.exemplo.com", "titulo": SOURCE_TITLE,
+                "dataPublicacao": source_date, "origemData": origem_data if source_date else "SEM_DATA"}]
     return {
         "geradoEm": (now - timedelta(days=age_days)).isoformat(),
         "modelo": HYDROGEN,
         "assunto": {"slug": slug, "termo": termo, "tipo": tipo},
         "mesBase": base_month,
-        "dimensoes": dimensions if dimensions is not None else radar_dimensions(),
-        "fontes": [{"id": "F1", "url": SOURCE_URL, "dominio": "noticias.exemplo.com", "titulo": SOURCE_TITLE,
-                    "dataPublicacao": source_date, "origemData": origem_data if source_date else "SEM_DATA"}],
+        "dimensoes": dims,
+        "fontes": sources,
         "consultasExecutadas": 5,
         "searchSuggestionsHtml": None,
-        "radarHash": "0" * 64,
+        "radarHash": mod("store.radar_store").compute_radar_hash(dims, sources),
     }
 
 

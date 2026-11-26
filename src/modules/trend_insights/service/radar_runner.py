@@ -122,7 +122,7 @@ class RadarRunner:
         return StoredRadar(
             generated_at=self._clock(), model=response.model_id, slug=subject.slug, term=subject.termo,
             kind=subject.tipo, base_month=base_month, dimensions=tuple(dimensions), sources=tuple(sources),
-            queries_executed=queries, search_suggestions_html=response.search_suggestions_html,
+            queries_executed=queries, search_suggestions_html=None,  # HTML cru de terceiros nunca e persistido (S-4)
             radar_hash=compute_radar_hash(dimensions, sources),
         )
 

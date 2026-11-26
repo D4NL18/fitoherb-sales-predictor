@@ -10,6 +10,7 @@ import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime
+from urllib.parse import urlparse
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from src.modules.trend_insights.domain.constants import LOGGER_NAME, RADAR_PROMPT_VERSION
@@ -17,6 +18,7 @@ from src.modules.trend_insights.domain.external_dimensions import EXTERNAL_DIMEN
 from src.modules.trend_insights.domain.ports import ObjectStore
 from src.modules.trend_insights.domain.radar_themes import RADAR_THEMES
 from src.modules.trend_insights.llm.radar_schema import INTENSITIES, MOVEMENTS, STATUSES
+from src.modules.trend_insights.llm.validation import is_safe_url, parse_iso_date
 
 logger = logging.getLogger(LOGGER_NAME + ".radar")
 NEW_OBJECT_GENERATION = 0
@@ -29,6 +31,10 @@ _SUBJECT_KEYS = frozenset({"slug", "termo", "tipo"})
 _DIMENSION_KEYS = frozenset({"dimensao", "status", "movimento", "intensidade", "tema", "fonteIds"})
 _SOURCE_KEYS = frozenset({"id", "url", "dominio", "titulo", "dataPublicacao", "origemData"})
 MAX_IDS_PER_DIMENSION = 2
+MAX_TITLE_CHARS = 200
+_MONTH = re.compile(r"\d{4}-(0[1-9]|1[0-2])")
+_SLUG = re.compile(r"[a-z0-9-]{1,60}")
+_DATE_ORIGINS = ("MODELO", "URL", "SEM_DATA")
 
 
 class RadarObjectInvalid(ValueError):
@@ -57,6 +63,12 @@ def _check_dimension(item: Any, expected: str) -> None:
 def _check_source(item: Any) -> None:
     _check(isinstance(item, dict) and set(item) == _SOURCE_KEYS and _SOURCE_ID.fullmatch(str(item["id"])) is not None)
     _check(all(isinstance(item[key], str) for key in ("url", "dominio", "titulo")))
+    # revalida na leitura o que a escrita ja validava: objeto plantado no bucket nunca vira link (S-2)
+    _check(is_safe_url(item["url"]) and item["url"] == item["url"].strip())
+    _check(item["dominio"] == urlparse(item["url"]).hostname and len(item["titulo"]) <= MAX_TITLE_CHARS)
+    published = item["dataPublicacao"]
+    _check(published is None or (isinstance(published, str) and parse_iso_date(published) is not None))
+    _check(item["origemData"] in _DATE_ORIGINS)
 
 
 @dataclass(frozen=True)
@@ -82,6 +94,8 @@ class StoredRadar:
         _check(isinstance(subject, dict) and set(subject) == _SUBJECT_KEYS)
         _check(isinstance(dimensions, list) and len(dimensions) == len(EXTERNAL_DIMENSIONS))
         _check(isinstance(sources, list) and isinstance(doc["mesBase"], str))
+        _check(_MONTH.fullmatch(doc["mesBase"]) is not None and isinstance(subject["slug"], str))
+        _check(_SLUG.fullmatch(subject["slug"]) is not None)
         for item, expected in zip(dimensions, EXTERNAL_DIMENSIONS):
             _check_dimension(item, expected)
         for source in sources:
@@ -90,10 +104,11 @@ class StoredRadar:
             generated_at = datetime.fromisoformat(doc["geradoEm"])
         except (TypeError, ValueError):
             raise RadarObjectInvalid() from None
+        _check(doc["radarHash"] == compute_radar_hash(dimensions, sources))
         return cls(
             generated_at=generated_at, model=str(doc["modelo"]), slug=subject["slug"], term=subject["termo"],
             kind=subject["tipo"], base_month=doc["mesBase"], dimensions=tuple(dimensions), sources=tuple(sources),
-            queries_executed=int(doc["consultasExecutadas"] or 0), search_suggestions_html=doc["searchSuggestionsHtml"],
+            queries_executed=int(doc["consultasExecutadas"] or 0), search_suggestions_html=None,  # HTML de terceiros nunca e usado (S-4)
             radar_hash=str(doc["radarHash"]), generation=generation,
         )
 
@@ -131,7 +146,9 @@ class RadarStore:
         if found is None:
             return None
         try:
-            return StoredRadar.from_json(found[0], generation=found[1])
+            radar = StoredRadar.from_json(found[0], generation=found[1])
+            _check(radar.slug == slug and radar.base_month == base_month)  # objeto de outra chave = invalido (S-3)
+            return radar
         except (RadarObjectInvalid, KeyError, TypeError):
             logger.warning("tia.radar.injectionSuspect violations=OBJETO_INVALIDO")
             return None
