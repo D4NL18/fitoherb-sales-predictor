@@ -24,6 +24,7 @@ from src.modules.trend_insights.domain.constants import (
     MAX_SUMMARY_CHARS,
     MODE_QUALITATIVE,
 )
+from src.modules.trend_insights.llm.external_assessment import ExternalContext, assess_external  # noqa: F401
 from src.modules.trend_insights.llm.output_schema import (
     CONFIDENCES,
     DIRECTIONS,
@@ -34,6 +35,7 @@ from src.modules.trend_insights.llm.output_schema import (
 )
 
 TOP_LEVEL_KEYS = frozenset({"resumo", "fatores", "hipotesesNaoConfirmadas", "recomendacoes"})
+OPTIONAL_TOP_LEVEL_KEYS = frozenset({"avaliacoesExternas"})
 MAX_SKUS_PER_FACTOR = 10
 MAX_SOURCE_TITLE_CHARS = 200
 _URL_DATE = re.compile(r"/(20\d{2})[/-](0[1-9]|1[0-2])(?:[/-](0[1-9]|[12]\d|3[01]))?(?:/|$|-)")
@@ -52,6 +54,7 @@ class ValidationContext:
     lookback_start: date
     reference_date: date
     cited_titles: Mapping[str, str] = field(default_factory=dict)
+    external: Optional[ExternalContext] = None
 
 
 @dataclass(frozen=True)
@@ -137,6 +140,12 @@ def _is_non_public_ip(host: str) -> bool:
         return not ipaddress.ip_address(host).is_global
     except ValueError:
         return False
+
+
+# Interface publica dos helpers de fonte (reuso pelo radar: mesma allow-list de URL e de datas).
+parse_iso_date = _parse_iso_date
+date_from_url = _date_from_url
+is_safe_url = _is_safe_url
 
 
 def _resolve_date(model_date: Optional[date], url_date: Optional[date]) -> Tuple[Optional[date], Optional[str]]:
@@ -228,7 +237,7 @@ def _build_external_factor(factor: dict, skus: List[int], sources: List[dict]) -
     return {
         "tipo": factor["tipo"], "sentido": factor["sentido"], "parcelaEstimada": None, "confianca": confidence,
         "rotulo": "POSSIVEL", "explicacao": factor["explicacao"], "evidenciaInterna": None,
-        "skusCitados": skus, "fontes": sources,
+        "skusCitados": skus, "fontes": sources, "dimensao": None,
     }
 
 
@@ -313,7 +322,8 @@ def _parse_body(text: str, found: _Collector) -> Optional[dict]:
     except (TypeError, ValueError):
         found.block("JSON_INVALIDO")
         return None
-    if not isinstance(body, dict) or set(body) != TOP_LEVEL_KEYS or not isinstance(body.get("fatores"), list):
+    is_known_shape = isinstance(body, dict) and TOP_LEVEL_KEYS <= set(body) <= TOP_LEVEL_KEYS | OPTIONAL_TOP_LEVEL_KEYS
+    if not is_known_shape or not isinstance(body.get("fatores"), list):
         found.block("SCHEMA_INVALIDO")
         return None
     return body
@@ -339,9 +349,18 @@ def validate_llm_output(text: str, context: ValidationContext, drop_offending: b
         if built:
             factors.append(built)
     hypotheses += _clean_hypotheses(body.get("hipotesesNaoConfirmadas"), context, found, drop_offending)
+    external = assess_external(body.get("avaliacoesExternas", []), context.external, drop_offending)
+    for code in external.blocking:
+        found.block(code)
+    for code in external.informative:
+        found.note(code)
+    hypotheses += external.hypotheses
+    internal = _merge_duplicates(factors)
+    promoted = external.promoted[:max(0, MAX_FACTORS - len(internal))]
     diagnostico = {
         "resumo": body.get("resumo"),
-        "fatores": _merge_duplicates(factors)[:MAX_FACTORS],
+        "fatores": (internal + promoted)[:MAX_FACTORS],
+        "fatoresExternos": external.items,
         "hipotesesNaoConfirmadas": hypotheses[:MAX_HYPOTHESES],
         "recomendacoes": _clean_recommendations(body.get("recomendacoes"), context, found, drop_offending),
     }
