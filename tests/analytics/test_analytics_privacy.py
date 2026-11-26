@@ -60,7 +60,7 @@ HEALTH_META_KEYS = {"timestamp", "version", "dataReferencia"}
 
 # Loggers do próprio TestClient (httpx/httpcore registram a URL da requisição, que contém o código do
 # cliente por contrato, DC-1). Só eles são ignorados: raiz, uvicorn, fastapi, starlette e src.* seguem vigiados.
-TEST_CLIENT_LOGGERS = ("httpx", "httpcore")
+TEST_CLIENT_LOGGERS = ("httpx", "httpcore", "httpx2", "httpcore2")
 
 
 @pytest.fixture(scope="module")
