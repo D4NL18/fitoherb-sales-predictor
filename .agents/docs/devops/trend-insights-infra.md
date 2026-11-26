@@ -40,6 +40,10 @@ O passo "Configurar variáveis da F7" do `deploy-cloud-run.yml` só roda se `TRE
 | `TREND_AI_ENABLED` | `true`/`false` (padrão `true`) | idem (kill-switch) |
 | `TREND_AI_LOCATION` | `us-central1` (padrão) | idem (A-2: `global` é recusado pelo código) |
 | `TREND_AI_MONTHLY_BUDGET_USD` / `TREND_AI_DAILY_BUDGET_USD` | `1.80` / `0.20` | idem |
+| `TREND_AI_MODEL_RADAR` | `gemini-4-hydrogen` (padrão) | idem (radar externo, ADR-009 DA-13) |
+| `TREND_AI_GROUNDING_HARD_CAP_QUERIES` | `1500` (padrão) | idem (teto duro mensal de consultas de busca) |
+| `TREND_AI_GROUNDING_FREE_QUERIES` | `1500` (padrão; cota real confirmada: 5.000) | idem (lido por `config.py`) |
+| `TREND_AI_LLM_TOTAL_DEADLINE_SECONDS` / `TREND_AI_IN_FLIGHT_LOCK_TTL_SECONDS` | `125` / `150` | idem |
 | (calculadas no passo) | URL do serviço, `infra/trend-insights/pricing.json`, `GOOGLE_CLOUD_PROJECT`, modelos | `AFFINITY_SYNC_AUDIENCE`, `TREND_AI_PRICING_JSON`, ... |
 
 Pontos de atenção: (a) o `gcloud run deploy --set-env-vars` existente recria o conjunto de variáveis e o passo seguinte as reaplica: há uma revisão intermediária sem as variáveis da F7 (segundos; a app cai no modo local/IA sem bucket); (b) por isso o kill-switch grava também a variável do GitHub, senão o próximo deploy religaria a IA; (c) `AFFINITY_SYNC_AUDIENCE` é lido do `status.url` do serviço, o mesmo valor usado como `--oidc-token-audience` em `03-scheduler.sh`.
@@ -55,10 +59,16 @@ Pontos de atenção: (a) o `gcloud run deploy --set-env-vars` existente recria o
 | Cloud Scheduler | US$ 0,10 por job/31 dias; **3 jobs grátis por conta de faturamento** (não por projeto) | cloud.google.com/scheduler/pricing | 1 job: US$ 0 se a conta tiver ≤ 2 outros; contar com `03-scheduler.sh` |
 | GCS operações (Standard, região única) | Classe A US$ 0,005/1.000; Classe B US$ 0,0004/1.000; armazenamento ~US$ 0,02/GiB-mês (US$ 0,000027397/GiB-h no grupo em que a página lista São Paulo; confira a linha exata no console) | cloud.google.com/storage/pricing | Confirma o "de memória" da §14.11: < US$ 0,01/mês |
 | GCS Always Free | 5 GB, 5.000 Classe A, 50.000 Classe B, **só us-west1/us-central1/us-east1** | idem | **Não** vale em `southamerica-east1`; irrelevante pelo volume |
-| Vertex Grounding Google Search | 5.000 consultas grátis/mês **por conta de faturamento**, agregadas entre todos os modelos Gemini 3 e 4; depois US$ 14/1.000; tokens da busca não são cobrados | cloud.google.com/vertex-ai/generative-ai/pricing | Resolve a dúvida "projeto ou conta": é a conta. Outro projeto da conta que use grounding consome a mesma cota |
+| Vertex Grounding Google Search (reconfirmado 2026-11-26) | 5.000 consultas grátis/mês **por conta de faturamento**, agregadas entre todos os modelos Gemini 3 e 4; depois US$ 14/1.000; tokens da busca não são cobrados | cloud.google.com/vertex-ai/generative-ai/pricing | Resolve a dúvida "projeto ou conta": é a conta. Outro projeto da conta que use grounding consome a mesma cota |
 | Vertex Hydrogen / Flash 3.8 | ver seção 4 | idem | +10% no custo por geração |
 | Cloud Run (free tier request-based, base us-central1) | 180.000 vCPU-s, 360.000 GiB-s, 2 mi requisições/mês | cloud.google.com/run/pricing | Cobertura do acordar diário do sync |
 | Billing Budget | alertas por e-mail sem custo; **só alerta, não corta** gasto | cloud.google.com/billing/docs/how-to/budgets | Trava real = livro + kill-switch |
+
+### Confirmação de preço e cota de *grounding* (2026-11-26, página oficial do Vertex, curl)
+
+Confirmado em cloud.google.com/vertex-ai/generative-ai/pricing: *Grounding with Google Search*: **5.000 consultas grátis/mês por conta de faturamento, agregadas entre todos os modelos Gemini 3 e Gemini 4**; acima disso **US$ 14 por 1.000 consultas**; cobrança **por consulta executada** (não por *prompt*); tokens de entrada vindos da busca **não** são cobrados. O aviso de 13/11/2026 na página trata de requisições com falha por timeout de cliente/servidor, não do preço da busca.
+
+**Incertezas que permanecem (verificar no Billing real):** (a) a página não distingue endpoint regional de global para o preço da busca (assumido US$ 14 sem acréscimo de 10%); (b) combinação busca + JSON Schema no Vertex em `gemini-4-hydrogen`/`gemini-3.8-flash` não é tratada na página de preços; (c) o `usage` pode não refletir todas as consultas internas. Mitigação: `TREND_AI_GROUNDING_HARD_CAP_QUERIES=1500` e livro com `TREND_AI_GROUNDING_FREE_QUERIES=1500` (30% da cota real); a cota é da conta: outro projeto com *grounding* a consome.
 
 ### Tabela de custo atualizada (teto US$ 2,00/mês)
 
@@ -70,6 +80,8 @@ Pontos de atenção: (a) o `gcloud run deploy --set-env-vars` existente recria o
 | Pior caso, grounding todo cobrado (2 × 0,014) | ~0,0340 | **~53** (era ~55) |
 | Fallback Flash sem grounding | 0,0077 até 31/12/2026; 0,0154 depois | |
 | Infra F7 (GCS, Scheduler, Cloud Run extra, Budget) | ~0,00 a 0,11 (Scheduler 0 se ≤ 3 jobs; senão 0,10) | |
+
+**Radar externo v3.1 (DA-13):** ~15 a 25 radares/mês x 5 consultas = 75 a 125 consultas (1,5% a 2,5% da cota grátis; 5% a 8% do teto duro de 1.500); custo de busca esperado **US$ 0,00**; pior caso impedido pelo teto duro (nunca se paga busca de propósito). Radar no Hydrogen regional ~US$ 0,02 cada; o Flash só difere até 31/12/2026 (0,825/4,125; depois 1,65/8,25). Retenção física do prefixo `radar/`: 210 dias (`lifecycle.json`), custo de armazenamento desprezível (< 1 MB/mês).
 
 Conclusão: continua cabendo em US$ 2 (LLM 1,80 + infra ≤ 0,11 + margem). A margem de ~US$ 0,10 do livro cobre a diferença de 10%; recalibrar `GROUNDING_FREE_QUERIES_ASSUMED` após uma semana (Cenário 3 da 7.2-B). Atualizar `trend-insights-llm.md` §14.1/§14.10 (pendência do `ai_specialist`/`architect`).
 
