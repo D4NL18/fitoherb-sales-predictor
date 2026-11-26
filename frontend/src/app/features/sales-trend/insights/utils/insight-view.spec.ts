@@ -318,7 +318,7 @@ describe('insight-view', () => {
       const t = deriveAiBlock(insight(), AI_STATE, gen({ phase: 'success', response: post({ resumoAutomatico: 'x' }, { origem: 'template', avisos: [{ codigo: 'IA_FALHOU', mensagem: 'm' }] }) }), 0);
       expect(t.notices).toContain('Não foi possível gerar a análise com IA agora; mostramos o resumo automático.');
       const l = deriveAiBlock(insight(), AI_STATE, gen({ phase: 'success', response: post({ diagnosticoIa: DIAG }, { origem: 'fallback', avisos: [{ codigo: 'SEM_BUSCA_EXTERNA', mensagem: 'm' }] }) }), 0);
-      expect(l.notices).toContain('Esta análise não consultou notícias externas; os fatores abaixo vêm só dos dados internos.');
+      expect(l.notices).toContain('Análise feita sem busca externa.');
     });
 
     it('QUALITATIVO acrescenta a linha de base pequena', () => {

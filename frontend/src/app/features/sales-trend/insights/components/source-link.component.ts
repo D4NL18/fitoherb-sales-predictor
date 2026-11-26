@@ -12,7 +12,7 @@ import { formatIsoDateTime, safeHref, sourceDomain } from '../utils/insight-view
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (href(); as link) {
-      <a class="source-title" [href]="link" target="_blank" rel="noopener noreferrer">{{ source().titulo }}<span class="sr-only"> (abre em nova aba)</span></a>
+      <a class="source-title" [href]="link" [attr.title]="source().origemData === 'MODELO' ? modelDateHint : null" target="_blank" rel="noopener noreferrer">{{ source().titulo }}<span class="sr-only"> (abre em nova aba)</span></a>
       <span class="source-domain">{{ domain() }}</span>
     } @else {
       <span class="source-title no-link">{{ source().titulo }}</span>
@@ -35,6 +35,7 @@ import { formatIsoDateTime, safeHref, sourceDomain } from '../utils/insight-view
   `],
 })
 export class SourceLinkComponent {
+  protected readonly modelDateHint = 'Data informada pela IA, não confirmada na página';
   readonly source = input.required<SourceRef>();
 
   protected readonly href = computed(() => safeHref(this.source().url));

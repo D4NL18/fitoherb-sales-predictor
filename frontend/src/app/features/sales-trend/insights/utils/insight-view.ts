@@ -18,6 +18,7 @@ import {
   PriceMechanism,
   ProductInsight,
   TemplateReason,
+  ExternalDimension,
 } from '../models/trend-insights.model';
 import {
   AI_EMPTY_TEXT,
@@ -33,6 +34,7 @@ import {
   TEMPLATE_NOTES,
   TEMPLATE_NOTE_FALLBACK,
 } from './insight-copy';
+import { buildExternalFactorsView, buildRadarExternoView, ExternalFactorsView, RadarExternoView } from './external-factors-view';
 import { InsightApiError, resolveInsightMessage } from './insight-error';
 
 export const AI_SLOW_NOTICE_SECONDS = 30;
@@ -352,14 +354,20 @@ export interface AiBlockView {
   footerText: string | null;
   agedText: string | null;
   emptyText: string;
+  /** 1.2.0: seção "Fatores externos" (com IA do produto). */
+  external: ExternalFactorsView | null;
+  /** 1.2.0: radar somente leitura (resumo automático). */
+  radarOnly: RadarExternoView | null;
 }
 
 const NOTICE_TEXTS: Record<string, string> = {
+  RADAR_DESATUALIZADO: '',
+  SEM_RADAR_EXTERNO: '',
   IA_FALHOU: 'Não foi possível gerar a análise com IA agora; mostramos o resumo automático.',
-  SEM_BUSCA_EXTERNA: 'Esta análise não consultou notícias externas; os fatores abaixo vêm só dos dados internos.',
+  SEM_BUSCA_EXTERNA: 'Análise feita sem busca externa.',
 };
 
-export function deriveAiBlock(
+function deriveAiBlockCore(
   insight: ProductInsight,
   getIa: InsightAiState,
   gen: AiGenerationState | undefined,
@@ -375,7 +383,7 @@ export function deriveAiBlock(
     state: 'vazio', diagnosis, originLabel: null, showFixedNotice: false, button: null, elapsedSeconds: 0,
     slow: false, templateText: null, templateNote: null, reusedNotice: null, notices: [], confirmText: null,
     message: null, retryRemaining: null, showRetry: false, qualitativeNote: null, footerText: null,
-    agedText: null, emptyText: AI_EMPTY_TEXT,
+    agedText: null, emptyText: AI_EMPTY_TEXT, external: null, radarOnly: null,
   };
 
   if (insight.modoDiagnostico === 'SEM_VARIACAO' && gen?.phase !== 'generating') {
@@ -490,6 +498,28 @@ export function deriveAiBlock(
 
   // Aviso fixo já no estado vazio (plano §7): o usuário sabe, antes de clicar, que o texto é gerado por IA.
   return { ...view, state: 'vazio', showFixedNotice: ia.geraComIa };
+}
+
+export function deriveAiBlock(
+  insight: ProductInsight,
+  getIa: InsightAiState,
+  gen: AiGenerationState | undefined,
+  clockSeconds: number,
+): AiBlockView {
+  const view = deriveAiBlockCore(insight, getIa, gen, clockSeconds);
+  const response = gen?.response ?? null;
+  const ia = response?.meta.ia ?? getIa;
+  const codes = (response?.meta.avisos ?? []).map((a) => a.codigo);
+  if (ia.radar?.estado === 'DESATUALIZADO' && !codes.includes('RADAR_DESATUALIZADO')) codes.push('RADAR_DESATUALIZADO');
+  const data = response?.data ?? insight;
+  const diagnosis = view.diagnosis;
+  if (view.state !== 'gerando' && diagnosis) {
+    const promoted = diagnosis.fatores.map((f) => f.dimensao).filter((d): d is ExternalDimension => !!d);
+    view.external = buildExternalFactorsView(diagnosis.fatoresExternos, diagnosis.radar, codes, promoted);
+  } else if (view.state === 'template' || (!diagnosis && view.state === 'vazio')) {
+    view.radarOnly = buildRadarExternoView(data.radarExterno, codes);
+  }
+  return view;
 }
 
 function savedFooter(diagnosis: AiDiagnosis | null, ia: InsightAiState): string | null {

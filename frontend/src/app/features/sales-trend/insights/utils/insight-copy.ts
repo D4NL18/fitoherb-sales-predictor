@@ -90,6 +90,8 @@ export const HYPOTHESIS_REASONS: Record<HypothesisReason, string> = {
   SEM_DATA: 'Fonte sem data de publicação.',
   FORA_DO_PERIODO: 'Notícia fora do período analisado.',
   SKU_FORA_DO_PACOTE: 'Citou um produto fora da análise; ignorado.',
+  POSTERIOR_AO_PERIODO: 'Notícia posterior ao período analisado.',
+  SEM_COERENCIA_DIRECIONAL: 'O sentido da notícia não combina com o sentido da variação.',
 };
 
 export const TEMPLATE_NOTES: Record<TemplateReason, string> = {
