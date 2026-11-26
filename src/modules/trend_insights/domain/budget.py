@@ -5,11 +5,15 @@ from typing import Optional
 from src.modules.trend_insights.domain.constants import (
     BUDGET_ALERT_RATIO,
     GROUNDING_FREE_QUERIES_ASSUMED,
+    RADAR_MAX_OUTPUT_TOKENS,
+    RADAR_RESERVATION_INPUT_TOKENS,
     RESERVATION_ASSUMED_INPUT_TOKENS,
     RESERVATION_ASSUMED_OUTPUT_TOKENS,
     RESERVATION_ASSUMED_SEARCH_QUERIES,
 )
 
+KIND_DIAGNOSIS = "DIAGNOSTICO"
+KIND_RADAR = "RADAR"
 TOKENS_PER_MILLION = 1_000_000
 LEVEL_COMPARE_DECIMALS = 6
 
@@ -33,9 +37,17 @@ def reservation_amount(
     month_queries: int,
     on_date: Optional[date] = None,
     free_queries: int = GROUNDING_FREE_QUERIES_ASSUMED,
+    kind: str = KIND_DIAGNOSIS,
 ) -> float:
-    """Custo maximo estimado de uma tentativa: 8.000 tokens de entrada + 2.500 de saida (+ 3 consultas pagas)."""
+    """
+    Custo maximo estimado de uma tentativa. Diagnostico: 8.000 tokens de entrada + 2.500 de saida (+ 3 consultas
+    pagas se houver busca). Radar (P-178.2 v3.1): so tokens (~US$ 0,02): a busca do radar nunca e paga de proposito,
+    pois o teto duro de consultas (P-178.8) impede o radar acima da cota.
+    """
     price = pricing.price_for(model_id, on_date)
+    if kind == KIND_RADAR:
+        return (RADAR_RESERVATION_INPUT_TOKENS * price.input_per_million
+                + RADAR_MAX_OUTPUT_TOKENS * price.output_per_million) / TOKENS_PER_MILLION
     amount = (
         RESERVATION_ASSUMED_INPUT_TOKENS * price.input_per_million
         + RESERVATION_ASSUMED_OUTPUT_TOKENS * price.output_per_million

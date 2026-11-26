@@ -1,15 +1,16 @@
-"""Gates de nao chamada do LLM (P-188) e de liga da busca externa (P-180.1). Funcoes puras."""
+"""Gates de nao chamada do LLM (P-188), politica do radar (P-180.3) e busca do produto (P-180.1). Funcoes puras."""
 from typing import Optional
 
 from src.modules.trend_insights.domain.constants import (
-    GROUNDING_MIN_RESIDUAL_SHARE,
-    GROUNDING_MIN_RESIDUAL_SHARE_ALERT,
-    GROUNDING_REGIONAL_MIN_RESIDUAL_SHARE,
     LLM_MIN_ABS_REVENUE_DELTA,
     LLM_MIN_RESIDUAL_SHARE,
     MIN_EXPLAINABLE_VARIATION_PCT,
+    MODE_QUALITATIVE,
+    PRODUCT_SEARCH_MIN_RESIDUAL_SHARE,
+    RADAR_MAX_NEW_PER_DAY,
 )
 from src.modules.trend_insights.domain.evidence import EvidencePackage
+from src.modules.trend_insights.domain.radar_policy import STATE_ABSENT, STATE_FRESH, STATE_STALE
 
 MARKET_MOVE_CLASSES = ("MERCADO_EM_QUEDA", "MERCADO_EM_ALTA")
 
@@ -44,14 +45,30 @@ def evaluate_llm_gates(evidence: EvidencePackage) -> Optional[str]:
     return None
 
 
-def grounding_enabled(evidence: EvidencePackage, budget_level: str) -> bool:
-    """A busca so liga com termo de busca e pelo menos uma condicao (P-180.1); a 80% do teto o limiar sobe."""
-    if not evidence.search_term_available:
+def radar_policy(radar_state: str, budget_level: str, daily_new: int, share_spent: bool, hard_cap: bool) -> str:
+    """
+    O que fazer com o radar do assunto (P-180.3, P-178.4, P-178.8): USE_FRESH, GENERATE, USE_STALE ou NONE.
+    Gera so com orcamento (nao esgotado), abaixo do teto duro de consultas, do limite diario e da fatia do radar;
+    a 80% (ALERTA) so gera se nao existe nenhum radar para o assunto. Sem poder gerar, usa o vencido se houver.
+    """
+    if radar_state == STATE_FRESH:
+        return "USE_FRESH"
+    may_generate = (
+        not hard_cap and not share_spent and daily_new < RADAR_MAX_NEW_PER_DAY and budget_level != "ESGOTADO"
+        and (budget_level == "NORMAL" or radar_state == STATE_ABSENT)
+    )
+    if may_generate:
+        return "GENERATE"
+    return "USE_STALE" if radar_state == STATE_STALE else "NONE"
+
+
+def product_search_enabled(evidence: EvidencePackage, budget_level: str, radar_state: str, hard_cap: bool) -> bool:
+    """
+    Busca especifica do produto (P-180.1 v3.1): so SEM radar utilizavel, com termo, modo != QUALITATIVO, orcamento
+    NORMAL, residuo >= 0,30 e abaixo do teto duro de consultas. Com radar o diagnostico nao busca por conta propria.
+    """
+    if hard_cap or budget_level != "NORMAL" or radar_state != STATE_ABSENT:
         return False
-    if evidence.market_classification in MARKET_MOVE_CLASSES:
-        return True
-    share = evidence.residual_share or 0.0
-    threshold = GROUNDING_MIN_RESIDUAL_SHARE_ALERT if budget_level != "NORMAL" else GROUNDING_MIN_RESIDUAL_SHARE
-    if share >= threshold:
-        return True
-    return evidence.has_evaluated_indicator("REGIONAL") and share >= GROUNDING_REGIONAL_MIN_RESIDUAL_SHARE
+    if not evidence.search_term_available or evidence.mode == MODE_QUALITATIVE:
+        return False
+    return (evidence.residual_share or 0.0) >= PRODUCT_SEARCH_MIN_RESIDUAL_SHARE

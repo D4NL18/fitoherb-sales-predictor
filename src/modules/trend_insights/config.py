@@ -53,6 +53,29 @@ def _read_model(env: Mapping[str, str], name: str, default: str) -> str:
     return value
 
 
+def _read_first_set(env: Mapping[str, str], names: tuple) -> Optional[str]:
+    """Primeiro nome definido: aceita o nome com prefixo `TREND_AI_` (.env.example) e o nome curto (infra)."""
+    for name in names:
+        raw = env.get(name)
+        if raw is not None and raw.strip() != "":
+            return raw
+    return None
+
+
+def _read_int_from_names(env: Mapping[str, str], names: tuple, default: int) -> int:
+    raw = _read_first_set(env, names)
+    if raw is None:
+        return default
+    return _read_non_negative_int({names[0]: raw}, names[0], default)
+
+
+def _read_positive_int(env: Mapping[str, str], names: tuple, default: int) -> int:
+    value = _read_int_from_names(env, names, default)
+    if value <= 0:
+        raise SettingsError("Valor inteiro positivo esperado.", field=names[0])
+    return value
+
+
 def _read_pricing(env: Mapping[str, str]) -> Optional[PricingTable]:
     raw = env.get("TREND_AI_PRICING_JSON")
     if not raw or not raw.strip():
@@ -88,6 +111,12 @@ class TrendInsightsSettings:
     force_max_per_day: int = constants.FORCE_MAX_PER_USER_PER_DAY
     soft_ttl_days: int = constants.INSIGHT_SOFT_TTL_DAYS
     free_queries: int = constants.GROUNDING_FREE_QUERIES_ASSUMED
+    # Radar externo v3.1 (P-180.3, P-178.8) e prazos de DA-13 (P-183.5).
+    model_radar: str = PRIMARY_MODEL
+    hard_cap_queries: int = constants.GROUNDING_HARD_CAP_QUERIES
+    llm_total_deadline_seconds: int = constants.LLM_TOTAL_DEADLINE_SECONDS
+    in_flight_lock_ttl_seconds: int = constants.IN_FLIGHT_LOCK_TTL_SECONDS
+    reservation_ttl_seconds: int = constants.RESERVATION_TTL_SECONDS
 
     @classmethod
     def from_env(cls, env: Mapping[str, str]) -> "TrendInsightsSettings":
@@ -106,6 +135,20 @@ class TrendInsightsSettings:
             # contada como paga (livro correto) e a busca sugere 1 consulta so. Ajuste sem deploy de codigo.
             free_queries=_read_non_negative_int(
                 env, "TREND_AI_GROUNDING_FREE_QUERIES", constants.GROUNDING_FREE_QUERIES_ASSUMED),
+            model_radar=_read_model(env, "TREND_AI_MODEL_RADAR", PRIMARY_MODEL),
+            # Teto duro de consultas do mes (P-178.8); 0 desliga toda busca nova.
+            hard_cap_queries=_read_int_from_names(
+                env, ("TREND_AI_GROUNDING_HARD_CAP_QUERIES", "GROUNDING_HARD_CAP_QUERIES"),
+                constants.GROUNDING_HARD_CAP_QUERIES),
+            llm_total_deadline_seconds=_read_positive_int(
+                env, ("TREND_AI_LLM_TOTAL_DEADLINE_SECONDS", "LLM_TOTAL_DEADLINE_SECONDS"),
+                constants.LLM_TOTAL_DEADLINE_SECONDS),
+            in_flight_lock_ttl_seconds=_read_positive_int(
+                env, ("TREND_AI_IN_FLIGHT_LOCK_TTL_SECONDS", "IN_FLIGHT_LOCK_TTL_SECONDS"),
+                constants.IN_FLIGHT_LOCK_TTL_SECONDS),
+            reservation_ttl_seconds=_read_positive_int(
+                env, ("TREND_AI_RESERVATION_TTL_SECONDS", "RESERVATION_TTL_SECONDS"),
+                constants.RESERVATION_TTL_SECONDS),
         )
 
 
