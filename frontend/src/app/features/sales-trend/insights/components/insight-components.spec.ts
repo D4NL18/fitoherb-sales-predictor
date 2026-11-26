@@ -492,6 +492,24 @@ describe('TrendInsightPanelComponent', () => {
     expect(document.activeElement).toBe(trigger);
     trigger.remove();
   });
+
+  it('destaca o bloco de Análise com IA como primeira seção do corpo', () => {
+    setup(loaded());
+    const sections = Array.from(el.querySelectorAll('.ip-body > .ip-section'));
+    expect(sections.length).toBeGreaterThan(1);
+    expect(sections[0].classList).toContain('ip-ai-featured');
+  });
+
+  it('não exibe texto quebrado "de o mínimo" quando minScore é nulo no grupo afim', () => {
+    const base = loaded();
+    setup({
+      ...base,
+      insight: makeInsight({ grupoAfim: { status: 'SEM_GRUPO_AFIM', afins: [] } }),
+      meta: { ...base.meta, parametros: undefined },
+    });
+    expect(text(el)).toContain('semelhança suficiente com este');
+    expect(text(el)).not.toContain('de o mínimo');
+  });
 });
 
 describe('buildSignalViews', () => {

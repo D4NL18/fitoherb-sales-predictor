@@ -99,6 +99,24 @@ const PARCEL_KEYS: readonly string[] = [
         }
       }
 
+      @if (view().button; as btn) {
+        @if (btn.kind === 'generate') {
+          <div class="action-row">
+            <button
+              #mainBtn
+              type="button"
+              class="btn btn-primary"
+              [disabled]="btn.disabled"
+              [attr.aria-describedby]="btn.help ? 'ai-help' : null"
+              (click)="generate.emit()"
+            >{{ btn.label }}</button>
+            @if (btn.help) {
+              <p id="ai-help" class="help-text">{{ btn.help }}</p>
+            }
+          </div>
+        }
+      }
+
       @if (view().radarOnly) {
         <app-external-factors-section [radar]="view().radarOnly" />
       }
@@ -215,21 +233,21 @@ const PARCEL_KEYS: readonly string[] = [
       }
 
       @if (view().button; as btn) {
-        <div class="action-row">
-          <button
-            #mainBtn
-            type="button"
-            class="btn"
-            [class.btn-primary]="btn.kind === 'generate'"
-            [class.btn-secondary]="btn.kind === 'regenerate'"
-            [disabled]="btn.disabled"
-            [attr.aria-describedby]="btn.help ? 'ai-help' : null"
-            (click)="btn.kind === 'regenerate' ? requestRegenerate.emit() : generate.emit()"
-          >{{ btn.label }}</button>
-          @if (btn.help) {
-            <p id="ai-help" class="help-text">{{ btn.help }}</p>
-          }
-        </div>
+        @if (btn.kind === 'regenerate') {
+          <div class="action-row">
+            <button
+              #mainBtn
+              type="button"
+              class="btn btn-secondary"
+              [disabled]="btn.disabled"
+              [attr.aria-describedby]="btn.help ? 'ai-help' : null"
+              (click)="requestRegenerate.emit()"
+            >{{ btn.label }}</button>
+            @if (btn.help) {
+              <p id="ai-help" class="help-text">{{ btn.help }}</p>
+            }
+          </div>
+        }
       }
     </section>
   `,

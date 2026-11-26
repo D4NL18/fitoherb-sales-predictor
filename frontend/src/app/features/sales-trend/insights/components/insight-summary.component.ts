@@ -41,7 +41,7 @@ import { SummaryView } from '../utils/insight-view';
 
       <p class="sm-ai-line">
         {{ aiStatus() }} ·
-        <button type="button" class="sm-link" (click)="goToAi.emit()">Ir para a análise ↓</button>
+        <button type="button" class="sm-link" (click)="goToAi.emit()">Ver análise acima ↑</button>
       </p>
     </div>
   `,

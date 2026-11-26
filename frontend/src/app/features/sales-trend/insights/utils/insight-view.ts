@@ -472,7 +472,7 @@ function deriveAiBlockCore(
   if (response && origem === 'template') {
     const reason: TemplateReason | null = response.meta.motivoTemplate ?? ia.motivoTemplate;
     return {
-      ...view, state: 'template', originLabel: ORIGIN_LABELS.template,
+      ...view, state: 'template', originLabel: ORIGIN_LABELS.template, button: null,
       templateText: response.data.resumoAutomatico ?? null,
       templateNote: reason ? TEMPLATE_NOTES[reason] : TEMPLATE_NOTE_FALLBACK,
     };

@@ -156,7 +156,9 @@ export class AffineGroupComponent {
 
   protected readonly emptyDescription = computed(() => {
     const m = this.minScore();
-    const limiar = m === null ? 'o mínimo' : `${Math.round(m * 100)}%`;
-    return `Nenhum produto ativo tem semelhança de ${limiar} ou mais com este. A comparação com o mercado não foi feita.`;
+    if (m === null) {
+      return 'Nenhum produto ativo tem semelhança suficiente com este. A comparação com o mercado não foi feita.';
+    }
+    return `Nenhum produto ativo tem semelhança de ${Math.round(m * 100)}% ou mais com este. A comparação com o mercado não foi feita.`;
   });
 }

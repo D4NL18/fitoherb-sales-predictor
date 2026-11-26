@@ -124,6 +124,24 @@ function formatMonthYear(ym: string): string {
         }
 
         @if (insight(); as data) {
+          @if (ai(); as aiView) {
+            <div class="ip-section ip-ai-featured">
+              <app-ai-diagnosis-block
+                #aiBlock
+                [view]="aiView"
+                [rise]="data.direcao === 'ALTA'"
+                [metric]="metric()"
+                [minVariationPct]="meta()?.parametros?.minExplainableVariationPct ?? null"
+                (generate)="generate.emit()"
+                (requestRegenerate)="requestRegenerate.emit()"
+                (confirmed)="confirmRegenerate.emit()"
+                (cancelled)="cancelConfirm.emit()"
+                (retry)="generate.emit()"
+                (focusParcel)="focusParcel($event)"
+              />
+            </div>
+          }
+
           <div [id]="summaryId" class="ip-section first">
             @for (n of notices(); track n.key) {
               <app-inline-notice
@@ -169,7 +187,7 @@ function formatMonthYear(ym: string): string {
 
           @if (data.impactoEmOutrosProdutos; as impact) {
             <div class="ip-section">
-              <app-impacted-products [impact]="impact" [isNew]="data.celula.status === 'NOVO'" />
+              <app-impacted-products [impact]="impact" [isNew]="data.celula?.status === 'NOVO'" />
             </div>
           }
 
@@ -184,24 +202,6 @@ function formatMonthYear(ym: string): string {
               (navigate)="closePanel.emit()"
             />
           </div>
-
-          @if (ai(); as aiView) {
-            <div class="ip-section">
-              <app-ai-diagnosis-block
-                #aiBlock
-                [view]="aiView"
-                [rise]="data.direcao === 'ALTA'"
-                [metric]="metric()"
-                [minVariationPct]="meta()?.parametros?.minExplainableVariationPct ?? null"
-                (generate)="generate.emit()"
-                (requestRegenerate)="requestRegenerate.emit()"
-                (confirmed)="confirmRegenerate.emit()"
-                (cancelled)="cancelConfirm.emit()"
-                (retry)="generate.emit()"
-                (focusParcel)="focusParcel($event)"
-              />
-            </div>
-          }
         }
       </div>
 
@@ -221,8 +221,8 @@ function formatMonthYear(ym: string): string {
   styles: [`
     :host { display: contents; }
     .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-    .ip-backdrop { position: fixed; inset: 0; background: var(--bg-overlay); z-index: 60; }
-    .ip-panel { position: fixed; top: 0; right: 0; bottom: 0; width: min(720px, 100vw); z-index: 70; display: flex; flex-direction: column; background: var(--bg-surface); border-left: 1px solid var(--border-default); border-radius: var(--radius-md) 0 0 var(--radius-md); box-shadow: var(--shadow-md); animation: ipSlideIn var(--transition-fast) both; }
+    .ip-backdrop { position: fixed; inset: 0; background: var(--bg-overlay); z-index: 1040; }
+    .ip-panel { position: fixed; top: 0; right: 0; bottom: 0; width: min(720px, 100vw); z-index: 1050; display: flex; flex-direction: column; background: var(--bg-surface); border-left: 1px solid var(--border-default); border-radius: var(--radius-md) 0 0 var(--radius-md); box-shadow: var(--shadow-md); animation: ipSlideIn var(--transition-fast) both; }
     @keyframes ipSlideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
     @media (prefers-reduced-motion: reduce) { .ip-panel { animation: none; } }
     @media (max-width: 1023.98px) { .ip-panel { width: min(640px, 100vw); } }
@@ -241,6 +241,7 @@ function formatMonthYear(ym: string): string {
     .ip-body.is-reloading { opacity: 0.55; }
     .ip-section { padding-block: var(--space-5); border-top: 1px solid var(--border-subtle); }
     .ip-section.first { border-top: 0; padding-top: 0; display: flex; flex-direction: column; gap: var(--space-3); }
+    .ip-ai-featured { padding: var(--space-4); margin-bottom: var(--space-4); background-color: var(--bg-canvas); border: 1px solid var(--border-default); border-left: 4px solid var(--brand-primary); border-radius: var(--radius-sm); }
     .ip-sub { margin-top: var(--space-4); }
     .ip-slow { margin: var(--space-3) 0 0; font-size: 0.85rem; color: var(--text-secondary); }
     .ip-footer { position: sticky; bottom: 0; display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); min-height: 56px; padding: 0 var(--space-5); border-top: 1px solid var(--border-subtle); background: var(--bg-surface); flex-shrink: 0; }
@@ -365,7 +366,7 @@ export class TrendInsightPanelComponent implements AfterViewInit {
     if (data.modoDiagnostico === 'QUALITATIVO') {
       list.push({ key: 'qualitativo', tone: 'info', text: 'Base pequena: a análise mostra só os sinais, sem estimar valores.' });
     }
-    if (data.celula.status === 'NOVO') {
+    if (data.celula?.status === 'NOVO') {
       list.push({ key: 'novo', tone: 'info', text: 'Produto novo ou retomado nesta janela: não há período anterior para comparar.' });
     }
     return list;

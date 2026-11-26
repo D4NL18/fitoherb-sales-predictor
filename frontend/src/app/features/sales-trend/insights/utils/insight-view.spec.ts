@@ -260,6 +260,7 @@ describe('insight-view', () => {
       );
       expect(v.state).toBe('template');
       expect(v.originLabel).toBe('Resumo automático (sem IA)');
+      expect(v.button).toBeNull();
       expect(v.showFixedNotice).toBeFalse();
       expect(v.templateText).toBe('Texto automático.');
       expect(v.templateNote).toContain('não está disponível agora');
