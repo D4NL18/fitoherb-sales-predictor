@@ -13,9 +13,14 @@ from src.modules.analytics.service import product_affinity_service
 from src.modules.trend_insights.adapters.evidence_adapter import EvidenceBuilder, make_migration_builder
 from src.modules.trend_insights.adapters.affinity_sync_adapter import run_affinity_sync
 from src.modules.trend_insights.adapters.factor_adapter import FactorSources
+from pathlib import Path
 from src.modules.trend_insights.config import TrendInsightsSettings
 from src.modules.trend_insights.llm.gemini_client import GeminiVertexClient
-from src.modules.trend_insights.object_storage.gcs_object_store import GcsObjectStore, UnavailableObjectStore
+from src.modules.trend_insights.object_storage.gcs_object_store import (
+    GcsObjectStore,
+    LocalFileObjectStore,
+    UnavailableObjectStore,
+)
 from src.modules.trend_insights.service.evidence_cache import EvidenceCache
 from src.modules.trend_insights.service.generation_guard import GenerationGuard
 from src.modules.trend_insights.service.insights_service import InsightsService
@@ -64,8 +69,14 @@ def _migration_status(cache: MigrationCache) -> List[Dict[str, Any]]:
 
 def _build_service() -> InsightsService:
     settings = TrendInsightsSettings.from_env(os.environ)
-    object_store = GcsObjectStore(settings.bucket_name) if settings.bucket_name else UnavailableObjectStore()
-    llm = GeminiVertexClient(settings.gcp_project, settings.vertex_location)
+    if settings.bucket_name:
+        object_store = GcsObjectStore(settings.bucket_name)
+    elif settings.gemini_api_key:
+        local_root = Path(__file__).resolve().parents[3] / "data" / "cache" / "trend_insights"
+        object_store = LocalFileObjectStore(local_root)
+    else:
+        object_store = UnavailableObjectStore()
+    llm = GeminiVertexClient(settings.gcp_project, settings.vertex_location, api_key=settings.gemini_api_key)
     ledger = BudgetLedger(object_store, settings, _utc_now)
     insights = InsightStore(object_store, _utc_now)
     lease = GcsInFlightLease(object_store, _utc_now)

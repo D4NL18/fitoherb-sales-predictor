@@ -16,6 +16,12 @@ _FACTOR_LABELS = {
     "CANIBALIZACAO_OUTRO_FORNECEDOR": "a migração para produto de outro fornecedor",
     "CLIENTES_PERDIDOS": "a perda de clientes",
 }
+_INDICATOR_LABELS = {
+    "PROMOCAO": "promoção no período",
+    "RUPTURA": "falta de estoque atual",
+    "PERDA_PARTICIPACAO_SEM_MIGRACAO": "perda de participação sem migração para afins",
+    "REGIONAL": "concentração regional das vendas",
+}
 _MARKET_SENTENCES = {
     "MERCADO_EM_QUEDA": "O grupo de produtos afins também recuou, o que indica movimento de mercado.",
     "MERCADO_EM_ALTA": "O grupo de produtos afins também avançou, o que indica movimento de mercado.",
@@ -38,9 +44,16 @@ def _factor_sentence(evidence: EvidencePackage) -> str:
         key=lambda p: -abs(p.get("valor") or 0.0),
     )
     labels = [_FACTOR_LABELS[p["tipo"]] for p in ranked[:3]]
-    if not labels:
-        return "Os fatores internos medidos não explicam a variação."
-    return "Fatores internos que mais contribuíram: " + _joined(labels) + "."
+    if labels:
+        return "Fatores internos que mais contribuíram: " + _joined(labels) + "."
+    ind_labels = [
+        _INDICATOR_LABELS[i["tipo"]]
+        for i in (evidence.data.get("indicadores") or [])
+        if i.get("status") == "AVALIADO" and i.get("tipo") in _INDICATOR_LABELS
+    ]
+    if ind_labels:
+        return "Sinais internos observados: " + _joined(ind_labels[:3]) + "."
+    return "Os fatores internos medidos não explicam a variação."
 
 
 def build_template_summary(evidence: EvidencePackage) -> str:

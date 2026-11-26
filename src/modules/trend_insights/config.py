@@ -117,6 +117,7 @@ class TrendInsightsSettings:
     llm_total_deadline_seconds: int = constants.LLM_TOTAL_DEADLINE_SECONDS
     in_flight_lock_ttl_seconds: int = constants.IN_FLIGHT_LOCK_TTL_SECONDS
     reservation_ttl_seconds: int = constants.RESERVATION_TTL_SECONDS
+    gemini_api_key: Optional[str] = None
 
     @classmethod
     def from_env(cls, env: Mapping[str, str]) -> "TrendInsightsSettings":
@@ -149,6 +150,7 @@ class TrendInsightsSettings:
             reservation_ttl_seconds=_read_positive_int(
                 env, ("TREND_AI_RESERVATION_TTL_SECONDS", "RESERVATION_TTL_SECONDS"),
                 constants.RESERVATION_TTL_SECONDS),
+            gemini_api_key=(env.get("GEMINI_API_KEY") or "").strip() or None,
         )
 
 

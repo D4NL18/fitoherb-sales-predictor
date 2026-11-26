@@ -205,6 +205,22 @@ class EvidenceBuilder:
             "anterior": {"inicio": spec.pre_start.isoformat(), "fim": (spec.pre_end_exclusive - one_day).isoformat()},
         }
 
+    @staticmethod
+    def _cell_dict(cell: TrendCell, window: int) -> Dict[str, Any]:
+        """Serializa `TrendCell` no mesmo formato de `TrendCellSchema` (snake_case antes de `to_camel`)."""
+        return {
+            "meses": window,
+            "atual": cell.atual,
+            "anterior": cell.anterior,
+            "variacao_pct": cell.variacao_pct,
+            "status": cell.status,
+            "base_parcial": cell.base_parcial,
+            "base_baixa": cell.base_baixa,
+            "devolucao_liquida": cell.devolucao_liquida,
+            "atual_por_dia": cell.atual_por_dia,
+            "anterior_por_dia": cell.anterior_por_dia,
+        }
+
     def _base_data(self, entry, query: InsightQuery, base_idx: int, spec: WindowSpec, cell: TrendCell, mode: str):
         affinity = product_affinity_service.get_product_affinities(str(query.sku), top_k=1) or {}
         meta_status = "AVALIADO" if affinity else "NAO_AVALIADO"
@@ -221,6 +237,7 @@ class EvidenceBuilder:
             },
             "periodo": {"fator_ajuste": round(float(spec.scale_k), 6), "base_parcial": spec.is_partial_base,
                         "contigua": spec.is_contiguous},
+            "celula": self._cell_dict(cell, query.window),
             "modo_diagnostico": mode, "cell_status": cell.status, "direcao": None,
             "variacao_pct": cell.variacao_pct, "delta_observado": None, "delta_receita": None,
             "base_ajustada": None, "residuo": None, "residual_share": None,
@@ -281,7 +298,7 @@ class EvidenceBuilder:
         info = product_affinity_service.get_product_affinities(str(query.sku), top_k=AFFINE_GROUP_TOP_K)
         if info is None:
             return [], MarketDiagnosis(classificacao="NAO_AVALIADO")
-        affines: List[Dict[str, Any]] = []
+        selected: List[Tuple[Mapping[str, Any], TrendCell]] = []
         group_pre, group_cur = Fraction(0), Fraction(0)
         for neighbor in info["affinities"]:
             sku = int(neighbor["sku"])
@@ -291,19 +308,27 @@ class EvidenceBuilder:
             neighbor_totals = _effective(cell)
             group_pre += neighbor_totals.previous * spec.scale_k
             group_cur += neighbor_totals.current
-            affines.append(self._affine_dict(neighbor, cell))
+            selected.append((neighbor, cell))
+        launches = self._launch_skus(snapshot, query, spec, [int(n["sku"]) for n, _ in selected])
+        affines = [
+            self._affine_dict(neighbor, cell, query.window, int(neighbor["sku"]) in launches)
+            for neighbor, cell in selected
+        ]
         min_base = LOW_BASE_REVENUE if query.metric == "revenue" else LOW_BASE_QUANTITY
         base_adjusted = totals.previous * spec.scale_k
         market = compute_market_diagnosis(
             float(base_adjusted), float(totals.current), float(group_pre), float(group_cur), min_base)
         return affines, market
 
-    @staticmethod
-    def _affine_dict(neighbor: Mapping[str, Any], cell: TrendCell) -> Dict[str, Any]:
+    @classmethod
+    def _affine_dict(
+        cls, neighbor: Mapping[str, Any], cell: TrendCell, window: int = 3, lancamento: bool = False,
+    ) -> Dict[str, Any]:
         return {
             "sku": int(neighbor["sku"]), "descricao": neighbor.get("description"), "fornecedor": neighbor.get("supplier"),
             "same_supplier": bool(neighbor.get("sameSupplier")), "affinity_score": float(neighbor["affinityScore"]),
-            "variacao_pct": cell.variacao_pct, "ganhou_clientes_do_produto": False,
+            "variacao_pct": cell.variacao_pct, "celula": cls._cell_dict(cell, window),
+            "ganhou_clientes_do_produto": False, "lancamento": lancamento,
             "categoria_galeria": neighbor.get("galleryCategory") or None, "valor_venda_atual": neighbor.get("currentPrice"),
         }
 

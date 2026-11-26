@@ -31,33 +31,46 @@ HTTP_TIMEOUT_CODES = (408,)
 
 
 class GeminiVertexClient:
-    def __init__(self, project: Optional[str], location: str, sdk_client: Any = None):
+    def __init__(self, project: Optional[str], location: str, sdk_client: Any = None, api_key: Optional[str] = None):
         self._project = project
         self._location = location
         self._sdk_client = sdk_client
+        self._api_key = api_key
 
     def is_configured(self) -> bool:
-        """Credencial presente = projeto definido (a ADC e resolvida pelo SDK na chamada)."""
-        return bool(self._project) or self._sdk_client is not None
+        """Credencial presente = projeto Vertex ou API key Gemini definida."""
+        return bool(self._project or self._api_key) or self._sdk_client is not None
 
     def _client(self):
         if self._sdk_client is None:
-            if not self._project:
+            if not self._project and not self._api_key:
                 raise LlmNotConfiguredError()
             from google import genai
 
-            self._sdk_client = genai.Client(vertexai=True, project=self._project, location=self._location)
+            if self._project:
+                self._sdk_client = genai.Client(vertexai=True, project=self._project, location=self._location)
+            else:
+                self._sdk_client = genai.Client(api_key=self._api_key)
         return self._sdk_client
 
-    @staticmethod
-    def _config(request: LlmRequest):
+    @classmethod
+    def _serving_schema(cls, node: Any) -> Any:
+        """Remove `maxItems`/`format`/`pattern` que estouram o limite de estados da API; `validation.py` valida em Python."""
+        if isinstance(node, dict):
+            return {k: cls._serving_schema(v) for k, v in node.items() if k not in ("maxItems", "format", "pattern")}
+        if isinstance(node, list):
+            return [cls._serving_schema(item) for item in node]
+        return node
+
+    @classmethod
+    def _config(cls, request: LlmRequest):
         from google.genai import types
 
         tools = [types.Tool(google_search=types.GoogleSearch())] if request.use_search_grounding else None
         return types.GenerateContentConfig(
             system_instruction=request.system_prompt,
             response_mime_type="application/json",
-            response_json_schema=request.response_schema,
+            response_json_schema=cls._serving_schema(request.response_schema),
             tools=tools,
             thinking_config=types.ThinkingConfig(thinking_level=request.thinking_level.upper()),
             max_output_tokens=request.max_output_tokens,
