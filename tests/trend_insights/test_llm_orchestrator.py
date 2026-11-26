@@ -36,7 +36,7 @@ def test_success_uses_hydrogen_saves_and_settles_real_cost():
     assert out.origem == "llm" and out.modelo == HYDROGEN and out.diagnostico["resumo"]
     assert rig.llm.models == [HYDROGEN] and len(_insights(rig)) == 1
     assert _spent(rig) == pytest.approx(0.01425)
-    assert out.diagnostico["promptVersion"] == "tia-v2" and out.diagnostico["direcao"] == "QUEDA"
+    assert out.diagnostico["promptVersion"] == "tia-v3"  # revisado v3.1 (DA-13 item 9) and out.diagnostico["direcao"] == "QUEDA"
 
 
 def test_cache_hit_costs_zero_and_does_not_count_for_rate_limit():

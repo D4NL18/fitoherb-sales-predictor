@@ -1,4 +1,4 @@
-"""T-7.1.17/18, T-7.2.9: contrato HTTP 1.1.0 (envelope, meta, TIA-001..007, 401, rate limit, campos que nao vazam)."""
+"""T-7.1.17/18, T-7.2.9: contrato HTTP 1.2.0 (envelope, meta, TIA-001..007, 401, rate limit, campos que nao vazam)."""
 import base64
 import re
 
@@ -40,7 +40,7 @@ def test_get_returns_envelope_and_never_calls_llm():
     r = client.get(BASE + "/product/5102?metric=revenue&window=3&baseMonth=2026-10&comparisonMode=point")
     assert r.status_code == 200
     body = r.json()
-    assert set(body) == {"data", "meta"} and body["meta"]["version"] == "1.1.0"
+    assert set(body) == {"data", "meta"} and body["meta"]["version"] == "1.2.0"  # revisado v3.1: contrato 1.2.0
     for key in ("dataReferencia", "modoComparacao", "promptVersion", "avisos", "indiceAfinidade", "ia"):
         assert key in body["meta"]
     ia = body["meta"]["ia"]
@@ -107,7 +107,7 @@ def test_post_llm_then_cache_flow():
     assert m1["origem"] == "llm" and m1["modelo"] == HYDROGEN and m1["reutilizado"] is False
     assert m1["geradoEm"] and m1["motivoTemplate"] is None and m1["ia"]["diagnosticoSalvo"] is True
     d = r1.json()["data"]["diagnosticoIa"]
-    assert d["resumo"] and d["origem"] == "llm" and d["modelo"] == HYDROGEN and d["promptVersion"] == "tia-v2"
+    assert d["resumo"] and d["origem"] == "llm" and d["modelo"] == HYDROGEN and d["promptVersion"] == "tia-v3"
     assert r1.json()["data"].get("resumoAutomatico") is None
     r2 = _post(client)
     assert r2.json()["meta"]["origem"] == "cache" and r2.json()["meta"]["reutilizado"] is True

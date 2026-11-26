@@ -121,7 +121,7 @@ Cada condição tem um teste automatizado ou verificação objetiva. O `reviewer
 - **R-01:** bucket e, se Vertex AI, endpoint do modelo em `southamerica-east1` quando o *grounding* permitir; se não permitir, registrar no ADR-009.
 - **R-02:** reavaliar regra de dominância por UF se a quebra regional passar a ser exibida em valores absolutos fora do painel.
 - **R-03:** incluir no ROPA e no aviso interno de privacidade o Google como operador de IA da ferramenta.
-- **A-4 (PENDENTE, documento de privacidade, auditoria Etapa 4, 2026-11-25):** o Google (Vertex AI/Gemini) ainda não consta como operador de IA no ROPA nem no aviso interno de privacidade (concretiza R-03). Responsável: encarregado/`privacy_officer`; sem alteração de código. Gravidade baixa, a fechar antes da ativação em produção.
+- **A-4 (PENDENTE, documento de privacidade, auditoria Etapa 4, 2026-11-25):** o Google (Vertex AI/Gemini) ainda não consta como operador de IA no ROPA nem no aviso interno de privacidade (concretiza R-03). Responsável: encarregado/`privacy_officer`; sem alteração de código. Gravidade baixa, a fechar antes da ativação em produção. **Texto sugerido redigido no §11.4 e §11.5 (adendo v3.1, 2026-11-26); falta apenas a instituição incorporá-lo ao ROPA e ao aviso e registrar a data.**
 - **R-04:** o aviso fixo da tela ("Diagnóstico gerado por IA… confira as fontes") atende à transparência; mantê-lo.
 
 ---
@@ -133,3 +133,48 @@ Cada condição tem um teste automatizado ou verificação objetiva. O `reviewer
 - **PC-03 (`business_rules` P-179, `analyst` / `ai_specialist`):** acrescentar ao "Proibido no pacote" as contagens de clientes abaixo de 3 em valor exato (LGPD-TIA-06).
 - **PC-04 (`business_rules` P-176.3 / contrato, `architect`):** definir onde vive o contador por usuário/IP sem persistir IP em claro (LGPD-TIA-11).
 - **PC-05 (`business_rules` §4, `analyst`):** a linha "Pacote enviado ao Gemini" pode citar este parecer e a modalidade contratual (PC-01); a classificação "sem dado pessoal" só vale com LGPD-TIA-03..06 cumpridas.
+- **PC-06 (`business_rules` §4, linha do radar):** diz "registrar no RIPD"; corrigir para "registrar neste parecer (§11); RIPD não exigido".
+- **PC-07 (`analyst` / `devops`):** retenção divergente entre artefatos. Regras P-180.3 dizem retenção física 120 d e `RADAR_TTL_PAST_DAYS` = 180; a revisão pedida fala em 210 d físicos e TTL 30/90/120. Unificar (§11.3).
+
+---
+
+## 11. Adendo v3.1: radar externo compartilhado (ADR-009 DA-13, P-180.x, contrato 1.2.0, arquitetura §15)
+
+Data: 2026-11-26. Conclusão: **APROVADO COM CONDIÇÕES; RIPD NÃO exigido.**
+
+### 11.1 Fluxo novo (F10)
+| Fluxo | Dados | Classificação | Avaliação |
+| :--- | :--- | :--- | :--- |
+| F10 radar: Processo → Gemini com busca (região us/eu) → GCS | Só termo de assunto (matéria-prima/categoria), mês-base e lista fixa de 8 dimensões. Sem SKU, UF, fornecedor, valores, variação, usuário ou cliente. Saída: enumerações, `tema` de lista fechada, `nota` gerada pelo backend, título/domínio/URL/data da fonte | Público/não pessoal e **sem segredo comercial** | Conforme |
+
+O radar é mais restrito que F5/F6: a consulta F6 de produto continua com LGPD-TIA-12; o radar não leva nem UF nem fornecedor.
+
+### 11.2 RIPD
+**Não exigido.** Nenhum gatilho do §6 é acionado: sem dado pessoal, sem dado sensível, sem decisão sobre titular, sem larga escala de dado individual. Compartilhar o radar entre usuários é seguro justamente porque a chave e o conteúdo não têm usuário, SKU, cliente nem variação (C-37). Região us/eu: sem dado pessoal e sem dado da empresa, logo não há transferência internacional (Art. 33) nem segredo comercial exposto; a recomendação R-01 (`southamerica-east1`) passa a valer só para o GCS e o diagnóstico, não para o radar. Registrar a região no ADR-009 e no ROPA.
+
+### 11.3 Ajuste das condições LGPD-TIA e retenção
+- **LGPD-TIA-12 (ampliada):** consulta do **radar** = apenas `slug`/termo do assunto + mês-base + dimensões; UF, fornecedor, SKU e qualquer texto da galeria ou do usuário são proibidos. Teste do montador de consultas do radar com SKU/UF/fornecedor sintéticos ausentes.
+- **LGPD-TIA-03/04/09 (estendidas ao radar):** varredura de lista branca no prompt do radar e no objeto gravado: chaves `customer`, `cliente`, `usuario`, `email`, `ip`, `sku`, `uf`, `fornecedor`, valores monetários e dígitos em `nota`. Cobre também `tema` fora da lista fechada rejeitado e `nota` sempre por `RADAR_THEME_TEXTS`.
+- **LGPD-TIA-08 (confirmada):** Vertex AI ou Gemini API paga também para o radar; nível gratuito segue vedado, embora o radar não tenha dado da empresa.
+- **LGPD-TIA-10/11 (travas do radar):** trava `(slug, mês-base)` sem identificador de pessoa.
+- **Retenção:** TTL lógico 30/90/120 d (corrente+anterior/antigos/`stale` máximo) e retenção física de 210 d no prefixo `radar/` são aprovados: conteúdo público e não pessoal; o físico (> maior TTL + folga) permite `stale` e auditoria de fonte. Condição: lifecycle de 210 d configurado no bucket para o prefixo do radar (como LGPD-TIA-09), prefixo separado dos diagnósticos (90 d). **Resolver PC-07** (os artefatos de regras citam 120 d físicos e 180 d de TTL passado).
+- **Minimização:** aprovada. Notas sem texto livre eliminam o canal de *prompt injection* persistido e de eco de dado pessoal da web. Fontes guardam só título, domínio, URL e data; URLs podem conter dado pessoal de terceiros em tese (notícia nominal): validar domínio e não armazenar trecho de conteúdo (já previsto).
+- **Logs:** radar logado só com slug, mês, tokens, custo, status (P-185.2); nunca o texto da resposta.
+
+### 11.4 Texto sugerido para o aviso interno de privacidade (A-4)
+> **Uso de inteligência artificial na análise de vendas.** A ferramenta de análise de tendências usa serviços de IA do Google (Vertex AI / Gemini) para explicar variações de vendas de produtos. Os dados enviados são agregados por produto e por período e **não incluem nomes, documentos, contatos ou códigos de clientes**, nem dados dos usuários da ferramenta. Pesquisas na internet feitas pela IA usam apenas termos de matéria-prima ou categoria e o mês, sem dados da empresa. O Google atua como operador, sob contrato (com uso dos dados para treinamento desativado), e não toma decisões sobre pessoas. O resultado é apoio à decisão e deve ser conferido nas fontes indicadas. Dúvidas ou solicitações sobre dados pessoais: encarregado (DPO) [contato a preencher].
+
+### 11.5 Texto sugerido para o ROPA (A-4)
+| Campo | Conteúdo |
+| :--- | :--- |
+| Operação | Análise de tendência de vendas com IA generativa (F7) |
+| Finalidade | Gestão de portfólio, preço, mix e compra; explicar variações por produto/fornecedor |
+| Titulares | Nenhum no dado enviado ao operador. Origem local usa `Cod Cliente` em memória (clientes PJ, PF/MEI/produtor rural) e usuários internos (limite de uso) |
+| Dados | Agregados por produto/UF/mês (sem identificador, contagens < 3 em faixa); radar externo só com assunto + mês |
+| Base legal | Legítimo interesse (Art. 7º, IX) na leitura volátil local; envio ao operador fora do escopo da LGPD (sem dado pessoal) |
+| Operador | Google LLC / Google Cloud (Vertex AI/Gemini API paga, busca *grounding*), contrato de processamento de dados do Google Cloud |
+| Transferência internacional | Não aplicável a dado pessoal; radar processado em região us/eu; GCS/diagnóstico preferencialmente `southamerica-east1` |
+| Armazenamento e retenção | GCS privado; diagnósticos 90 d; radar 210 d físicos (TTL lógico 30/90/120 d); logs sem conteúdo; limite por usuário/IP em memória, TTL ≤ 1 min |
+| Compartilhamento | Radar compartilhado entre usuários internos (sem identificador) |
+| Segurança | Autenticação nas rotas, SA mínima, Secret Manager, lista branca de campos, exceções sanitizadas |
+| Revisão | Gatilhos do §6; reavaliar com mudança de modalidade/região do Google |

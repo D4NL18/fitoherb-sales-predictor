@@ -21,4 +21,7 @@ LGPD-TIA-01 (colunas mínimas na variante de 4 datas e na query por UF) · 02 (`
 - PC-04: P-176.3 precisa definir armazenamento do contador por usuário/IP.
 - PC-05: §4 das regras deve condicionar "sem dado pessoal" às LGPD-TIA-03..06.
 
+## Adendo v3.1 (2026-11-26): radar externo compartilhado
+Parecer §11: APROVADO COM CONDIÇÕES; RIPD não exigido (radar só com assunto + mês, sem dado pessoal nem da empresa; us/eu sem Art. 33). LGPD-TIA-12 ampliada (radar sem UF/fornecedor/SKU), 03/04/09 estendidas ao radar. Retenção 210 d físicos / TTL 30/90/120 aprovada com lifecycle no prefixo `radar/`. Novos: PC-06 (business_rules §4 diz "RIPD"), PC-07 (120 d físicos e 180 d TTL nas regras divergem). A-4: textos de aviso e ROPA redigidos (§11.4, §11.5); pendente só a incorporação institucional antes da produção.
+
 Arquivos editados: somente este STATE e `privacy/analytics-tendencia-ia.md`.

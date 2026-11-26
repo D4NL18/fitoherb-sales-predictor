@@ -84,12 +84,12 @@ def test_release_returns_reservation_without_spending():
     assert doc["gastoMes"] == 0 and doc["reservado"] == []
 
 
-def test_orphan_reservation_expires_after_150_seconds():
+def test_orphan_reservation_expires_after_180_seconds():
     rig, ledger = _ledger()
     ledger.reserve(HYDROGEN, with_search=False)
     seed = rig.objects.objects[budget_path(rig.clock)]
-    assert mod("domain.constants").RESERVATION_TTL_SECONDS == 150
-    rig.clock.advance(151)
+    assert mod("domain.constants").RESERVATION_TTL_SECONDS == 180  # DA-13 item 8
+    rig.clock.advance(181)
     ledger.reserve(HYDROGEN, with_search=False)
     live = [r for r in rig.objects.objects[budget_path(rig.clock)]["reservado"]]
     assert len(live) == 1 and seed["reservado"][0] != live[0]

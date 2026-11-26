@@ -27,4 +27,5 @@
 
 ## Log
 - **2026-11-24 — designer:** Plano alinhado ao contrato `sales-trend-insights.md` 1.1.0 (origem, template 200, limites 429, sem custo na UI, sem Neon/aprofundada).
+- **2026-11-26 — designer:** Plano alinhado ao contrato 1.2.0 e ao plano de IA §15: nova §7.4 "Fatores externos" (8 dimensões sempre exibidas, `SEM_EVIDENCIA` explícito, direção ícone+texto, confiança nunca alta, fonte com noopener, idade do radar, desatualizado, radar indisponível, `radarExterno` em leitura, selo `hipótese`, sem dígitos/custos); D-14; §11 item 9.
 - **2026-11-24 — designer:** Design Plan F7 criado (painel "Por que?", cascata acessível, grupo afim, impacto, bloco de IA com 8 estados, copy completa, filtro Anti-IA).

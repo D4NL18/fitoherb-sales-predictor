@@ -455,6 +455,64 @@ Microselo de contorno (`--border-default`, texto `--text-secondary`, 0.75rem) ao
 | **Qualitativo / Novo** | §6.4 + §6.6 (lista de sinais em vez da tabela) |
 | **Fatores "não avaliado"** | Linha visível na cascata com `Não avaliado` + motivo (§10.2); nunca some, nunca vira 0 |
 
+### 7.4 Seção "Fatores externos" (contrato 1.2.0; `ExternalFactorsSectionComponent`, plano de IA §15)
+
+Dentro do bloco de IA, **depois** de "Fatores com evidência" e **antes** das hipóteses sem fonte. Título `h4` `Fatores externos ({n} de 8 com evidência)`, introdução 0.75rem `--text-muted`: `Pesquisa pública sobre o assunto do produto. São hipóteses, não dados do sistema.` Lê `diagnosticoIa.fatoresExternos[8]`, `diagnosticoIa.radar` e `meta.ia.radar`.
+
+**Fato x hipótese (por posição, borda, rótulo e texto, nunca só cor):** cascata e fatores internos ficam em `--bg-surface` com borda sólida; a seção externa usa contêiner de borda tracejada 1px `--border-strong`, fundo `--bg-canvas` e microselo de contorno `hipótese` em cada linha. Nenhum item externo mostra R$, p.p. ou percentual; `parcelaEstimada` nunca é renderizada.
+
+**Sempre 8 linhas, ordem fixa**, em `<ul aria-label="Fatores externos">`, nunca omitidas nem escondidas em "Mostrar todos":
+
+| `dimensao` | Rótulo exibido |
+| :--- | :--- |
+| `POLITICA_REGULATORIO` | Política e regulação |
+| `CLIMA_SAFRA` | Clima e safra |
+| `CUSTO_MATERIA_PRIMA` | Custo da matéria-prima |
+| `OFERTA_DEMANDA_MATERIA_PRIMA` | Oferta e demanda da matéria-prima |
+| `CAMBIO_LOGISTICA_IMPORTACAO` | Câmbio e logística |
+| `CONSUMO_MIDIA_SAUDE` | Consumo e mídia |
+| `CONCORRENCIA` | Concorrência |
+| `EVENTOS_MERCADO` | Eventos de mercado |
+
+**Anatomia da linha (`ExternalFactorRowComponent`):**
+1. Rótulo da dimensão (0.875rem 600) + microselo `hipótese` + direção (ícone + texto).
+2. `Confiança média` ou `Confiança baixa` em texto (nunca `alta`; se vier `ALTA`, exibir `baixa` e registrar no console de desenvolvimento) + `Relevância para este produto: alta|média|baixa|nenhuma`.
+3. `notaRadar` (frase fixa do backend) e, se houver, `nota` da IA; sempre interpolação, nunca `[innerHTML]`.
+4. Fonte (`SourceLinkComponent`): título, domínio, `· dd/MM/yyyy` ou `· sem data de publicação`, `↗`, `sr-only` `(abre em nova aba)`; `<a target="_blank" rel="noopener noreferrer">`, só `http`/`https`, caso contrário texto sem link. Até 1 fonte (2 se intensidade forte). `origemData = MODELO`: `title="Data informada pela IA, não confirmada na página"`.
+5. Selo de `relacaoTemporal`: `ANTERIOR`/`CONTEMPORANEA` sem selo; `POSTERIOR` `Depois do período (só contexto)`; `SEM_DATA` `Sem data (não vale como causa)`; `ANTIGA` `Notícia antiga (descartada)`.
+
+**Direção (ícone `aria-hidden` + texto visível, contraste >= 4.5:1, tokens de direção da cascata §3):**
+
+| `direcao` | Glifo | Texto |
+| :--- | :-: | :--- |
+| `PRESSAO_BAIXA` | ▼ | Pressão de baixa nas vendas |
+| `PRESSAO_ALTA` | ▲ | Pressão de alta nas vendas |
+| `NEUTRA` | ● | Sem pressão clara |
+| `INDETERMINADA` | ○ | direção não exibida |
+
+**Por `status`:**
+- `AVALIADA`: anatomia completa; relevância `NENHUMA` vira linha compacta (`Sem relação com este produto`), sem `nota`.
+- `SEM_EVIDENCIA`: **exibida** como `Sem evidência encontrada` + `notaRadar`; sem direção, confiança ou fonte; `--text-secondary`. Não é erro nem aviso.
+- `NAO_AVALIADA`: `Não avaliada` + motivo: `SEM_RADAR` `Não havia pesquisa externa disponível.`; `SEM_TERMO_BUSCA` `Não há matéria-prima ou categoria para pesquisar neste produto.`; `DIMENSAO_OMITIDA_PELA_IA` `A análise não cobriu esta dimensão.`
+
+**Idade do radar** (`radar` / `meta.ia.radar`), linha 0.75rem `--text-secondary` sob o título: `Pesquisa sobre "{assunto.termo}" · feita em {dd/MM/yyyy} (há {diasDesdeGeracao} dias)`; 0 dias vira `hoje`; `origem = CACHE` acrescenta `· compartilhada com outros produtos`; `GERADO_AGORA` acrescenta `· atualizada agora`.
+
+**Radar desatualizado** (`desatualizado` ou `estado = DESATUALIZADO`, aviso `RADAR_DESATUALIZADO`): `InlineNotice` informativo no topo da seção, `role="status"`: `Os fatores externos usam uma pesquisa desatualizada. Feita há {n} dias; confira as datas das fontes.` Todas as linhas com confiança `baixa`. Sem botão de renovar (`force` não renova o radar).
+
+**Radar indisponível** (`SEM_RADAR_EXTERNO`, `radar = null`): bloco tracejado único, `Fatores externos não avaliados nesta análise.` + `A análise usa só os dados de vendas e dos produtos semelhantes.`; título `(0 de 8 com evidência)`; as 8 dimensões ficam em `<details>` fechado `Ver as 8 dimensões` (cada uma `Não avaliada` + motivo). Não é erro (nunca `role="alert"`). `SEM_BUSCA_EXTERNA` mantém `Análise feita sem busca externa.`
+
+**Radar sem IA do produto** (`data.radarExterno`, resumo automático): seção em leitura, título `Radar externo de {n} dias (sem análise de IA para este produto)` + `Pesquisa geral, não específica deste produto`; cada linha só com `movimento` (`Subiu`/`Caiu`/`Estável`/`Mudou`/`Indefinido`) e `intensidade` em texto, `notaRadar` e fonte; **sem** direção sobre vendas, confiança ou relevância. Mesmo aviso se desatualizado.
+
+**Fatores promovidos** (`fatores[].dimensao`, máx. 3): o item em "Fatores com evidência" mostra rótulo da dimensão e `hipótese`; a linha em "Fatores externos" ganha `Também listado em Fatores com evidência ↑` (foca o item).
+
+**Motivos novos de hipótese (§10.3):** `POSTERIOR_AO_PERIODO` `Notícia posterior ao período analisado.`; `SEM_COERENCIA_DIRECIONAL` `O sentido da notícia não combina com o sentido da variação.`
+
+**8 estados da seção:** vazio (sem IA: seção ausente; resumo automático mostra só o radar em leitura, se existir); carregando (8 esqueletos shimmer + título real, `aria-busy`, sem spinner); sucesso; salvo/cache; desatualizado; radar indisponível; erro (`IA_FALHOU` cobre o bloco; seção some); parcial (mistura de `SEM_EVIDENCIA` e `NAO_AVALIADA`). Foco `:focus-visible` 2px nos links; hover sublinha; `prefers-reduced-motion` desliga o shimmer. Leitor de tela por `li`: `{rótulo}. Hipótese. {direção}. Confiança {x}. Relevância {y}. {nota}. Fonte {título}, {domínio}, {data}.`; região `role="status"` única anuncia `Fatores externos atualizados`.
+
+**Mobile (< 768 px):** linhas empilhadas em largura total, direção e confiança em linhas separadas, alvos de toque >= 44 px, título da fonte com `overflow-wrap: anywhere`, cabeçalho de idade em 2 linhas, sem tabela.
+
+**Anti-IA e copy:** nenhum dígito inventado (datas, `n` e contagens vêm do contrato; `nota`/`notaRadar` chegam sem dígitos); sem `Seamless`/`Elevate`; sem ícones de foguete/engrenagem; sem dólares, tokens, consultas, limites ou saldo.
+
 ---
 
 ## 9. Matriz dos 8 estados interativos (controles do F7)
@@ -551,6 +609,7 @@ Confiança: `Alta`, `Média`, `Baixa`, com `title` e legenda `<details>` `Como l
 6. `meta.ia` no GET (contrato 1.1.0): `podeGerar`, `motivoBloqueio`, `geraComIa`, `motivoTemplate`, `diagnosticoSalvo`, `diagnosticoSalvoEm`, `diagnosticoVencido`, `podeForcar`, `geracaoEmAndamento`, `orcamento.nivel` (a tela **não** exibe o nível nem qualquer valor de custo; §4.4 do contrato).
 7. POST: `meta.origem` (`llm`/`cache`/`template`/`fallback`), `meta.motivoTemplate`, `meta.reutilizado`, `data.resumoAutomatico`, `meta.avisos` (`IA_FALHOU`, `SEM_BUSCA_EXTERNA`). Diagnóstico: `geradoEm`, `modelo` (só detalhes técnicos), `fatores[].explicacao`/`rotulo`, `fontes[]` com `url`, `dominio`, `titulo`, `dataPublicacao` (anulável), `hipotesesNaoConfirmadas[].motivo`. Contagens `clientesMigrados`/`clientesPerdidosQtd` como `number | "<3"`. Erro `429 TIA-004` com `error.motivo`. **Removidos:** `deep`, `tipoAnalise`, `escalonadoAutomaticamente`, `DIAGNOSTICO_DESATUALIZADO`.
 8. Enum fechado dos motivos de `NAO_AVALIADO`/`SEM_EFEITO` (§10.2).
+9. **Contrato 1.2.0:** `diagnosticoIa.fatoresExternos[8]` (`dimensao`, `status`, `direcao`, `confianca`, `relevanciaAoProduto`, `relacaoTemporal`, `rotulo`, `origemEvidencia`, `motivoNaoAvaliado`, `tema`, `notaRadar`, `nota`, `fontes[]` com `id` e `origemData` incl. `SEM_DATA`), `diagnosticoIa.radar`, `meta.ia.radar`, `data.radarExterno`, `fatores[].dimensao`, avisos `RADAR_DESATUALIZADO`/`SEM_RADAR_EXTERNO`, motivos `POSTERIOR_AO_PERIODO`/`SEM_COERENCIA_DIRECIONAL`. Prazo de IA de 125 s (progresso por tempo decorrido, sem percentual).
 
 ---
 
@@ -570,6 +629,7 @@ Confiança: `Alta`, `Média`, `Baixa`, com `title` e legenda `<details>` `Como l
 | D-10 | Hipóteses em contêiner tracejado separado, depois dos fatores, sem selo de confiança |
 | D-11 | Confirmação de "Gerar de novo" inline no bloco, não um segundo diálogo |
 | D-12 | Progresso da IA honesto: tempo decorrido e texto fixo, sem percentual |
+| D-14 | "Fatores externos" (§7.4): 8 dimensões sempre visíveis, inclusive `Sem evidência encontrada`; hipóteses em contêiner tracejado com selo `hipótese`, separadas dos fatos da cascata; confiança nunca alta; idade e aviso de radar desatualizado; radar indisponível como bloco neutro, não erro |
 | D-13 | Bloco "Esta alta está tirando vendas de…" na parte numérica (dado do motor), não no bloco de IA |
 
 ---
