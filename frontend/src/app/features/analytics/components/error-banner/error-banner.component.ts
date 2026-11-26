@@ -11,6 +11,7 @@ import { Component, input, output } from '@angular/core';
   styleUrl: './error-banner.component.scss',
 })
 export class ErrorBannerComponent {
+  readonly title = input<string | null>(null);
   readonly message = input<string>('Não foi possível buscar as sugestões agora. Tente de novo em instantes.');
   readonly code = input<string | null>(null);
   readonly retryLabel = input<string>('Tentar de novo');

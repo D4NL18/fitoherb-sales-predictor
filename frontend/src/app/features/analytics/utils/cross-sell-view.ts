@@ -24,8 +24,8 @@ export type ResultViewKind =
 /** Ação do estado: focar o campo, limpar e focar, voltar à página 1 ou refazer a consulta. */
 export type ResultStateAction = 'focus-field' | 'new-search' | 'first-page' | 'retry';
 
-/** Ícone desenhado pelo `ResultStateComponent` (§6.3). */
-export type ResultStateIcon = 'pair' | 'person' | 'box' | 'check' | 'clock' | 'list' | 'chart';
+/** Ícone desenhado pelo `ResultStateComponent` (§6.3 e F2 Produto Novo). */
+export type ResultStateIcon = 'pair' | 'person' | 'box' | 'check' | 'clock' | 'list' | 'chart' | 'document';
 
 /** Conteúdo de um estado informativo (inicial, vazio ou dados insuficientes). */
 export interface ResultStateView {

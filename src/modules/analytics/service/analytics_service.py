@@ -668,6 +668,498 @@ def simulate_price_change(request: ElasticitySimulationRequest) -> ElasticitySim
 
 
 # ---------------------------------------------------------------------------
+# F2: Viabilidade de Produto Novo (P-139 a P-149; ADR-008)
+# ---------------------------------------------------------------------------
+from src.modules.analytics.api.schemas import (
+    AnalyticsMeta,
+    MonthlyForecastItem,
+    NewProductAggregatedTotals,
+    NewProductCannibalizationRisk,
+    NewProductCannibalizationRiskProduct,
+    NewProductFinancialViability,
+    NewProductForecastData,
+    NewProductForecastRequest,
+    NewProductForecastResponse,
+    NewProductMarketCeiling,
+    NewProductOptionsData,
+    NewProductOptionsResponse,
+    NewProductReferencePriceRange,
+    SimilarProductItem,
+)
+from src.modules.analytics.domain.exceptions import (
+    NewProductDatabaseUnavailableError,
+    NewProductInvalidParametersError,
+    NewProductInvalidSupplierError,
+    NewProductInvalidTypeError,
+)
+from src.modules.analytics.domain.new_product import (
+    SeasonalityProvider,
+    SeasonalityResult as NewProductSeasonalityResult,
+    apply_seasonality_and_clamp,
+    compute_cannibalization_risk,
+    compute_conservative_curve,
+    compute_mature_ceiling,
+    compute_reference_price_range,
+    compute_sales_impact_maps,
+    evaluate_financial_viability,
+    filter_eligible_launches,
+    find_similars,
+    select_similars_from_affinities,
+)
+from src.modules.analytics.domain.seasonality import get_seasonality_index
+from src.modules.analytics.repository.errors import AnalyticsDataSourceError
+from src.modules.analytics.service import product_affinity_service
+
+
+def _get_new_product_options() -> dict:
+    """Wrapper de cache para opções de catálogo (substituível em testes)."""
+    return analytics_cache.get_new_product_options()
+
+
+def _get_new_product_candidates_df(tipo: str):
+    """Wrapper de cache para lançamentos reais do tipo (substituível em testes)."""
+    return analytics_cache.get_new_product_candidates(tipo)
+
+
+def _get_mature_product_distribution_df(tipo: str):
+    """Wrapper de cache para distribuição de produtos maduros do tipo (substituível em testes)."""
+    return analytics_cache.get_mature_product_distribution(tipo)
+
+
+def _get_all_new_product_candidates_df():
+    """Wrapper de cache para todos os lançamentos reais do catálogo (substituível em testes)."""
+    return analytics_cache.get_all_new_product_candidates()
+
+
+def _get_all_mature_product_distribution_df():
+    """Wrapper de cache para produtos maduros de todo o catálogo (substituível em testes)."""
+    return analytics_cache.get_all_mature_product_distribution()
+
+
+def _get_monthly_sales_df_safe():
+    """Wrapper seguro de vendas mensais para apoio de cold start quando há poucos lançamentos recentes."""
+    try:
+        return analytics_cache.get_monthly_sales()
+    except Exception:
+        return None
+
+
+def _find_affinity_similars_for_new_product(
+    name: str,
+    description: str = "",
+    category: str = "",
+    top_k: int = 30,
+) -> list[dict]:
+    """Wrapper para o motor compartilhado de afinidade (substituível em testes)."""
+    return product_affinity_service.find_similar_for_new_product(
+        name=name,
+        description=description,
+        category=category,
+        top_k=top_k,
+        auto_sync=True,
+    )
+
+
+class _F1CategorySeasonalityProvider(SeasonalityProvider):
+    """Adaptador desacoplado que consulta `get_seasonality_index` (F1) sobre os SKUs da categoria."""
+
+    def __init__(self, similar_skus: list[int]) -> None:
+        self._similar_skus = similar_skus[:10]
+        self._loaded = False
+        self._monthly_df = None
+        self._catalog_dict: dict = {}
+        self._sku_results: dict = {}
+
+    def _ensure_f1_data(self) -> bool:
+        if self._loaded:
+            return self._monthly_df is not None and not self._monthly_df.empty
+        self._loaded = True
+        try:
+            monthly_df = analytics_cache.get_monthly_sales()
+            catalog_snap = analytics_cache.get_catalog()
+            self._monthly_df = monthly_df
+            self._catalog_dict = {
+                sku: {
+                    "codigo": entry.code,
+                    "descricao": entry.description,
+                    "fornecedor": entry.supplier,
+                    "estoque": entry.stock,
+                    "preco_venda": entry.price,
+                }
+                for sku, entry in catalog_snap.entries.items()
+            }
+            return not monthly_df.empty
+        except Exception:
+            self._monthly_df = None
+            return False
+
+    def get_category_seasonality(self, category: str, month: int) -> Optional[NewProductSeasonalityResult]:
+        if not self._ensure_f1_data() or not self._similar_skus:
+            return None
+
+        valid_indices: list[float] = []
+        confidences: list[str] = []
+        for sku in self._similar_skus:
+            if sku not in self._sku_results:
+                try:
+                    self._sku_results[sku] = get_seasonality_index(sku, self._monthly_df, self._catalog_dict)
+                except Exception:
+                    self._sku_results[sku] = None
+            res = self._sku_results[sku]
+            if res is None or not res.elegivel:
+                continue
+            point = next((p for p in res.serie_mensal if p.mes == month), None)
+            if point is not None and point.confianca in ("ALTA", "MEDIA"):
+                valid_indices.append(float(point.indice))
+                confidences.append(point.confianca)
+
+        if not valid_indices:
+            return NewProductSeasonalityResult(index=1.0, confidence="BAIXA")
+
+        valid_indices.sort()
+        mid = len(valid_indices) // 2
+        median_idx = (
+            valid_indices[mid]
+            if len(valid_indices) % 2 == 1
+            else (valid_indices[mid - 1] + valid_indices[mid]) / 2.0
+        )
+        best_conf = "ALTA" if "ALTA" in confidences else "MEDIA"
+        return NewProductSeasonalityResult(index=median_idx, confidence=best_conf)
+
+
+def get_new_product_options() -> NewProductOptionsResponse:
+    """Retorna listas deduplicadas e ordenadas de tipos e fornecedores ativos (P-141)."""
+    try:
+        options = _get_new_product_options()
+    except AnalyticsDataSourceError:
+        raise NewProductDatabaseUnavailableError() from None
+
+    ref_date = analytics_cache.business_date(analytics_cache._utc_now()).isoformat()
+    return NewProductOptionsResponse(
+        data=NewProductOptionsData(
+            tipos=list(options.get("tipos", [])),
+            fornecedores=list(options.get("fornecedores", [])),
+            tipos_por_fornecedor={
+                k: list(v) for k, v in dict(options.get("tipos_por_fornecedor", {})).items()
+            },
+        ),
+        meta=AnalyticsMeta(
+            timestamp=mappers.utc_timestamp(),
+            version="1.0.0",
+            data_referencia=ref_date,
+        ),
+    )
+
+
+def _validate_new_product_request(request: NewProductForecastRequest) -> None:
+    """Valida invariantes numéricas sem ecoar valores recebidos (P-140.3, LGPD-05)."""
+    if request.preco_venda_previsto <= 0:
+        raise NewProductInvalidParametersError(
+            message="O preço de venda previsto deve ser estritamente positivo.",
+            fields=("precoVendaPrevisto",),
+        )
+    if request.custo_unitario is not None:
+        if request.custo_unitario <= 0:
+            raise NewProductInvalidParametersError(
+                message="O custo unitário deve ser estritamente positivo.",
+                fields=("custoUnitario",),
+            )
+        if request.custo_unitario > request.preco_venda_previsto:
+            raise NewProductInvalidParametersError(
+                message="O custo unitário não pode ser superior ao preço de venda previsto.",
+                fields=("custoUnitario",),
+            )
+    if request.margem_minima_desejada is not None and not (0.0 <= request.margem_minima_desejada <= 1.0):
+        raise NewProductInvalidParametersError(
+            message="A margem mínima desejada deve estar entre 0% e 100%.",
+            fields=("margemMinimaDesejada",),
+        )
+    if request.horizon_months not in (1, 2, 3):
+        raise NewProductInvalidParametersError(
+            message="O horizonte de projeção deve estar entre 1 e 3 meses.",
+            fields=("horizonMonths",),
+        )
+
+
+def forecast_new_product(request: NewProductForecastRequest) -> NewProductForecastResponse:
+    """Orquestra validação, seleção de similares, curva conservadora, F1 e viabilidade (P-139..P-149)."""
+    _validate_new_product_request(request)
+
+    try:
+        options = _get_new_product_options()
+    except AnalyticsDataSourceError:
+        raise NewProductDatabaseUnavailableError() from None
+
+    tipos_map = {t.strip().casefold(): t for t in options.get("tipos", [])}
+    forn_map = {f.strip().casefold(): f for f in options.get("fornecedores", [])}
+
+    canonical_fornecedor = forn_map.get(request.fornecedor.strip().casefold())
+    if canonical_fornecedor is None:
+        raise NewProductInvalidSupplierError()
+
+    raw_tipo = (request.tipo or "").strip()
+    canonical_tipo: Optional[str] = None
+    if raw_tipo:
+        canonical_tipo = tipos_map.get(raw_tipo.casefold())
+        if canonical_tipo is None:
+            raise NewProductInvalidTypeError()
+
+    # Linhas de marca ("LINHA <FORNECEDOR>") são redundantes com o fornecedor no ERP e
+    # não devem restringir a busca de similares a uma única marca (ex.: Whey Max vs Whey Integral).
+    use_strict_tipo = canonical_tipo is not None and not canonical_tipo.upper().startswith("LINHA ")
+
+    try:
+        if use_strict_tipo and canonical_tipo is not None:
+            candidates_df = _get_new_product_candidates_df(canonical_tipo)
+            mature_df = _get_mature_product_distribution_df(canonical_tipo)
+        else:
+            candidates_df = _get_all_new_product_candidates_df()
+            mature_df = _get_all_mature_product_distribution_df()
+    except AnalyticsDataSourceError:
+        raise NewProductDatabaseUnavailableError() from None
+
+    ref_date = analytics_cache.business_date(analytics_cache._utc_now())
+    eligible_df = filter_eligible_launches(candidates_df, reference_date=ref_date)
+
+    affinity_matches = _find_affinity_similars_for_new_product(
+        name=request.descricao,
+        description=request.descricao,
+        category=canonical_tipo or "",
+        top_k=250,
+    )
+    affinity_scores_by_sku = {
+        int(str(m["sku"]).strip()): float(m.get("affinityScore") or 0.0)
+        for m in affinity_matches
+        if str(m.get("sku") or "").strip().isdigit()
+    }
+
+    monthly_sales_df = _get_monthly_sales_df_safe() if not use_strict_tipo else None
+    sku_to_supplier: dict[int, str] = {}
+    if monthly_sales_df is not None and not monthly_sales_df.empty:
+        try:
+            catalog_snap = analytics_cache.get_catalog()
+            sku_to_supplier = {int(sku): entry.supplier for sku, entry in catalog_snap.entries.items()}
+        except Exception:
+            sku_to_supplier = {}
+    product_avg_monthly, supplier_avg_monthly = compute_sales_impact_maps(
+        monthly_sales_df, sku_to_supplier
+    )
+
+    if not use_strict_tipo and affinity_matches:
+        similars = select_similars_from_affinities(
+            affinity_matches=affinity_matches,
+            launches_df=eligible_df,
+            fornecedor=canonical_fornecedor,
+            preco_venda_previsto=request.preco_venda_previsto,
+            monthly_sales_df=monthly_sales_df,
+            product_avg_monthly=product_avg_monthly,
+            supplier_avg_monthly=supplier_avg_monthly,
+        )
+    else:
+        similars = find_similars(
+            candidates_df=eligible_df,
+            tipo=canonical_tipo if use_strict_tipo else None,
+            fornecedor=canonical_fornecedor,
+            descricao=request.descricao,
+            preco_venda_previsto=request.preco_venda_previsto,
+            affinity_scores=affinity_scores_by_sku,
+        )
+
+    base_curve = compute_conservative_curve(
+        similars,
+        horizon_months=request.horizon_months,
+        product_avg_monthly=product_avg_monthly,
+        supplier_avg_monthly=supplier_avg_monthly,
+        target_fornecedor=canonical_fornecedor,
+    )
+
+    seasonality_skus = list(
+        dict.fromkeys(
+            [s.sku for s in similars]
+            + [sku for sku in affinity_scores_by_sku.keys()][:15]
+        )
+    )
+    seasonality_provider = _F1CategorySeasonalityProvider(seasonality_skus)
+    monthly_items: list[MonthlyForecastItem] = []
+    statuses: list[str] = []
+
+    for point in base_curve:
+        cal_month = ((ref_date.month - 1 + (point.month - 1)) % 12) + 1
+        final_qty, factor, conf, status = apply_seasonality_and_clamp(
+            base_quantity=point.conservative_quantity,
+            p25_quantity=point.similar_p25_quantity,
+            category=canonical_tipo or canonical_fornecedor,
+            calendar_month=cal_month,
+            provider=seasonality_provider,
+        )
+        statuses.append(status)
+        revenue = round(final_qty * request.preco_venda_previsto, 2)
+        gross_margin = (
+            round(final_qty * (request.preco_venda_previsto - request.custo_unitario), 2)
+            if request.custo_unitario is not None
+            else None
+        )
+        monthly_items.append(
+            MonthlyForecastItem(
+                month=point.month,
+                calendar_month=cal_month,
+                quantity=final_qty,
+                revenue=revenue,
+                gross_margin=gross_margin,
+                p10_quantity=point.p10_quantity,
+                conservative_quantity=final_qty,
+                p50_quantity=point.p50_quantity,
+                similar_p25_quantity=point.similar_p25_quantity,
+                seasonality_factor=round(factor, 2),
+                seasonality_confidence=conf,
+            )
+        )
+
+    if "APPLIED" in statuses:
+        overall_seasonality_status = "APPLIED"
+    elif "FALLBACK_NEUTRAL" in statuses:
+        overall_seasonality_status = "FALLBACK_NEUTRAL"
+    else:
+        overall_seasonality_status = "UNAVAILABLE"
+
+    total_qty = sum(item.quantity for item in monthly_items)
+    total_rev = round(sum(item.revenue for item in monthly_items), 2)
+    total_margin = (
+        round(sum(item.gross_margin for item in monthly_items if item.gross_margin is not None), 2)
+        if request.custo_unitario is not None
+        else None
+    )
+    horizon_count = len(monthly_items)
+    aggregated = NewProductAggregatedTotals(
+        total_quantity=total_qty,
+        total_revenue=total_rev,
+        total_gross_margin=total_margin,
+        average_monthly_quantity=int(round(total_qty / horizon_count)) if horizon_count else 0,
+        average_monthly_revenue=round(total_rev / horizon_count, 2) if horizon_count else 0.0,
+    )
+
+    fin = evaluate_financial_viability(
+        preco_venda=request.preco_venda_previsto,
+        custo_unitario=request.custo_unitario,
+        margem_minima_desejada=request.margem_minima_desejada,
+    )
+    financial_viability = NewProductFinancialViability(
+        preco_venda=fin.preco_venda,
+        custo_unitario=fin.custo_unitario,
+        margem_bruta_unitaria=fin.margem_bruta_unitaria,
+        margem_bruta_percentual=fin.margem_bruta_percentual,
+        margem_minima_desejada=fin.margem_minima_desejada,
+        viavel=fin.viavel,
+        parecer=fin.parecer,
+    )
+
+    teto_p75 = compute_mature_ceiling(
+        mature_df,
+        tipo=canonical_tipo if use_strict_tipo else None,
+        fornecedor=canonical_fornecedor,
+        similar_skus=list(affinity_scores_by_sku.keys()) or [s.sku for s in similars],
+    )
+    ceiling_scope = (
+        f"do tipo {canonical_tipo}"
+        if use_strict_tipo and canonical_tipo is not None
+        else "similares no catálogo"
+    )
+    market_ceiling = NewProductMarketCeiling(
+        teto_maduro_p75=teto_p75,
+        descricao=(
+            f"Percentil 75 das vendas mensais de produtos maduros {ceiling_scope} "
+            "(referencial de mercado pleno; não representa meta de lançamento)."
+        ),
+    )
+
+    ref_price_res = compute_reference_price_range(
+        affinity_matches=affinity_matches
+        or [
+            {"currentPrice": s.preco_historico, "affinityScore": max(0.01, s.affinity_score or s.score_final)}
+            for s in similars
+        ],
+        preco_venda_previsto=request.preco_venda_previsto,
+    )
+    reference_price_range = (
+        NewProductReferencePriceRange(
+            min_price=ref_price_res.min_price,
+            weighted_avg_price=ref_price_res.weighted_avg_price,
+            median_price=ref_price_res.median_price,
+            max_price=ref_price_res.max_price,
+            price_position=ref_price_res.price_position,
+            sample_size=ref_price_res.sample_size,
+        )
+        if ref_price_res is not None
+        else None
+    )
+
+    cannib_res = compute_cannibalization_risk(
+        affinity_matches=affinity_matches,
+        target_fornecedor=canonical_fornecedor,
+        product_avg_monthly=product_avg_monthly,
+        supplier_avg_monthly=supplier_avg_monthly,
+    )
+    cannibalization_risk = NewProductCannibalizationRisk(
+        risk_level=cannib_res.risk_level,
+        affected_sku_count=cannib_res.affected_sku_count,
+        same_supplier_affected_count=cannib_res.same_supplier_affected_count,
+        cross_supplier_affected_count=cannib_res.cross_supplier_affected_count,
+        estimated_overlap_pct=cannib_res.estimated_overlap_pct,
+        summary=cannib_res.summary,
+        top_at_risk_products=[
+            NewProductCannibalizationRiskProduct(
+                sku=p.sku,
+                descricao=p.descricao,
+                fornecedor=p.fornecedor,
+                preco_atual=p.preco_atual,
+                affinity_score=p.affinity_score,
+                same_supplier=p.same_supplier,
+            )
+            for p in cannib_res.top_at_risk_products
+        ],
+    )
+
+    similars_items = [
+        SimilarProductItem(
+            sku=str(s.sku),
+            descricao=s.descricao,
+            fornecedor=s.fornecedor,
+            primeira_venda=s.primeira_venda.isoformat(),
+            preco_historico=s.preco_historico,
+            score_final=round(s.score_final, 4),
+            score_fornecedor=round(s.score_fornecedor, 4),
+            score_preco=round(s.score_preco, 4),
+            score_tfidf=round(s.score_tfidf, 4),
+            affinity_score=round(s.affinity_score or s.score_tfidf, 4),
+            quantidades_primeiros_meses=list(s.quantidades_primeiros_meses),
+        )
+        for s in similars
+    ]
+
+    data = NewProductForecastData(
+        input_summary=request,
+        monthly_forecast=monthly_items,
+        seasonality_status=overall_seasonality_status,
+        aggregated_totals=aggregated,
+        financial_viability=financial_viability,
+        market_ceiling=market_ceiling,
+        reference_price_range=reference_price_range,
+        cannibalization_risk=cannibalization_risk,
+        similars_used=similars_items,
+        methodology_notice=(
+            "Estimativa calculada sob critério conservador (Percentil 25 ponderado pela afinidade semântica "
+            "com haircut de 0,70). Historicamente, mais de 80% dos lançamentos reais superam estes volumes."
+        ),
+    )
+
+    return NewProductForecastResponse(
+        data=data,
+        meta=AnalyticsMeta(
+            timestamp=mappers.utc_timestamp(),
+            version="1.0.0",
+            data_referencia=ref_date.isoformat(),
+        ),
+    )
 # F6: Canibalização e Substituição (P-128 a P-138; ADR-007)
 # ---------------------------------------------------------------------------
 

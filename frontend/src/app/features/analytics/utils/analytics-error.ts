@@ -6,6 +6,7 @@
  */
 import { HttpErrorResponse } from '@angular/common/http';
 import { ANALYTICS_ERROR_CODES, AnalyticsApiError, AnalyticsErrorCode } from '../models/analytics.model';
+import { NEW_PRODUCT_ERROR_CODES, NewProductApiError, NewProductErrorCode } from '../models/new-product.model';
 
 /** Mensagens de tela por código (Design Plan §6.4; literais de P-067 nos erros de campo). */
 export const ANALYTICS_ERROR_MESSAGES: Record<AnalyticsErrorCode, string> = {
@@ -93,6 +94,68 @@ export function resolveElasticitySkuFieldError(error: ElasticityApiError | null)
   if (error === null) return null;
   if (error.code === 'ELA-001') return ELASTICITY_ERROR_MESSAGES['ELA-001'];
   if (error.code === 'ELA-004' && error.fields.includes('sku')) return ANALYTICS_ERROR_MESSAGES['XSL-004'];
+  return null;
+}
+
+/** Campos do formulário de Produto Novo mapeados em `error.fields[]`. */
+export type NewProductFormField =
+  | 'tipo'
+  | 'fornecedor'
+  | 'descricao'
+  | 'precoVendaPrevisto'
+  | 'custoUnitario'
+  | 'margemMinimaDesejada'
+  | 'horizonMonths';
+
+/** Mensagens amigáveis de tela para códigos de erro da F2 (`NEW-001`..`NEW-005`). */
+export const NEW_PRODUCT_ERROR_MESSAGES: Record<NewProductErrorCode, string> = {
+  'NEW-001': 'Base de lançamentos similares insuficiente para o tipo selecionado (mínimo de 3 lançamentos necessários).',
+  'NEW-002': 'O tipo de produto informado não foi encontrado no catálogo ativo.',
+  'NEW-003': 'O fornecedor informado não foi encontrado no catálogo ativo.',
+  'NEW-004': 'Verifique os parâmetros comerciais informados antes de simular.',
+  'NEW-005': 'Serviço de análise de produtos temporariamente indisponível. Tente novamente em instantes.',
+  'ANL-001': 'Base de dados de vendas temporariamente indisponível. Tente novamente em instantes.',
+  'ANL-002': 'A base foi recarregada recentemente. Tente novamente mais tarde.',
+};
+
+export const NEW_PRODUCT_GENERIC_ERROR_MESSAGE =
+  'Não foi possível concluir a simulação agora. Tente novamente em instantes.';
+
+export const NEW_PRODUCT_OPTIONS_GENERIC_ERROR_MESSAGE =
+  'Não foi possível carregar os tipos e fornecedores ativos agora. Tente novamente.';
+
+/** Type guard do corpo de erro do contrato Produto Novo; `null` em 500, rede ou corpo malformado. */
+export function toNewProductApiError(err: unknown): NewProductApiError | null {
+  return parseContractError(err, NEW_PRODUCT_ERROR_CODES);
+}
+
+/** Mensagem amigável para banner/estado de erro da F2 (prefere mensagem do contrato quando presente). */
+export function resolveNewProductErrorMessage(
+  error: NewProductApiError | null,
+  fallbackMessage = NEW_PRODUCT_GENERIC_ERROR_MESSAGE,
+): string {
+  if (!error) return fallbackMessage;
+  if (error.code === 'NEW-001' || error.code === 'NEW-004') {
+    return error.message.trim() || NEW_PRODUCT_ERROR_MESSAGES[error.code];
+  }
+  return NEW_PRODUCT_ERROR_MESSAGES[error.code];
+}
+
+/** Resolve erro inline de um campo específico do formulário Produto Novo a partir de `error.fields[]`. */
+export function resolveNewProductFieldError(
+  error: NewProductApiError | null,
+  field: NewProductFormField,
+): string | null {
+  if (!error) return null;
+  if (error.code === 'NEW-002' && (field === 'tipo' || error.fields.includes('tipo'))) {
+    return NEW_PRODUCT_ERROR_MESSAGES['NEW-002'];
+  }
+  if (error.code === 'NEW-003' && (field === 'fornecedor' || error.fields.includes('fornecedor'))) {
+    return NEW_PRODUCT_ERROR_MESSAGES['NEW-003'];
+  }
+  if (error.code === 'NEW-004' && error.fields.includes(field)) {
+    return error.message.trim() || NEW_PRODUCT_ERROR_MESSAGES['NEW-004'];
+  }
   return null;
 }
 

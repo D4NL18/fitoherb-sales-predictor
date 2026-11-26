@@ -1,0 +1,137 @@
+@if (similar(); as item) {
+  <div class="drawer-backdrop" (click)="onBackdropClick()" (keydown.escape)="onBackdropClick()">
+    <aside
+      #drawerPanel
+      class="drawer-panel"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="drawer-similar-title"
+      aria-describedby="drawer-similar-subtitle"
+      (click)="$event.stopPropagation()"
+      (keydown)="$event.stopPropagation()"
+    >
+      <header class="drawer-header">
+        <div class="drawer-title-group">
+          <span class="drawer-kicker">Explicabilidade do Similar · SKU {{ item.sku }}</span>
+          <h3 id="drawer-similar-title" class="drawer-title">{{ item.descricao }}</h3>
+          <p id="drawer-similar-subtitle" class="drawer-subtitle">
+            @if (inputSummary()?.tipo; as tipoFiltro) {
+              {{ tipoFiltro }} ·
+            }
+            {{ item.fornecedor }} · 1ª venda em {{ item.primeiraVenda | ptDate }}
+          </p>
+        </div>
+
+        <button
+          #closeButton
+          type="button"
+          class="drawer-close"
+          aria-label="Fechar detalhamento do produto similar"
+          (click)="closeDrawer.emit()"
+        >
+          ×
+        </button>
+      </header>
+
+      <div class="drawer-body">
+        <!-- Comparação lado a lado -->
+        <section class="drawer-section" aria-labelledby="drawer-compare-heading">
+          <div class="section-top">
+            <h4 id="drawer-compare-heading" class="drawer-section-title">Comparação com o Simulado</h4>
+            @if (item.scoreFornecedor === 1) {
+              <span class="tag tag-positive">
+                <span class="tag-dot" aria-hidden="true"></span>
+                <span>Mesmo fornecedor</span>
+              </span>
+            } @else {
+              <span class="tag tag-neutral">
+                <span class="tag-dot" aria-hidden="true"></span>
+                <span>Fornecedor diferente</span>
+              </span>
+            }
+          </div>
+
+          <dl class="compare-grid">
+            <div class="compare-card">
+              <dt>Produto Simulado</dt>
+              <dd class="compare-desc">{{ inputSummary()?.descricao }}</dd>
+              <dd class="compare-meta">{{ inputSummary()?.fornecedor }}</dd>
+              <dd class="compare-price">{{ inputSummary()?.precoVendaPrevisto ?? 0 | brl }}</dd>
+            </div>
+
+            <div class="compare-card">
+              <dt>Similar Histórico (SKU {{ item.sku }})</dt>
+              <dd class="compare-desc">{{ item.descricao }}</dd>
+              <dd class="compare-meta">{{ item.fornecedor }}</dd>
+              <dd class="compare-price">{{ item.precoHistorico | brl }}</dd>
+            </div>
+          </dl>
+        </section>
+
+        <!-- Decomposição dos 3 Scores -->
+        <section class="drawer-section" aria-labelledby="drawer-scores-heading">
+          <h4 id="drawer-scores-heading" class="drawer-section-title">Decomposição da Similaridade</h4>
+
+          <div class="score-breakdown">
+            <div class="score-row">
+              <div class="score-row-label">
+                <span>Afinidade Semântica (peso 50%)</span>
+                <strong class="mono-val">{{ (item.affinityScore ?? item.scoreTfidf) | ptPercent: 1 }}</strong>
+              </div>
+              <div class="score-track" aria-hidden="true">
+                <div class="score-fill" [style.width.%]="(item.affinityScore ?? item.scoreTfidf) * 100"></div>
+              </div>
+            </div>
+
+            <div class="score-row">
+              <div class="score-row-label">
+                <span>Proximidade Log-Preço (peso 40%)</span>
+                <strong class="mono-val">{{ item.scorePreco | ptPercent: 1 }}</strong>
+              </div>
+              <div class="score-track" aria-hidden="true">
+                <div class="score-fill" [style.width.%]="item.scorePreco * 100"></div>
+              </div>
+            </div>
+
+            <div class="score-row">
+              <div class="score-row-label">
+                <span>Mesmo Fornecedor (peso 10%)</span>
+                <strong class="mono-val">{{ item.scoreFornecedor | ptPercent: 0 }}</strong>
+              </div>
+              <div class="score-track" aria-hidden="true">
+                <div class="score-fill" [style.width.%]="item.scoreFornecedor * 100"></div>
+              </div>
+            </div>
+
+            <div class="score-total-box">
+              <span>Score Composto Final (0,10×F + 0,40×P + 0,50×T)</span>
+              <strong class="mono-val">{{ item.scoreFinal | ptPercent: 1 }}</strong>
+            </div>
+          </div>
+        </section>
+
+        <!-- Histórico Líquido M1..M3 -->
+        <section class="drawer-section" aria-labelledby="drawer-history-heading">
+          <h4 id="drawer-history-heading" class="drawer-section-title">
+            Histórico Líquido de Lançamento (M1–M3)
+          </h4>
+          <p class="drawer-note">
+            Quantidades líquidas nos 3 primeiros meses após a 1ª venda, com devoluções já abatidas.
+          </p>
+
+          <div class="history-bars">
+            @for (qty of item.quantidadesPrimeirosMeses; track $index; let idx = $index) {
+              <div class="history-row">
+                <span class="history-month mono-val">M{{ idx + 1 }}</span>
+                <div class="history-track" aria-hidden="true">
+                  <div class="history-fill" [style.width.%]="barWidthPercent(qty)"></div>
+                </div>
+                <strong class="history-qty mono-val">{{ qty | ptDecimal: 0 }} un</strong>
+              </div>
+            }
+          </div>
+        </section>
+      </div>
+    </aside>
+  </div>
+}

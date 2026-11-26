@@ -1,0 +1,108 @@
+<div class="new-product-page" [attr.inert]="store.selectedSimilar() ? '' : null">
+  <header class="section-header">
+    <div class="section-title-group">
+      <h2 class="section-title">Viabilidade de Produto Novo — Estimativa Conservadora</h2>
+      <p class="section-subtitle">
+        Simule a demanda inicial de produtos sem SKU usando o histórico real de lançamentos similares.
+      </p>
+    </div>
+
+    @if (store.forecastMeta()?.dataReferencia; as refDate) {
+      <span class="reference-badge">Referência: {{ refDate | ptDate }}</span>
+    }
+  </header>
+
+  <div class="sr-only" aria-live="polite" aria-atomic="true">{{ liveAnnouncement() }}</div>
+
+  <div class="workbench-grid">
+    <!-- Workbench Esquerdo: Formulário -->
+    <div class="workbench-left">
+      <app-new-product-form
+        [options]="store.options()"
+        [optionsLoading]="store.optionsState() === 'loading'"
+        [optionsError]="store.optionsError()"
+        [optionsErrorBannerMessage]="optionsErrorMessage()"
+        [hasEmptyCatalog]="store.hasEmptyCatalog()"
+        [submitting]="store.simulationState() === 'loading'"
+        [apiError]="store.forecastError()"
+        (submitForecast)="onSubmitForecast($event)"
+        (resetSimulation)="onResetSimulation()"
+        (formChanged)="onFormChanged()"
+        (retryOptions)="store.loadOptions()"
+      />
+    </div>
+
+    <!-- Workbench Direito: Resultados e Estados -->
+    <div class="workbench-right" [attr.aria-busy]="store.simulationState() === 'loading'">
+      @if (store.hasEmptyCatalog()) {
+        <app-result-state
+          [view]="emptyCatalogStateView"
+          (action)="onResultStateAction($event)"
+        />
+      } @else {
+        @switch (store.simulationState()) {
+          @case ('loading') {
+            <section class="results-skeleton" aria-label="Carregando projeção conservadora">
+              <div class="skeleton-box skeleton-seal"></div>
+              <div class="skeleton-kpi-grid">
+                <div class="skeleton-box skeleton-kpi"></div>
+                <div class="skeleton-box skeleton-kpi"></div>
+                <div class="skeleton-box skeleton-kpi"></div>
+                <div class="skeleton-box skeleton-kpi"></div>
+              </div>
+              <div class="skeleton-box skeleton-chart"></div>
+              <div class="skeleton-table">
+                <div class="skeleton-line skeleton-row"></div>
+                <div class="skeleton-line skeleton-row"></div>
+                <div class="skeleton-line skeleton-row"></div>
+                <div class="skeleton-line skeleton-row"></div>
+              </div>
+            </section>
+          }
+
+          @case ('success') {
+            @if (store.forecastData(); as data) {
+              <app-new-product-results
+                [data]="data"
+                [isDirty]="store.isDirtySinceLastResult()"
+                [selectedSimilarSku]="store.selectedSimilar()?.sku ?? null"
+                (explainSimilar)="onExplainSimilar($event)"
+              />
+            }
+          }
+
+          @case ('insufficient') {
+            <app-result-state
+              [view]="insufficientDataView()"
+              (action)="onResultStateAction($event)"
+            />
+          }
+
+          @case ('error') {
+            <app-error-banner
+              [title]="'Não foi possível concluir a simulação agora'"
+              [message]="forecastErrorMessage()"
+              [code]="store.forecastError()?.code ?? null"
+              [retryLabel]="'Tentar novamente'"
+              (retry)="store.retryForecast()"
+            />
+          }
+
+          @default {
+            <app-result-state
+              [view]="initialStateView"
+              (action)="onResultStateAction($event)"
+            />
+          }
+        }
+      }
+    </div>
+  </div>
+</div>
+
+<app-new-product-similars-drawer
+  [similar]="store.selectedSimilar()"
+  [inputSummary]="store.forecastData()?.inputSummary ?? null"
+  [returnFocusTo]="drawerReturnFocusTo()"
+  (closeDrawer)="onCloseDrawer()"
+/>

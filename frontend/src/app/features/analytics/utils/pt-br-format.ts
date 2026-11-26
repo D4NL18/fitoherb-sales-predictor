@@ -53,6 +53,25 @@ export function formatPosition(position: number): string {
   return String(position).padStart(POSITION_MIN_DIGITS, '0');
 }
 
+const VALID_NUMERIC_PATTERN = /^[+-]?\d+(\.\d+)?$/;
+
+/**
+ * Converte texto numérico digitado em pt-BR ou formato neutro ("49,90", "1.299,00", "49.90") para `number`.
+ * Retorna `null` quando vazio ou inválido (NaN / infinito).
+ */
+export function parsePtBrNumber(raw: string): number | null {
+  const cleaned = raw.trim().replace(/\s+/g, '');
+  if (!cleaned) return null;
+
+  const normalized = cleaned.includes(',')
+    ? cleaned.replaceAll('.', '').replace(',', '.')
+    : cleaned;
+
+  if (!VALID_NUMERIC_PATTERN.test(normalized)) return null;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function resolveSignPrefix(value: number): string {
   if (value > 0) return '+';
   if (value < 0) return TYPOGRAPHIC_MINUS;

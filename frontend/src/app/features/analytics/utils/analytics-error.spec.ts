@@ -11,11 +11,16 @@ import {
   ElasticityErrorCode,
   resolveElasticityErrorMessage,
   resolveElasticitySkuFieldError,
+  resolveNewProductErrorMessage,
+  resolveNewProductFieldError,
   toAnalyticsApiError,
   toElasticityApiError,
+  toNewProductApiError,
 } from './analytics-error';
 import { AnalyticsErrorCode } from '../models/analytics.model';
+import { NewProductErrorCode } from '../models/new-product.model';
 import { contractError } from '../testing/cross-sell-test-data';
+import { parsePtBrNumber } from './pt-br-format';
 
 const ALL_CODES: AnalyticsErrorCode[] = ['XSL-001', 'XSL-002', 'XSL-003', 'XSL-004', 'ANL-001', 'ANL-002'];
 const ALL_ELASTICITY_CODES: ElasticityErrorCode[] = ['ELA-001', 'ELA-002', 'ELA-003', 'ELA-004', 'ANL-001', 'ANL-002'];
@@ -112,5 +117,55 @@ describe('toElasticityApiError', () => {
     );
     expect(resolveElasticitySkuFieldError({ code: 'ELA-004', message: 'raw', fields: ['limit'] })).toBeNull();
     expect(resolveElasticitySkuFieldError({ code: 'ANL-001', message: 'raw', fields: [] })).toBeNull();
+  });
+});
+
+describe('toNewProductApiError e resolveNewProductFieldError (NEW-001..NEW-005)', () => {
+  const ALL_NEW_CODES: NewProductErrorCode[] = [
+    'NEW-001',
+    'NEW-002',
+    'NEW-003',
+    'NEW-004',
+    'NEW-005',
+    'ANL-001',
+    'ANL-002',
+  ];
+
+  it('converte todos os códigos do contrato Produto Novo', () => {
+    for (const code of ALL_NEW_CODES) {
+      const err = httpError(400, { error: { code, message: 'Mensagem do contrato', fields: [] } });
+      const parsed = toNewProductApiError(err);
+      expect(parsed?.code).withContext(code).toBe(code);
+      expect(resolveNewProductErrorMessage(parsed)).toBeTruthy();
+    }
+  });
+
+  it('mapeia erros inline para tipo, fornecedor e campos numéricos (NEW-002/003/004)', () => {
+    expect(resolveNewProductFieldError({ code: 'NEW-002', message: 'raw', fields: ['tipo'] }, 'tipo')).toContain(
+      'tipo de produto',
+    );
+    expect(
+      resolveNewProductFieldError({ code: 'NEW-003', message: 'raw', fields: ['fornecedor'] }, 'fornecedor'),
+    ).toContain('fornecedor');
+    expect(
+      resolveNewProductFieldError(
+        { code: 'NEW-004', message: 'Custo maior que preço.', fields: ['custoUnitario'] },
+        'custoUnitario',
+      ),
+    ).toBe('Custo maior que preço.');
+    expect(
+      resolveNewProductFieldError(
+        { code: 'NEW-004', message: 'Custo maior que preço.', fields: ['custoUnitario'] },
+        'precoVendaPrevisto',
+      ),
+    ).toBeNull();
+  });
+
+  it('parsePtBrNumber converte números pt-BR e formato neutro com segurança', () => {
+    expect(parsePtBrNumber('49,90')).toBe(49.9);
+    expect(parsePtBrNumber('1.299,00')).toBe(1299);
+    expect(parsePtBrNumber('49.90')).toBe(49.9);
+    expect(parsePtBrNumber('')).toBeNull();
+    expect(parsePtBrNumber('abc')).toBeNull();
   });
 });

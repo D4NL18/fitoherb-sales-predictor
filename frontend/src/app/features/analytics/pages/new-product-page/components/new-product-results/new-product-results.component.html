@@ -1,0 +1,395 @@
+<div class="results-stack">
+  @if (isDirty()) {
+    <div class="stale-banner" role="status">
+      Parâmetros alterados — clique em 'Simular Viabilidade' para atualizar as projeções.
+    </div>
+  }
+
+  <!-- 1. Selo Obrigatório de Estimativa Conservadora -->
+  <section class="conservative-seal" aria-label="Premissa conservadora da projeção">
+    <svg
+      class="seal-icon"
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+      <polyline points="9 12 11 14 15 10"></polyline>
+    </svg>
+    <div class="seal-body">
+      <h3 class="seal-title">Estimativa Conservadora: calculada para proteger seu estoque</h3>
+      <p class="seal-subtitle">
+        {{
+          data().methodologyNotice ||
+            'Projeção calibrada abaixo do 1º quartil histórico (P25 × 0,70), nunca superando o piso inferior dos lançamentos similares.'
+        }}
+      </p>
+    </div>
+  </section>
+
+  <!-- 2. Degradação Graciosa de Sazonalidade F1 -->
+  @if (isSeasonalityNeutral()) {
+    <div class="seasonality-callout" role="note">
+      Sazonalidade aplicada em fator neutro (1,00×): histórico sazonal da categoria indisponível ou com confiança baixa.
+      Projeção baseada integralmente nos similares de lançamento.
+    </div>
+  }
+
+  <!-- 3. Cartão de Viabilidade & 4 KPIs -->
+  <section
+    class="viability-card"
+    [class]="viabilityBadge().accentClass"
+    aria-labelledby="np-viability-heading"
+  >
+    <div class="viability-header">
+      <div class="viability-title-group">
+        <h3 id="np-viability-heading" class="section-heading">Veredito de Viabilidade</h3>
+        @if (data().financialViability.parecer; as parecer) {
+          <p class="viability-parecer">{{ parecer }}</p>
+        }
+      </div>
+      <span class="tag" [class]="viabilityBadge().tagClass">
+        <span class="tag-dot" aria-hidden="true"></span>
+        <span>{{ viabilityBadge().label }}</span>
+      </span>
+    </div>
+
+    <div class="kpi-grid">
+      <div class="kpi-item">
+        <span class="kpi-label">Demanda Conservadora (M1–M{{ horizonMonths() }})</span>
+        <strong class="kpi-value">{{ data().aggregatedTotals.totalQuantity | ptDecimal: 0 }} un</strong>
+        <span class="kpi-sub">
+          Média {{ data().aggregatedTotals.averageMonthlyQuantity | ptDecimal: 0 }} un/mês
+        </span>
+      </div>
+
+      <div class="kpi-item">
+        <span class="kpi-label">Receita Bruta Conservadora</span>
+        <strong class="kpi-value">{{ data().aggregatedTotals.totalRevenue | brl }}</strong>
+        <span class="kpi-sub">
+          Média {{ data().aggregatedTotals.averageMonthlyRevenue | brl }}/mês
+        </span>
+      </div>
+
+      <div class="kpi-item">
+        <span class="kpi-label">Margem Bruta Prevista</span>
+        @if (data().financialViability.margemBrutaPercentual !== null) {
+          <strong class="kpi-value">
+            {{ data().financialViability.margemBrutaPercentual! | ptPercent: 1 }}
+          </strong>
+          @if (data().financialViability.margemMinimaDesejada !== null) {
+            <span class="kpi-sub">
+              Meta: {{ data().financialViability.margemMinimaDesejada! | ptPercent: 1 }}
+            </span>
+          } @else {
+            <span class="kpi-sub">
+              {{ data().financialViability.margemBrutaUnitaria! | brl }} / un
+            </span>
+          }
+        } @else {
+          <strong class="kpi-value">—</strong>
+          <span class="kpi-sub">Informe o custo unitário</span>
+        }
+      </div>
+
+      <div class="kpi-item">
+        <span class="kpi-label">Base de Similares</span>
+        <strong class="kpi-value">{{ data().similarsUsed.length }} lançamentos</strong>
+        <button
+          type="button"
+          class="kpi-link-btn"
+          [disabled]="data().similarsUsed.length === 0"
+          (click)="onOpenFirstSimilar($event)"
+        >
+          Ver detalhes dos similares
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4. Projeção Mensal (Gráfico SVG + Tabela Ledger + Bloco Segregado P75) -->
+  <section class="projection-panel" aria-labelledby="np-projection-heading">
+    <div class="section-header-row">
+      <div>
+        <h3 id="np-projection-heading" class="section-heading">Projeção Mensal e Faixas de Incerteza</h3>
+        @if (!isSeasonalityNeutral()) {
+          <p class="section-note">
+            Fatores sazonais amortecidos entre 0,90× e 1,10× aplicados à curva de lançamento.
+          </p>
+        }
+      </div>
+    </div>
+
+    <app-new-product-band-chart [items]="data().monthlyForecast" />
+
+    <!-- Tabela Ledger Desktop / Tablet -->
+    <div class="table-scroll desktop-only-table">
+      <table class="forecast-ledger">
+        <caption class="sr-only">
+          Projeção mensal detalhada com piso P10, previsão conservadora oficial, mediana P50 e receita estimada.
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">Mês</th>
+            <th scope="col" class="num-col">Sazonal.</th>
+            <th scope="col" class="num-col">P10 (▽)</th>
+            <th scope="col" class="num-col official-col">Conservador (● Oficial)</th>
+            <th scope="col" class="num-col">Mediana P50 (□)</th>
+            <th scope="col" class="num-col">Receita Conservadora</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (item of data().monthlyForecast; track item.month) {
+            <tr>
+              <th scope="row">{{ formatMonthLabel(item.month, item.calendarMonth) }}</th>
+              <td class="num-col mono-cell">{{ item.seasonalityFactor | ptDecimal: 2 }}×</td>
+              <td class="num-col mono-cell">{{ item.p10Quantity | ptDecimal: 0 }} un</td>
+              <td class="num-col mono-cell official-cell">
+                {{ item.conservativeQuantity | ptDecimal: 0 }} un
+              </td>
+              <td class="num-col mono-cell">{{ item.p50Quantity | ptDecimal: 0 }} un</td>
+              <td class="num-col mono-cell">{{ item.revenue | brl }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Cards Mobile (< 640px) para projeção mensal -->
+    <div class="mobile-only-cards" aria-label="Projeção mensal em cartões">
+      @for (item of data().monthlyForecast; track item.month) {
+        <article class="mobile-card">
+          <div class="mobile-card-head">
+            <strong>{{ formatMonthLabel(item.month, item.calendarMonth) }}</strong>
+            <span class="mono-cell">{{ item.seasonalityFactor | ptDecimal: 2 }}×</span>
+          </div>
+          <dl class="mobile-dl">
+            <div>
+              <dt>Conservador (Oficial)</dt>
+              <dd class="mono-cell official-text">{{ item.conservativeQuantity | ptDecimal: 0 }} un</dd>
+            </div>
+            <div>
+              <dt>Receita Conservadora</dt>
+              <dd class="mono-cell">{{ item.revenue | brl }}</dd>
+            </div>
+            <div>
+              <dt>P10 (▽)</dt>
+              <dd class="mono-cell">{{ item.p10Quantity | ptDecimal: 0 }} un</dd>
+            </div>
+            <div>
+              <dt>Mediana P50 (□)</dt>
+              <dd class="mono-cell">{{ item.p50Quantity | ptDecimal: 0 }} un</dd>
+            </div>
+          </dl>
+        </article>
+      }
+    </div>
+
+    <!-- Bloco Segregado Não-Meta: Teto Maduro (P75) -->
+    <aside class="mature-ceiling-box" aria-labelledby="np-p75-heading">
+      <div class="ceiling-header">
+        <h4 id="np-p75-heading" class="ceiling-title">
+          Referência Histórica de Maturidade (P75) — Não utilizar como meta inicial
+        </h4>
+        <strong class="ceiling-value">
+          {{ data().marketCeiling.tetoMaduroP75 | ptDecimal: 0 }} un/mês
+        </strong>
+      </div>
+      <p class="ceiling-desc">{{ data().marketCeiling.descricao }}</p>
+    </aside>
+  </section>
+
+  <!-- 4b. Faixa de Preço de Referência & Risco de Canibalização (Motor Compartilhado de Afinidade) -->
+  @if (data().referencePriceRange || data().cannibalizationRisk) {
+    <section class="affinity-insights-grid" aria-label="Referência de preço e risco de canibalização">
+      @if (data().referencePriceRange; as refPrice) {
+        <article class="insight-card" aria-labelledby="np-ref-price-heading">
+          <div class="insight-header">
+            <h3 id="np-ref-price-heading" class="section-heading">Faixa de Preço de Referência</h3>
+            @if (pricePositionBadge(); as badge) {
+              <span class="tag" [class]="badge.tagClass">
+                <span class="tag-dot" aria-hidden="true"></span>
+                <span>{{ badge.label }}</span>
+              </span>
+            }
+          </div>
+          <p class="insight-note">
+            Calculada sobre {{ refPrice.sampleSize }} produto(s) afim(ns) ativo(s) no catálogo (ponderada por afinidade).
+          </p>
+          <dl class="ref-price-grid">
+            <div>
+              <dt>Mínimo</dt>
+              <dd class="mono-cell">{{ refPrice.minPrice | brl }}</dd>
+            </div>
+            <div>
+              <dt>Média Ponderada</dt>
+              <dd class="mono-cell ref-price-highlight">{{ refPrice.weightedAvgPrice | brl }}</dd>
+            </div>
+            <div>
+              <dt>Mediana</dt>
+              <dd class="mono-cell">{{ refPrice.medianPrice | brl }}</dd>
+            </div>
+            <div>
+              <dt>Máximo</dt>
+              <dd class="mono-cell">{{ refPrice.maxPrice | brl }}</dd>
+            </div>
+          </dl>
+        </article>
+      }
+
+      @if (data().cannibalizationRisk; as risk) {
+        <article class="insight-card" aria-labelledby="np-cannib-heading">
+          <div class="insight-header">
+            <h3 id="np-cannib-heading" class="section-heading">Risco de Canibalização no Portfólio</h3>
+            @if (cannibalizationBadge(); as badge) {
+              <span class="tag" [class]="badge.tagClass">
+                <span class="tag-dot" aria-hidden="true"></span>
+                <span>{{ badge.label }}</span>
+              </span>
+            }
+          </div>
+          <p class="insight-note">{{ risk.summary }}</p>
+
+          <div class="cannib-metrics-row">
+            <span class="cannib-pill">
+              <strong class="mono-cell">{{ risk.affectedSkuCount }}</strong> produto(s) com afinidade ≥ 50%
+            </span>
+            <span class="cannib-pill">
+              Mesmo fornecedor: <strong class="mono-cell">{{ risk.sameSupplierAffectedCount }}</strong>
+            </span>
+            <span class="cannib-pill">
+              Outros fornecedores: <strong class="mono-cell">{{ risk.crossSupplierAffectedCount }}</strong>
+            </span>
+          </div>
+
+          @if (risk.topAtRiskProducts.length > 0) {
+            <ul class="cannib-risk-list" aria-label="Produtos existentes mais expostos à canibalização">
+              @for (item of risk.topAtRiskProducts; track item.sku) {
+                <li class="cannib-risk-item">
+                  <div class="cannib-item-main">
+                    <span class="cannib-item-name">{{ item.descricao }}</span>
+                    <span class="cannib-item-meta">
+                      {{ item.fornecedor }} · {{ item.precoAtual | brl }}
+                    </span>
+                  </div>
+                  <span class="cannib-item-score mono-cell">{{ item.affinityScore | ptPercent: 1 }}</span>
+                </li>
+              }
+            </ul>
+          }
+        </article>
+      }
+    </section>
+  }
+
+  <!-- 5. Lista Top-10 Produtos de Referência (Afinidade Semântica Compartilhada) -->
+  <section class="similars-panel" aria-labelledby="np-similars-heading">
+    <div class="similars-header">
+      <h3 id="np-similars-heading" class="section-heading">Produtos de Referência Utilizados</h3>
+      <p class="section-note">
+        Top {{ data().similarsUsed.length }} produtos compatíveis do catálogo via Índice de Afinidade Semântica —
+        incluindo concorrentes de outros fornecedores (Afinidade 50%, Log-Preço 40% e Fornecedor 10%; devoluções já abatidas).
+      </p>
+    </div>
+
+    <div class="table-scroll desktop-only-table">
+      <table class="similars-ledger">
+        <caption class="sr-only">
+          Produtos similares usados como referência, com fornecedor, preço atual, afinidade semântica e quantidades líquidas M1 a M3.
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">Produto</th>
+            <th scope="col">Fornecedor</th>
+            <th scope="col" class="num-col">Preço</th>
+            <th scope="col" class="num-col">Líquido M1 / M2 / M3</th>
+            <th scope="col">Afinidade</th>
+            <th scope="col">Score Final</th>
+            <th scope="col" class="action-col">Ação</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (sim of data().similarsUsed; track sim.sku) {
+            <tr [class.is-active-row]="selectedSimilarSku() === sim.sku">
+              <td>
+                <div class="product-cell">
+                  <span class="product-desc">{{ sim.descricao }}</span>
+                  <span class="product-sku">SKU {{ sim.sku }}</span>
+                </div>
+              </td>
+              <td>{{ sim.fornecedor }}</td>
+              <td class="num-col mono-cell">{{ sim.precoHistorico | brl }}</td>
+              <td class="num-col mono-cell">
+                {{ formatLaunchMonthQty(sim.quantidadesPrimeirosMeses, 0) }} /
+                {{ formatLaunchMonthQty(sim.quantidadesPrimeirosMeses, 1) }} /
+                {{ formatLaunchMonthQty(sim.quantidadesPrimeirosMeses, 2) }}
+              </td>
+              <td>
+                <div class="score-cell">
+                  <span class="mono-cell">{{ resolveAffinity(sim) | ptPercent: 1 }}</span>
+                  <div class="score-bar-track" aria-hidden="true">
+                    <div class="score-bar-fill" [style.width.%]="resolveAffinity(sim) * 100"></div>
+                  </div>
+                </div>
+              </td>
+              <td>
+                <span class="mono-cell">{{ sim.scoreFinal | ptPercent: 1 }}</span>
+              </td>
+              <td class="action-col">
+                <button
+                  type="button"
+                  class="btn-explain"
+                  [attr.aria-label]="'Explicar similaridade de ' + sim.descricao"
+                  (click)="onExplain(sim, $event)"
+                >
+                  Explicar
+                </button>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Cards Mobile (< 640px) para Similares -->
+    <div class="mobile-only-cards" aria-label="Lançamentos similares em cartões">
+      @for (sim of data().similarsUsed; track sim.sku) {
+        <article class="mobile-card" [class.is-active-row]="selectedSimilarSku() === sim.sku">
+          <div class="mobile-card-head">
+            <div class="product-cell">
+              <strong class="product-desc">{{ sim.descricao }}</strong>
+              <span class="product-sku">SKU {{ sim.sku }}</span>
+            </div>
+            <span class="mono-cell">{{ sim.precoHistorico | brl }}</span>
+          </div>
+          <p class="mobile-supplier">{{ sim.fornecedor }}</p>
+          <div class="mobile-metrics-row">
+            <span class="mono-cell">
+              M1/M2/M3: {{ formatLaunchMonthQty(sim.quantidadesPrimeirosMeses, 0) }} /
+              {{ formatLaunchMonthQty(sim.quantidadesPrimeirosMeses, 1) }} /
+              {{ formatLaunchMonthQty(sim.quantidadesPrimeirosMeses, 2) }}
+            </span>
+            <span class="mono-cell">{{ sim.scoreFinal | ptPercent: 1 }}</span>
+          </div>
+          <div class="score-bar-track" aria-hidden="true">
+            <div class="score-bar-fill" [style.width.%]="sim.scoreFinal * 100"></div>
+          </div>
+          <button
+            type="button"
+            class="btn-explain mobile-explain-btn"
+            [attr.aria-label]="'Explicar similaridade de ' + sim.descricao"
+            (click)="onExplain(sim, $event)"
+          >
+            Explicar
+          </button>
+        </article>
+      }
+    </div>
+  </section>
+</div>

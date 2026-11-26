@@ -25,6 +25,11 @@ import {
   ProductCrossSellResponse,
   ProductSearchResponse,
 } from '../models/cross-sell.model';
+import {
+  NewProductForecastRequest,
+  NewProductForecastResponse,
+  NewProductOptionsResponse,
+} from '../models/new-product.model';
 
 export interface CatalogProductsOptions {
   includeSeasonality?: boolean;
@@ -157,6 +162,29 @@ export class AnalyticsService {
         : {}),
     };
     return this.http.post<ElasticitySimulationResponse>(`${this.baseUrl}/elasticity/simulate`, payload);
+  }
+
+  /** Opções ativas de tipos e fornecedores para simulação de produto novo (P-141). */
+  getNewProductOptions(): Observable<NewProductOptionsResponse> {
+    return this.http.get<NewProductOptionsResponse>(`${this.baseUrl}/new-product/options`);
+  }
+
+  /** Simulação conservadora de viabilidade de produto novo sem SKU (P-140 a P-149). */
+  simulateNewProductForecast(request: NewProductForecastRequest): Observable<NewProductForecastResponse> {
+    const payload: NewProductForecastRequest = {
+      tipo: request.tipo,
+      fornecedor: request.fornecedor,
+      descricao: request.descricao,
+      precoVendaPrevisto: request.precoVendaPrevisto,
+      ...(request.custoUnitario !== null && request.custoUnitario !== undefined
+        ? { custoUnitario: request.custoUnitario }
+        : {}),
+      ...(request.margemMinimaDesejada !== null && request.margemMinimaDesejada !== undefined
+        ? { margemMinimaDesejada: request.margemMinimaDesejada }
+        : {}),
+      ...(request.horizonMonths !== undefined ? { horizonMonths: request.horizonMonths } : {}),
+    };
+    return this.http.post<NewProductForecastResponse>(`${this.baseUrl}/new-product/forecast`, payload);
   }
 }
 
