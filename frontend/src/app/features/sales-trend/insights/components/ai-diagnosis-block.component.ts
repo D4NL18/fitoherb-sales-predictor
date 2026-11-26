@@ -10,6 +10,7 @@ import { AiDiagnosis, AiFactor, ParcelType } from '../models/trend-insights.mode
 import { InlineNoticeComponent } from '../../components/inline-notice/inline-notice.component';
 import { AI_NOTICE_TEXT, CONFIDENCE_LABELS, GENERATING_TEXT, HYPOTHESIS_REASONS, SLOW_AI_TEXT, factorLabel } from '../utils/insight-copy';
 import { AiBlockView, formatSigned } from '../utils/insight-view';
+import { ExternalFactorsSectionComponent } from './external-factors-section.component';
 import { SourceLinkComponent } from './source-link.component';
 import { TrendInsightSkeletonComponent } from './trend-insight-skeleton.component';
 
@@ -20,7 +21,7 @@ const PARCEL_KEYS: readonly string[] = [
 @Component({
   selector: 'app-ai-diagnosis-block',
   standalone: true,
-  imports: [InlineNoticeComponent, SourceLinkComponent, TrendInsightSkeletonComponent],
+  imports: [InlineNoticeComponent, ExternalFactorsSectionComponent, SourceLinkComponent, TrendInsightSkeletonComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <section class="ai-block" aria-labelledby="analise-ia">
@@ -98,6 +99,10 @@ const PARCEL_KEYS: readonly string[] = [
         }
       }
 
+      @if (view().radarOnly) {
+        <app-external-factors-section [radar]="view().radarOnly" />
+      }
+
       @if (view().qualitativeNote && view().state !== 'semVariacao') {
         <p class="note">{{ view().qualitativeNote }}</p>
       }
@@ -141,6 +146,8 @@ const PARCEL_KEYS: readonly string[] = [
               }
             </ul>
           }
+
+          <app-external-factors-section [view]="view().external" />
 
           @if (d.hipotesesNaoConfirmadas.length > 0) {
             <div class="hypotheses" data-testid="ai-hipoteses">

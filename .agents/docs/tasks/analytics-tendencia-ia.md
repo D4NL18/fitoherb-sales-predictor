@@ -260,7 +260,7 @@ Checklist técnico de execução da F7. Plano de produto: `.agents/docs/tasks/ia
 - [ ] **D-7.2R.19 (`security`)** Red team da §15.11 sobre o radar (página com instrução, fonte `POSTERIOR` como causa, fonte sem data, "sem evidência" convertida em "neutra") antes do release.
 
 *Fase R8: frontend e avaliação*
-- [ ] **D-7.2R.20 (`designer`/`developer`)** Painel de fatores externos: 8 linhas fixas com `SEM_EVIDENCIA` como "não encontramos evidência na pesquisa feita" (nunca "não houve"), selo de idade do radar e `RADAR_DESATUALIZADO`, bloco `radarExterno` somente leitura com o rótulo "Radar externo de N dias (sem análise de IA para este produto)"; ajustar o Design Plan.
+- [x] **D-7.2R.20 (`designer`/`developer`)** Painel de fatores externos: 8 linhas fixas com `SEM_EVIDENCIA` como "não encontramos evidência na pesquisa feita" (nunca "não houve"), selo de idade do radar e `RADAR_DESATUALIZADO`, bloco `radarExterno` somente leitura com o rótulo "Radar externo de N dias (sem análise de IA para este produto)"; ajustar o Design Plan.
 
 **Audit (Testes e Validação):**
 - [ ] **Cenário 1:** dois produtos da mesma matéria-prima no mesmo mês: 1 radar gerado (`GERADO_AGORA`) e o segundo diagnóstico com `radar.origem = "CACHE"`; consultas de busca do mês +5 no livro.
