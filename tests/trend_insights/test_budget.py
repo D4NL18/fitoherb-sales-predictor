@@ -97,7 +97,7 @@ def test_orphan_reservation_expires_after_180_seconds():
 
 def test_simultaneous_reservations_add_up_and_never_exceed_cap():
     rig, ledger = _ledger()
-    seed_budget(rig, month=1.70, day=0.0)
+    seed_budget(rig, month=1.48, day=0.0)  # folga do radar (0,22) vale desde o 1o dia (P-178.9)
     granted = 0
     for _ in range(5):
         try:
@@ -105,7 +105,7 @@ def test_simultaneous_reservations_add_up_and_never_exceed_cap():
             granted += 1
         except mod("domain.exceptions").BudgetDenied:
             pass
-    assert granted == 3  # (1,80 - 1,70) / 0,03075 = 3,25 reservas
+    assert granted == 3  # (1,80 - 0,22 - 1,48) / 0,03075 = 3,25 reservas
 
 
 def test_daily_cap_denies_even_with_monthly_room():
@@ -158,7 +158,7 @@ def test_level_reader_reflects_alert_and_exhausted():
     assert ledger.level() == "ESGOTADO"
 
 
-@pytest.mark.parametrize("cost,lo,hi", [(0.0173, 95, 104), (0.0325, 50, 56)])
+@pytest.mark.parametrize("cost,lo,hi", [(0.0173, 88, 96), (0.0325, 46, 50)])  # capacidade util = 1,80 - folga 0,22 do radar (P-178.9)
 def test_capacity_simulation_never_exceeds_monthly_cap(cost, lo, hi):
     rig, ledger = _ledger()
     rig.clock.now_dt = datetime(2026, 11, 1, 12, 0, tzinfo=timezone.utc)

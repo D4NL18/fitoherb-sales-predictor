@@ -1,21 +1,26 @@
 """Niveis do orcamento e valor da reserva (P-178). Funcoes puras sobre a tabela de precos."""
 from datetime import date
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from src.modules.trend_insights.domain.constants import (
     BUDGET_ALERT_RATIO,
     GROUNDING_FREE_QUERIES_ASSUMED,
+    RADAR_BUDGET_SHARE,
+    RADAR_MAX_NEW_PER_DAY,
     RADAR_MAX_OUTPUT_TOKENS,
     RADAR_RESERVATION_INPUT_TOKENS,
+    RADAR_RESERVED_MONTHLY_USD,
     RESERVATION_ASSUMED_INPUT_TOKENS,
     RESERVATION_ASSUMED_OUTPUT_TOKENS,
     RESERVATION_ASSUMED_SEARCH_QUERIES,
 )
+from src.modules.trend_insights.domain.exceptions import BudgetDenied
 
 KIND_DIAGNOSIS = "DIAGNOSTICO"
 KIND_RADAR = "RADAR"
 TOKENS_PER_MILLION = 1_000_000
 LEVEL_COMPARE_DECIMALS = 6
+_EPSILON = 1e-9
 
 
 def budget_level(month_spent: float, day_spent: float, monthly_cap: float, daily_cap: float) -> str:
@@ -56,3 +61,25 @@ def reservation_amount(
     if with_search and exceeds_free_quota:
         amount += RESERVATION_ASSUMED_SEARCH_QUERIES * pricing.search_per_query
     return amount
+
+
+def check_radar_caps(
+    document: Dict[str, Any], amount: float, reserved_radar: float, monthly_budget_usd: float, hard_cap_queries: int,
+) -> None:
+    """Travas do radar (P-178.8, P-180.3): teto duro de consultas, radares por dia e fatia do teto mensal."""
+    share_cap = RADAR_BUDGET_SHARE * monthly_budget_usd
+    is_over_cap = (
+        document["consultasMes"] >= hard_cap_queries
+        or document["radaresNovosDia"]["valor"] >= RADAR_MAX_NEW_PER_DAY
+        or document["gastoRadarMes"] + reserved_radar + amount > share_cap + _EPSILON
+    )
+    if is_over_cap:
+        raise BudgetDenied()
+
+
+def radar_headroom(document: Dict[str, Any]) -> float:
+    """
+    Folga mensal protegida para os radares (P-178.9, ~15 radares = US$ 0,22), aplicada desde o 1o dia do mes: o
+    diagnostico nunca esgota o teto antes de os radares serem gerados. Encolhe conforme o gasto real do radar.
+    """
+    return max(0.0, RADAR_RESERVED_MONTHLY_USD - document["gastoRadarMes"])

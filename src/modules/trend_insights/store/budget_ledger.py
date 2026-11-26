@@ -12,7 +12,14 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, Optional, Tuple
 
 from src.modules.trend_insights.config import TrendInsightsSettings
-from src.modules.trend_insights.domain.budget import KIND_DIAGNOSIS, KIND_RADAR, budget_level, reservation_amount
+from src.modules.trend_insights.domain.budget import (
+    KIND_DIAGNOSIS,
+    KIND_RADAR,
+    budget_level,
+    check_radar_caps,
+    radar_headroom,
+    reservation_amount,
+)
 from src.modules.trend_insights.domain.constants import (
     BUDGET_TIMEZONE_OFFSET_HOURS,
     LEDGER_MAX_ATTEMPTS,
@@ -120,28 +127,6 @@ class BudgetLedger:
         raise BudgetUnavailable()
 
     # ---------------------------------------------------------------- reserva
-    def _check_radar_caps(self, document: Dict[str, Any], amount: float, reserved_radar: float) -> None:
-        """Travas do radar (P-178.8, P-180.3): teto duro de consultas, radares por dia e fatia do teto mensal."""
-        share_cap = RADAR_BUDGET_SHARE * self._settings.monthly_budget_usd
-        is_over_cap = (
-            document["consultasMes"] >= self._settings.hard_cap_queries
-            or document["radaresNovosDia"]["valor"] >= RADAR_MAX_NEW_PER_DAY
-            or document["gastoRadarMes"] + reserved_radar + amount > share_cap + _EPSILON
-        )
-        if is_over_cap:
-            raise BudgetDenied()
-
-    @staticmethod
-    def _radar_headroom(document: Dict[str, Any]) -> float:
-        """
-        Folga protegida para os radares que ainda faltam no mes (arquitetura 15.14.5: ~15 radares = US$ 0,22). So vale
-        depois do primeiro radar do mes: assim os diagnosticos nao esgotam o teto antes de os radares restantes serem
-        gerados (sem radar o diagnostico sai com `stale` ou `SEM_RADAR`); mes sem radar usa o teto inteiro.
-        """
-        if document["gastoRadarMes"] <= 0 and document["radaresNovosMes"] <= 0:
-            return 0.0
-        return max(0.0, RADAR_RESERVED_MONTHLY_USD - document["gastoRadarMes"])
-
     def reserve(self, model_id: str, with_search: bool, kind: str = KIND_DIAGNOSIS) -> Reservation:
         pricing = self._settings.pricing
         if pricing is None:
@@ -157,9 +142,10 @@ class BudgetLedger:
             headroom = 0.0
             if kind == KIND_RADAR:
                 reserved_radar = sum(r["valor"] for r in document["reservado"] if r.get("tipo") == KIND_RADAR)
-                self._check_radar_caps(document, amount, reserved_radar)
+                check_radar_caps(
+                    document, amount, reserved_radar, self._settings.monthly_budget_usd, self._settings.hard_cap_queries)
             else:
-                headroom = self._radar_headroom(document)
+                headroom = radar_headroom(document)
             if (document["gastoMes"] + reserved + amount + headroom > self._settings.monthly_budget_usd + _EPSILON
                     or document["gastoDia"]["valor"] + reserved + amount > self._settings.daily_budget_usd + _EPSILON):
                 raise BudgetDenied()
