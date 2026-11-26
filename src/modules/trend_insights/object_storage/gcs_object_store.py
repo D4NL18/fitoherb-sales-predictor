@@ -5,7 +5,7 @@ O cliente e criado na primeira chamada (ADC da conta de servico do Cloud Run); n
 """
 import json
 import logging
-from typing import Any, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 from src.modules.trend_insights.domain.constants import LOGGER_NAME
 from src.modules.trend_insights.domain.ports import ObjectConflict, ObjectStoreUnavailable
@@ -67,6 +67,16 @@ class GcsObjectStore:
             logger.warning("tia.gcs.delete_failed type=%s", type(exc).__name__)
             raise ObjectStoreUnavailable() from None
 
+    def paths(self, prefix: str) -> List[str]:
+        """Caminhos dos objetos sob o prefixo (so nomes; usado na contagem de radares do `health`)."""
+        from google.api_core import exceptions as gcs_errors
+
+        try:
+            return [blob.name for blob in self._bucket().list_blobs(prefix=prefix)]
+        except (gcs_errors.GoogleAPIError, OSError) as exc:
+            logger.warning("tia.gcs.list_failed type=%s", type(exc).__name__)
+            raise ObjectStoreUnavailable() from None
+
 
 class UnavailableObjectStore:
     """Usado sem bucket configurado: toda leitura/escrita falha, e a F7 cai fechada (templates)."""
@@ -78,4 +88,7 @@ class UnavailableObjectStore:
         raise ObjectStoreUnavailable()
 
     def delete(self, path: str, *, if_generation_match: Optional[int] = None) -> None:
+        raise ObjectStoreUnavailable()
+
+    def paths(self, prefix: str) -> List[str]:
         raise ObjectStoreUnavailable()

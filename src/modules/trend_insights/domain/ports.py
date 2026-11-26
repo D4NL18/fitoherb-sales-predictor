@@ -1,6 +1,6 @@
 """Portas (interfaces) e sinalizadores de indisponibilidade usados pelo dominio e pelos servicos."""
 from dataclasses import dataclass
-from typing import Any, Optional, Protocol, Tuple
+from typing import Any, List, Optional, Protocol, Tuple
 
 
 class ObjectConflict(Exception):
@@ -33,6 +33,9 @@ class ObjectStore(Protocol):
 
     def delete(self, path: str, *, if_generation_match: Optional[int] = None) -> None:
         """Remove o objeto (idempotente)."""
+
+    def paths(self, prefix: str) -> List[str]:
+        """Caminhos dos objetos sob o prefixo (contagem de radares no `health`)."""
 
 
 class InFlightLease(Protocol):
