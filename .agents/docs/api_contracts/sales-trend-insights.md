@@ -8,7 +8,7 @@
 | :--- | :--- |
 | **Módulo backend** | `src/modules/trend_insights/` (FastAPI + Pydantic v2), ADR-009 |
 | **Consumidor** | `frontend/src/app/features/sales-trend/` (painel "Por que?" da página `/tendencia-vendas`) |
-| **Versão do contrato** | **1.1.0** (`meta.version`, constante `TREND_INSIGHTS_CONTRACT_VERSION`). Revisão da 1.0.0 (nunca implantada) após as decisões de 2026-11-24: Hydrogen sempre, Neon removido, teto de US$ 2/mês, Vertex AI. Histórico na seção 0 |
+| **Versão do contrato** | **1.2.0** (`meta.version`, constante `TREND_INSIGHTS_CONTRACT_VERSION`). Investigação externa v3 (radar externo compartilhado e checklist de 8 dimensões, ADR-009 DA-13), aditiva sobre a 1.1.x. Histórico na seção 0 |
 | **Regras** | `P-150` a `P-188` (`business_rules/analytics-tendencia-ia.md`; revisões v2 de P-174..P-181 e P-183 e a nova P-188 a cargo do `analyst`); reaproveita `P-072..P-093` (Tendência) e `P-128..P-138` (Canibalização) |
 | **Decisões** | `adr/ADR-009-diagnostico-tendencia-ia.md` (DA-01 a DA-12, CP-1 a CP-15) |
 | **Camada de IA** | `architecture/trend-insights-llm.md` (`ai_specialist`): prompt, schema do LLM, grounding. Este contrato define só o que sai da API, já validado |
@@ -24,6 +24,7 @@
 | :--- | :--- |
 | 1.0.0 | Primeira versão do desenho (nunca implantada). |
 | **1.1.0** | **Removidos:** `deep` no corpo do `POST`, `meta.tipoAnalise`, `meta.escalonadoAutomaticamente`, `meta.ia.escalonamentoPrevisto`, aviso `ESCALONAMENTO_NEGADO_POR_ORCAMENTO`, o modelo `gemini-4-neon`, o botão "Análise aprofundada", `diagnosticoIa.desatualizado`, aviso `DIAGNOSTICO_DESATUALIZADO`, `503 TIA-004` de IA (viram `200` com template), `credencialConfigurada` e valores em dólar de `meta.ia.orcamento` e de `health`. **Acrescentados:** `meta.origem` (`llm`\|`cache`\|`template`\|`fallback`) no `POST`, `diagnosticoIa.origem`, `meta.motivoTemplate`, `meta.ia.{geraComIa, motivoTemplate, podeForcar, diagnosticoVencido, orcamento.nivel}`, `diagnosticoIa.explicacao` (≤ 160), aviso `SEM_BUSCA_EXTERNA`, motivo `LIMITE_DIARIO` em `429 TIA-004`, códigos oficiais `TIA-006` (401) e `TIA-007` (409). **Alterados:** `modelo` ∈ {`gemini-4-hydrogen`, `gemini-3.8-flash`}; `promptVersion = "tia-v2"`; chave do diagnóstico com `evidenceHash` no lugar de `dataReferencia`; limites do diagnóstico (5 fatores, 2 fontes por fator, 3 hipóteses, 3 recomendações, `resumo` ≤ 400); texto da IA **sem números**; migração lida **sempre** com 4 datas. Mudança incompatível com a 1.0.0, que nunca teve consumidor. |
+| **1.2.0** | **Investigação externa v3 (ADR-009 DA-13), aditiva e compatível com a 1.1.x. Acrescentados:** `diagnosticoIa.fatoresExternos[8]` (uma linha fixa por dimensão externa, com `direcao`, `confianca`, `relevanciaAoProduto`, `relacaoTemporal`, `rotulo`, `origemEvidencia`, `tema`, `notaRadar`, `nota` e `fontes` por id, incluindo o estado explícito `SEM_EVIDENCIA`); `diagnosticoIa.radar` (origem `GERADO_AGORA`\|`CACHE`, idade e `desatualizado`); `meta.ia.radar` (`estado`, `geradoEm`); `data.radarExterno` somente leitura (GET e `POST` em template, sem `direcao`); `fonte.id`; `fatores[].dimensao`; motivos de hipótese `POSTERIOR_AO_PERIODO` e `SEM_COERENCIA_DIRECIONAL`; `motivoNaoAvaliado` `SEM_RADAR`, `SEM_TERMO_BUSCA`, `DIMENSAO_OMITIDA_PELA_IA`; avisos `RADAR_DESATUALIZADO` e `SEM_RADAR_EXTERNO`; `health.radar` e `ia.modeloRadar`. **Alterados:** `promptVersion = "tia-v3"`; `SEM_BUSCA_EXTERNA` passa a significar "sem radar e sem busca do produto"; `origemData` aceita `SEM_DATA`; prazo de IA de 110 s para **125 s** (HTTP 150 s inalterado). **Inalterado:** custo, tokens, consultas e orçamento seguem fora da API (4.4); a chave do diagnóstico não inclui o radar. |
 | 1.1.1 | **Renomeadas** as chaves que continham `preco` para nao colidir com a varredura de custos do 4.4 (T-7.2.9), sem expor preco de IA: `afins[].precoAtual` -> `valorVendaAtual`; `detalhe` do fator `PRECO`: `precoMedioAnterior`/`precoMedioAtual`/`variacaoPrecoPct` -> `valorMedioAnterior`/`valorMedioAtual`/`variacaoValorPct`. Sao preco de venda do produto (dado de negocio), nao custo de IA. Sem consumidor implantado. |
 
 ---
@@ -67,14 +68,14 @@ Fontes internas que falham (afinidade, sazonalidade, elasticidade, churn, estoqu
 | Campo | Tipo | Descrição | Regra |
 | :--- | :--- | :--- | :--- |
 | `timestamp` | string ISO-8601 UTC | Momento da resposta | — |
-| `version` | string | `"1.1.0"` | P-186 |
+| `version` | string | `"1.2.0"` | P-186 |
 | `dataReferencia` | string `AAAA-MM-DD` | Data de referência da snapshot da Tendência (UTC−3); entra na chave do diagnóstico | P-175, P-083.3 |
 | `ultimoDiaCoberto` | string `AAAA-MM-DD` | `dataReferencia − 1 dia` | P-076.1 |
 | `mesBase` | string `AAAA-MM` | Mês-Base efetivo | P-150 |
 | `metrica` | `"revenue"` \| `"quantity"` | Métrica efetiva | P-150 |
 | `janela` | `1` \| `3` \| `6` \| `12` | Tamanho da janela | P-150 |
 | `modoComparacao` | `"point"` \| `"average"` | Modo efetivo | P-150, P-151 |
-| `promptVersion` | string | Versão do prompt em vigor (`"tia-v2"`) | P-175 |
+| `promptVersion` | string | Versão do prompt em vigor (`"tia-v3"`) | P-175 |
 | `indiceAfinidade` | `{ disponivel: boolean, lastSyncAt: string \| null }` | Estado do índice usado no cálculo | P-173 |
 | `avisos` | `InsightWarning[]` | Avisos não bloqueantes (2.2); lista vazia quando não há | P-173, P-186 |
 | `ia` | `InsightAiState` (abaixo) | Estado do botão de IA, presente no `GET` e no `POST` das rotas de produto (Design Plan Q-D7) | P-152, P-175, P-176, P-178.5 |
@@ -92,6 +93,7 @@ Fontes internas que falham (afinidade, sazonalidade, elasticidade, churn, estoqu
 | `diagnosticoVencido` | boolean | TTL lógico de 30 dias (`INSIGHT_SOFT_TTL_DAYS`) vencido: a tela mostra "gerado há N dias" e oferece "Atualizar" (explícito) |
 | `podeForcar` | boolean | `false` em orçamento `ALERTA`/`ESGOTADO` ou com `force` do dia esgotado: desabilita "Gerar de novo"/"Atualizar" |
 | `geracaoEmAndamento` | boolean | Há lease de geração em voo para a chave (qualquer instância); a tela mostra "gerando" e refaz o `GET` em alguns segundos |
+| `radar` | `{ estado, geradoEm }` | Estado do radar externo do assunto do produto para o mês-base: `estado` ∈ `FRESCO`, `DESATUALIZADO` (passou do prazo e foi usado como contexto), `AUSENTE` (não existe e não será gerado nesta resposta), `GERADO_AGORA` (só no `POST`); `geradoEm` ISO-8601 UTC ou `null`. O `GET` só **lê** o radar: nunca o gera (custo zero) |
 | `orcamento` | `{ nivel }` | `nivel` ∈ `NORMAL`, `ALERTA` (≥ 80%), `ESGOTADO`. **Sem valores em dólar, percentuais, teto ou saldo** (4.4). Cache de até 60 s |
 
 **Só no `POST /generate`** (`GenerateMeta`, estende `InsightMeta`):
@@ -115,7 +117,9 @@ Fontes internas que falham (afinidade, sazonalidade, elasticidade, churn, estoqu
 | `TIA-005` | Índice de afinidade indisponível (P-173) | "Índice de produtos afins em atualização: canibalização e grupo afim não avaliados." |
 | `FORNECEDOR_NAO_INFORMADO` | SKU sem fornecedor no catálogo (P-154.2) | "Fornecedor do produto não informado." |
 | `IA_FALHOU` | Só no `POST`: a tentativa de IA falhou e a resposta é template (P-183.3) | "Não foi possível gerar a análise com IA agora. Exibindo o resumo automático." |
-| `SEM_BUSCA_EXTERNA` | Só no `POST`: gerado pelo `gemini-3.8-flash` sem *grounding* (schema + busca não suportado no fallback) | "Análise feita sem busca externa." |
+| `SEM_BUSCA_EXTERNA` | Só no `POST`: a análise saiu **sem radar e sem busca do produto** (1.2.0; antes: fallback Flash sem *grounding*) | "Análise feita sem busca externa." |
+| `RADAR_DESATUALIZADO` | Radar usado como contexto (ou exibido) passou do prazo de validade (`meta.ia.radar.estado = DESATUALIZADO`); a confiança externa é `BAIXA` | "Os fatores externos usam uma pesquisa desatualizada." |
+| `SEM_RADAR_EXTERNO` | Só no `POST`: não havia radar utilizável e nenhum foi gerado (falha, limite de uso, orçamento ou assunto sem termo); as 8 dimensões saem `NAO_AVALIADA` | "Fatores externos não avaliados nesta análise." |
 
 A tela decide pelo `codigo`, nunca pelo texto.
 
@@ -142,14 +146,29 @@ A tela decide pelo `codigo`, nunca pelo texto.
 | `status` (parcela/indicador) | `AVALIADO`, `SEM_EFEITO`, `NAO_AVALIADO` |
 | `motivoNaoAvaliado` | `JANELA_ANTERIOR_INCOMPLETA`, `INDICE_AFINIDADE_INDISPONIVEL`, `FONTE_INDISPONIVEL`, `MES_BASE_ANTIGO`, `SEM_PRECO_MEDIO`, `CONFIANCA_BAIXA_SAZONAL`, `MODO_QUALITATIVO`, `ANONIMIZACAO` |
 | `clientesMigrados` / `clientesPerdidosQtd` | inteiro ≥ 3 ou `"<3"` (LGPD-TIA-06) |
-| `fonte.origemData` | `MODELO`, `URL`, `null` |
+| `fonte.origemData` | `MODELO`, `URL`, `SEM_DATA`, `null` |
+| `dimensao` (`fatoresExternos[]`, `radarExterno.dimensoes[]`, `fatores[].dimensao`) | `POLITICA_REGULATORIO`, `CLIMA_SAFRA`, `CUSTO_MATERIA_PRIMA`, `OFERTA_DEMANDA_MATERIA_PRIMA`, `CAMBIO_LOGISTICA_IMPORTACAO`, `CONSUMO_MIDIA_SAUDE`, `CONCORRENCIA`, `EVENTOS_MERCADO` (8, ordem fixa) |
+| `fatorExterno.status` | `AVALIADA`, `SEM_EVIDENCIA` (avaliada, nada relevante achado; **não** significa "não houve"), `NAO_AVALIADA` |
+| `fatorExterno.direcao` | `PRESSAO_ALTA`, `PRESSAO_BAIXA`, `NEUTRA` (só com fonte que diga estabilidade), `INDETERMINADA` (padrão de `SEM_EVIDENCIA`/`NAO_AVALIADA`) |
+| `fatorExterno.confianca` | `MEDIA`, `BAIXA` (**nunca `ALTA`**) |
+| `fatorExterno.relevanciaAoProduto` | `ALTA`, `MEDIA`, `BAIXA`, `NENHUMA` |
+| `fatorExterno.relacaoTemporal` | `ANTERIOR`, `CONTEMPORANEA`, `POSTERIOR`, `SEM_DATA`, `ANTIGA`, `null` (calculada pelo backend contra a Janela Atual) |
+| `fatorExterno.rotulo` | `POSSIVEL`, `CONTEXTO` (`POSTERIOR`), `SEM_DATA`, `DESCARTADA` (`ANTIGA`), `SEM_EVIDENCIA` |
+| `fatorExterno.origemEvidencia` | `RADAR`, `BUSCA_PRODUTO`, `NENHUMA` |
+| `fatorExterno.motivoNaoAvaliado` | `SEM_RADAR`, `SEM_TERMO_BUSCA`, `DIMENSAO_OMITIDA_PELA_IA`, `null` |
+| `radar.dimensoes[].movimento` | `SUBIU`, `CAIU`, `ESTAVEL`, `MUDOU`, `INDEFINIDO` |
+| `radar.dimensoes[].intensidade` | `FORTE`, `MODERADA`, `FRACA`, `null` |
+| `radar.dimensoes[].tema` | Lista fechada por dimensão (`RADAR_THEMES` do backend, inclui `OUTRO`); o texto exibido vem de frase fixa do backend (`notaRadar`), nunca do conteúdo da web |
+| `radar.origem` | `GERADO_AGORA`, `CACHE` |
+| `radar.assunto.tipo` | `MATERIA_PRIMA`, `CATEGORIA` |
+| `meta.ia.radar.estado` | `FRESCO`, `DESATUALIZADO`, `AUSENTE`, `GERADO_AGORA` |
 | `motivoSemEfeito` | `HISTORICO_CURTO`, `VENDA_ESPORADICA`, `FRACA`, `MESMOS_MESES`, `VARIACAO_PRECO_PEQUENA`, `SEM_PARES`, `NAO_SE_APLICA_A_ALTA`, `SEM_CLIENTES_PERDIDOS`, `SEM_RUPTURA`, `SEM_PROMOCAO`, `SEM_CONCENTRACAO` |
 | `sentido` | `NEGATIVO`, `POSITIVO` |
 | `confianca` | `ALTA`, `MEDIA`, `BAIXA` |
 | `mecanismo` | `PRECO_MENOR_DESTROI_MARGEM`, `PRECO_MENOR_MARGEM_PRESERVADA`, `MIGRACAO_POR_VALOR` (F6) |
 | `tipoImpacto` | `CANIBALIZACAO_INTERNA`, `GANHO_SOBRE_CONCORRENTE` (P-171) |
 | `fator.tipo` (IA) | internos: os 6 da cascata + `PERDA_PARTICIPACAO_SEM_MIGRACAO`, `RUPTURA`, `PROMOCAO`, `REGIONAL`; externos: `CLIMA`, `POLITICO_REGULATORIO`, `MATERIA_PRIMA`, `CONCORRENCIA_MERCADO`, `OUTRO` (P-181) |
-| `hipotese.motivo` | `SEM_FONTE`, `FONTE_NAO_CITADA`, `SEM_DATA`, `FORA_DO_PERIODO` (P-182.4), `SKU_FORA_DO_PACOTE` (`trend-insights-llm.md` CP-8) |
+| `hipotese.motivo` | `SEM_FONTE`, `FONTE_NAO_CITADA`, `SEM_DATA`, `FORA_DO_PERIODO` (P-182.4), `SKU_FORA_DO_PACOTE` (`trend-insights-llm.md` CP-8), `POSTERIOR_AO_PERIODO` (fonte posterior à Janela Atual: contexto, nunca causa), `SEM_COERENCIA_DIRECIONAL` (direção do fator contrária ao sentido da variação) |
 | `meta.ia.motivoBloqueio` | `SEM_VARIACAO`, `null` |
 | `motivoTemplate` | `GATE_VARIACAO`, `GATE_RESIDUO_BAIXO`, `GATE_VALOR_BAIXO`, `ORCAMENTO_ESGOTADO`, `IA_DESLIGADA`, `IA_INDISPONIVEL` |
 | `meta.origem` (`POST`) | `cache`, `template`, `llm`, `fallback` (minúsculas, exceção à convenção de enums de domínio por decisão do coordenador) |
@@ -200,6 +219,7 @@ Parâmetros desconhecidos são ignorados. Mensagens e logs nunca ecoam valores r
 | `grupoAfim` | `{ status, afins: AfimItem[] }` (3.1.4) | Até 25 vizinhos com score ≥ 0,50 do Catálogo Ativo | P-154 |
 | `impactoEmOutrosProdutos` | `ImpactoEmOutrosProdutos \| null` (3.1.5) | Preenchido em `ALTA` e em `NOVO`; `null` em `QUEDA` | P-171 |
 | `diagnosticoIa` | `DiagnosticoIa \| null` (3.1.6) | O salvo para a mesma chave; `null` se ainda não gerado | P-174, P-175 |
+| `radarExterno` | `RadarExterno \| null` (3.1.6.2) | **Novo (1.2.0).** Radar externo existente (fresco ou desatualizado) do assunto do produto, somente leitura, **sem `direcao` nem `relevanciaAoProduto`**; `null` se não houver radar ou se `diagnosticoIa` estiver preenchido (a tela usa `fatoresExternos`). Exibido como "Radar externo de N dias (sem análise de IA para este produto)". Nunca dispara geração | P-174.1, P-180 |
 
 O estado do botão de IA fica em `meta.ia` (2.1).
 
@@ -252,8 +272,55 @@ O estado do botão de IA fica em `meta.ia` (2.1).
 | `fonte` | `{ url, dominio, titulo, dataPublicacao, origemData }`. `titulo` vem da citação da fonte (não é texto da IA e pode conter dígitos) | `dataPublicacao` (`AAAA-MM-DD`) é **anulável**: o *grounding* não devolve data; ela vem da leitura do modelo (`origemData = "MODELO"`) ou do caminho da URL (`"URL"`). Fontes de fatores aceitos sempre têm data válida (P-182.4); fontes com data nula só aparecem em hipóteses |
 | `hipotesesNaoConfirmadas[]` | ≤ 3 `{ tipo, descricao ≤ 120, motivo, fontes[] }` | P-182.4; `fontes[]` pode vir vazio ou com fontes rejeitadas (`SEM_DATA`, `FORA_DO_PERIODO`) para o usuário conferir. `descricao` sem números |
 | `recomendacoes[]` | ≤ 3 strings (≤ 120 caracteres cada) | LLM, mesmas restrições do `resumo` (sem números) |
+| `fatoresExternos` | `FatorExterno[8]` (3.1.6.1) | **Novo (1.2.0).** Sempre 8 itens na ordem fixa de `dimensao`; dimensão nunca omitida |
+| `radar` | `RadarRef \| null` (3.1.6.2) | **Novo (1.2.0).** Origem e idade do radar usado; `null` quando as dimensões saíram `NAO_AVALIADA` por `SEM_RADAR` |
 | `sugestoesBuscaHtml` | string \| `null` | **Opcional e pendente do checkpoint (ADR-009 CP-10).** HTML das *Search Suggestions* exigido pelos Termos do *grounding*. Se o checkpoint aprovar, a tela o renderiza **só** em `<iframe sandbox>` (sem `allow-scripts` do nosso domínio, sem `innerHTML` na página); caso contrário, o campo vem sempre `null` |
 | `origem`, `modelo`, `geradoEm`, `promptVersion` | | Backend. `origem` ∈ `llm`, `fallback`; `modelo` ∈ `gemini-4-hydrogen`, `gemini-3.8-flash` |
+
+#### 3.1.6.1 `FatorExterno` (`diagnosticoIa.fatoresExternos[8]`)
+
+| Campo | Tipo | Descrição | Origem |
+| :--- | :--- | :--- | :--- |
+| `dimensao` | enum | 2.4 | Backend (ordem fixa) |
+| `status` | enum | `AVALIADA`, `SEM_EVIDENCIA`, `NAO_AVALIADA` | Backend (dimensão omitida pela IA vira `NAO_AVALIADA` com `DIMENSAO_OMITIDA_PELA_IA`) |
+| `direcao` | enum | Pressão sobre as **vendas do produto**; `INDETERMINADA` em `SEM_EVIDENCIA` e `NAO_AVALIADA` | LLM, validada |
+| `confianca` | `MEDIA` \| `BAIXA` | Nunca `ALTA`; `BAIXA` com data só do modelo, fonte única ou radar desatualizado | Backend |
+| `relevanciaAoProduto` | enum | `ALTA`, `MEDIA`, `BAIXA`, `NENHUMA` | LLM |
+| `relacaoTemporal` | enum \| `null` | 2.4; `null` sem fonte | **Backend** |
+| `rotulo` | enum | 2.4; só `POSSIVEL` pode ser promovido a `fatores[]` | **Backend** |
+| `origemEvidencia` | enum | `RADAR`, `BUSCA_PRODUTO`, `NENHUMA` | Backend |
+| `motivoNaoAvaliado` | enum \| `null` | Só em `NAO_AVALIADA` | Backend |
+| `tema` | enum \| `null` | Tema fechado do radar para a dimensão | Radar |
+| `notaRadar` | string \| `null` | Frase fixa pt-BR do backend a partir de `tema` (nunca texto livre da web) | Backend |
+| `nota` | string \| `null` | ≤ 100 caracteres, **sem dígitos**, só em relevância `ALTA`/`MEDIA`; `null` nos demais | LLM |
+| `fontes` | `FonteExterna[]` | ≤ 1 por dimensão (≤ 2 em intensidade `FORTE`); vazia em `SEM_EVIDENCIA`/`NAO_AVALIADA` | Backend |
+
+`FonteExterna` = `{ id, url, dominio, titulo, dataPublicacao, origemData }`, com `id` ∈ `^[FP][0-9]{1,2}$` (`F1..F16` do radar, `P1` da busca do produto); `dataPublicacao` anulável; `origemData` ∈ `MODELO`, `URL`, `SEM_DATA`. O modelo só referencia a fonte por `id`: url, título, domínio e data são preenchidos pelo backend. `fatores[]` (≤ 5) pode conter **no máximo 3 externos**, só de itens `AVALIADA` com `rotulo = POSSIVEL`, relevância `ALTA`/`MEDIA` e coerência direcional; o item não promovido continua em `fatoresExternos`. Fator externo promovido tem `fatores[].dimensao` preenchido (`null` nos internos), nunca `parcelaEstimada` e confiança ≤ `MEDIA`. Fonte `POSTERIOR`, `SEM_DATA` ou `ANTIGA` nunca é causa (vira contexto ou hipótese com `POSTERIOR_AO_PERIODO`, `SEM_DATA` ou `FORA_DO_PERIODO`).
+
+```json
+"fatoresExternos": [
+  { "dimensao": "POLITICA_REGULATORIO", "status": "SEM_EVIDENCIA", "direcao": "INDETERMINADA",
+    "confianca": "BAIXA", "relevanciaAoProduto": "NENHUMA", "relacaoTemporal": null, "rotulo": "SEM_EVIDENCIA",
+    "origemEvidencia": "NENHUMA", "motivoNaoAvaliado": null, "tema": null,
+    "notaRadar": "Nenhuma evidência encontrada nesta dimensão na pesquisa feita.", "nota": null, "fontes": [] },
+  { "dimensao": "CUSTO_MATERIA_PRIMA", "status": "AVALIADA", "direcao": "PRESSAO_BAIXA",
+    "confianca": "MEDIA", "relevanciaAoProduto": "ALTA", "relacaoTemporal": "ANTERIOR", "rotulo": "POSSIVEL",
+    "origemEvidencia": "RADAR", "motivoNaoAvaliado": null, "tema": "INSUMO_MAIS_CARO",
+    "notaRadar": "O insumo ficou mais caro na pesquisa do período.",
+    "nota": "Pode ter pressionado o valor de venda do produto.",
+    "fontes": [ { "id": "F3", "url": "https://exemplo.gov.br/noticia", "dominio": "exemplo.gov.br", "titulo": "Cotação do insumo sobe", "dataPublicacao": "2026-07-14", "origemData": "MODELO" } ] }
+]
+```
+
+(Exemplo abreviado: a resposta real traz sempre os 8 itens. Os exemplos 3.1.7 a 3.2.1 abaixo foram escritos na 1.1.x e omitem os campos novos por brevidade; na 1.2.0 todo `diagnosticoIa` os traz.)
+
+#### 3.1.6.2 `RadarRef` e `RadarExterno`
+
+`diagnosticoIa.radar` (`RadarRef`): `{ assunto: { termo, tipo }, mesBase, geradoEm, diasDesdeGeracao, desatualizado, origem }`. `assunto.termo` é o termo de matéria-prima ou categoria (nunca nome comercial, SKU ou cliente); `origem` ∈ `GERADO_AGORA` (este pedido gerou a pesquisa) ou `CACHE` (reaproveitada de outro produto, usuário ou dia, sem nova chamada); `desatualizado = true` quando passou do prazo de validade e foi usada como contexto (aviso `RADAR_DESATUALIZADO`). Os campos de idade se repetem em `meta.ia.radar`.
+
+`data.radarExterno` (`RadarExterno`): `{ assunto, mesBase, geradoEm, diasDesdeGeracao, desatualizado, dimensoes[8] }`, com `dimensoes[i] = { dimensao, status, movimento, intensidade, tema, notaRadar, fontes[] }`. **Sem** `direcao`, `relevanciaAoProduto` e `confianca`: a leitura da pesquisa é independente do produto (o radar é gerado sem dado da empresa e sem a variação). Presente no `GET` e no `POST` com `origem = "template"` quando há radar (fresco ou desatualizado); essas respostas nunca o criam.
+
+`sugestoesBuscaHtml` do radar segue o regime do CP-10: guardado no GCS e **anulado na resposta pública** até a decisão do checkpoint.
 
 `impactoEmOutrosProdutos` **não** se repete dentro de `diagnosticoIa`: a tela usa o bloco de topo (P-181 marca o campo como do backend).
 
@@ -316,9 +383,9 @@ O estado do botão de IA fica em `meta.ia` (2.1).
     "diagnosticoIa": null
   },
   "meta": {
-    "timestamp": "2026-11-24T14:02:11.204Z", "version": "1.1.0",
+    "timestamp": "2026-11-24T14:02:11.204Z", "version": "1.2.0",
     "dataReferencia": "2026-11-24", "ultimoDiaCoberto": "2026-11-23", "mesBase": "2026-10",
-    "metrica": "quantity", "janela": 1, "modoComparacao": "point", "promptVersion": "tia-v2",
+    "metrica": "quantity", "janela": 1, "modoComparacao": "point", "promptVersion": "tia-v3",
     "indiceAfinidade": { "disponivel": true, "lastSyncAt": "2026-11-24T03:00:41.512Z" },
     "avisos": [],
     "ia": { "podeGerar": true, "motivoBloqueio": null, "diagnosticoSalvo": false, "diagnosticoSalvoEm": null, "geracaoEmAndamento": false, "diagnosticoVencido": false, "geraComIa": true, "motivoTemplate": null, "podeForcar": true, "orcamento": { "nivel": "NORMAL" } }
@@ -407,9 +474,9 @@ O estado do botão de IA fica em `meta.ia` (2.1).
     "diagnosticoIa": null
   },
   "meta": {
-    "timestamp": "2026-11-24T14:05:42.870Z", "version": "1.1.0",
+    "timestamp": "2026-11-24T14:05:42.870Z", "version": "1.2.0",
     "dataReferencia": "2026-11-24", "ultimoDiaCoberto": "2026-11-23", "mesBase": "2026-10",
-    "metrica": "revenue", "janela": 3, "modoComparacao": "point", "promptVersion": "tia-v2",
+    "metrica": "revenue", "janela": 3, "modoComparacao": "point", "promptVersion": "tia-v3",
     "indiceAfinidade": { "disponivel": true, "lastSyncAt": "2026-11-24T03:00:41.512Z" },
     "avisos": [],
     "ia": { "podeGerar": true, "motivoBloqueio": null, "diagnosticoSalvo": false, "diagnosticoSalvoEm": null, "geracaoEmAndamento": false, "diagnosticoVencido": false, "geraComIa": false, "motivoTemplate": "GATE_RESIDUO_BAIXO", "podeForcar": true, "orcamento": { "nivel": "NORMAL" } }
@@ -468,9 +535,9 @@ Mesma forma; as parcelas e blocos que dependem de afinidade ficam `NAO_AVALIADO`
     "diagnosticoIa": null
   },
   "meta": {
-    "timestamp": "2026-11-24T08:01:03.117Z", "version": "1.1.0",
+    "timestamp": "2026-11-24T08:01:03.117Z", "version": "1.2.0",
     "dataReferencia": "2026-11-24", "ultimoDiaCoberto": "2026-11-23", "mesBase": "2026-10",
-    "metrica": "revenue", "janela": 3, "modoComparacao": "point", "promptVersion": "tia-v2",
+    "metrica": "revenue", "janela": 3, "modoComparacao": "point", "promptVersion": "tia-v3",
     "indiceAfinidade": { "disponivel": false, "lastSyncAt": null },
     "avisos": [ { "codigo": "TIA-005", "mensagem": "Índice de produtos afins em atualização: canibalização e grupo afim não avaliados." } ],
     "ia": { "podeGerar": true, "motivoBloqueio": null, "diagnosticoSalvo": false, "diagnosticoSalvoEm": null, "geracaoEmAndamento": false, "diagnosticoVencido": false, "geraComIa": true, "motivoTemplate": null, "podeForcar": true, "orcamento": { "nivel": "NORMAL" } }
@@ -483,7 +550,7 @@ Mesma forma; as parcelas e blocos que dependem de afinidade ficam `NAO_AVALIADO`
 ### 3.2 `POST /api/v1/sales-trend/insights/product/{sku}/generate`
 
 - **Objetivo:** gerar o diagnóstico com IA para a chave `(sku, metric, window, baseMonth, comparisonMode, promptVersion, evidenceHash)`, devolver o já salvo, ou devolver o resumo por template quando a IA não deve ou não pode ser chamada (P-174..P-184, P-188). `evidenceHash` é interno e nunca exposto: carga nova do ERP com evidência igual reaproveita o salvo.
-- **Quem chama:** só os botões "Gerar análise com IA", "Gerar resumo automático" (quando `meta.ia.geraComIa = false`), "Atualizar" (diagnóstico vencido) e "Gerar de novo". Não existe mais "Análise aprofundada". Nada chama sozinho. A tela desabilita os botões enquanto o pedido está em voo (P-176.1) e usa timeout HTTP de **150 s** (a camada de IA tem prazo total de 110 s, `LLM_TOTAL_DEADLINE_SECONDS`; ADR-009 DA-08).
+- **Quem chama:** só os botões "Gerar análise com IA", "Gerar resumo automático" (quando `meta.ia.geraComIa = false`), "Atualizar" (diagnóstico vencido) e "Gerar de novo". Não existe mais "Análise aprofundada". Nada chama sozinho. A tela desabilita os botões enquanto o pedido está em voo (P-176.1) e usa timeout HTTP de **150 s** (a camada de IA tem prazo total de 125 s, `LLM_TOTAL_DEADLINE_SECONDS`, e a trava de voo de 150 s; ADR-009 DA-08 e DA-13).
 - **Headers:** `Content-Type: application/json`.
 
 **Corpo (`GenerateRequest`):**
@@ -510,7 +577,12 @@ Campo `deep` enviado por cliente antigo é ignorado (parâmetros desconhecidos),
 | Gate de não chamada (variação ínfima, base insuficiente, delta < R$ 1.000, resíduo < 0,20 sem região/mercado) | `200`, `origem = "template"`, `motivoTemplate = GATE_*`, `diagnosticoIa = null`; nada é salvo |
 | Kill-switch ligado, Vertex indisponível desde o início | `200`, `origem = "template"`, `motivoTemplate = IA_DESLIGADA` ou `IA_INDISPONIVEL` |
 | Orçamento do mês ou do dia sem saldo, ou livro de gastos indisponível | `200`, `origem = "template"`, `motivoTemplate = ORCAMENTO_ESGOTADO` |
-| Hydrogen e Flash falham (schema ou prazo total de 110 s) | `200`, `origem = "template"`, aviso `IA_FALHOU`; nada é salvo (P-175.5); o custo já consumido é acertado no livro |
+| Hydrogen e Flash falham (schema ou prazo total de 125 s) | `200`, `origem = "template"`, aviso `IA_FALHOU`; nada é salvo (P-175.5); o custo já consumido é acertado no livro |
+| Radar do assunto fresco no GCS | Usado como contexto do diagnóstico; `diagnosticoIa.radar.origem = "CACHE"`; sem nova pesquisa. `force` **não** renova o radar |
+| Radar ausente ou vencido e a geração é permitida | O backend gera o radar (única chamada com busca, sem dado da empresa) e depois o diagnóstico: `radar.origem = "GERADO_AGORA"`. Pedidos simultâneos do mesmo assunto compartilham a geração |
+| Radar vencido e a geração não é permitida (limite de uso, orçamento em `ALERTA`, limite diário de radares) | Usa o radar desatualizado: `meta.ia.radar.estado = "DESATUALIZADO"`, aviso `RADAR_DESATUALIZADO`, confiança externa `BAIXA` |
+| Sem radar utilizável (falha da pesquisa, limite, assunto sem termo) | O diagnóstico segue com os fatores internos; as 8 dimensões saem `NAO_AVALIADA` (`SEM_RADAR` ou `SEM_TERMO_BUSCA`) e o aviso é `SEM_RADAR_EXTERNO`; a falha do radar **não** gera `IA_FALHOU` |
+| Orçamento esgotado, IA desligada ou gate, com radar existente | `origem = "template"` com `data.radarExterno` somente leitura (sem nova pesquisa) |
 | `SEM_VARIACAO` | `422 TIA-003` ("Não há variação relevante para analisar.") |
 | Mais de 2 pedidos que chamam o LLM no minuto | `429 TIA-004` `motivo = LIMITE_DE_PEDIDOS`, header `Retry-After` (segundos) |
 | Mais de 10 pedidos que chamam o LLM no dia, ou 3 com `force`, por usuário | `429 TIA-004` `motivo = LIMITE_DIARIO`, header `Retry-After` |
@@ -632,13 +704,13 @@ Campo `deep` enviado por cliente antigo é ignorado (parâmetros desconhecidos),
       "origem": "llm",
       "modelo": "gemini-4-hydrogen",
       "geradoEm": "2026-11-24T14:10:27.530Z",
-      "promptVersion": "tia-v2"
+      "promptVersion": "tia-v3"
     }
   },
   "meta": {
-    "timestamp": "2026-11-24T14:10:27.611Z", "version": "1.1.0",
+    "timestamp": "2026-11-24T14:10:27.611Z", "version": "1.2.0",
     "dataReferencia": "2026-11-24", "ultimoDiaCoberto": "2026-11-23", "mesBase": "2026-10",
-    "metrica": "revenue", "janela": 3, "modoComparacao": "point", "promptVersion": "tia-v2",
+    "metrica": "revenue", "janela": 3, "modoComparacao": "point", "promptVersion": "tia-v3",
     "indiceAfinidade": { "disponivel": true, "lastSyncAt": "2026-11-24T03:00:41.512Z" },
     "avisos": [],
     "ia": { "podeGerar": true, "motivoBloqueio": null, "diagnosticoSalvo": true, "diagnosticoSalvoEm": "2026-11-24T14:10:27.530Z", "geracaoEmAndamento": false, "diagnosticoVencido": false, "geraComIa": true, "motivoTemplate": null, "podeForcar": true, "orcamento": { "nivel": "NORMAL" } },
@@ -653,7 +725,7 @@ Conferência dos números (para o `tester`): `Σ parcelas = −2.400 − 1.161,6
 
 ### 3.3 `GET /api/v1/sales-trend/insights/supplier/{supplierKey}` — **fase 7.4**
 
-> Rota reservada no 1.1.0 e **não implementada** até a fase 7.4. Até lá responde `404` do FastAPI (rota inexistente). O detalhamento final pode acrescentar campos (versão `1.2.0`, compatível).
+> Rota reservada no 1.1.0 e **não implementada** até a fase 7.4. Até lá responde `404` do FastAPI (rota inexistente). O detalhamento final pode acrescentar campos (versão `1.3.0`, compatível).
 
 - **Path:** `supplierKey` = chave opaca `fornecedorChave` da Tendência (`"f:<nome normalizado>"` ou `"sem-fornecedor"`), 1..200 caracteres; inexistente no universo → `404 TIA-002`.
 - **Query:** os mesmos de 3.1.
@@ -674,8 +746,10 @@ Conferência dos números (para o `tester`): `Σ parcelas = −2.400 − 1.161,6
       "ligada": true,
       "modeloPadrao": "gemini-4-hydrogen",
       "modeloFallback": "gemini-3.8-flash",
-      "promptVersion": "tia-v2"
+      "promptVersion": "tia-v3",
+      "modeloRadar": "gemini-4-hydrogen"
     },
+    "radar": { "radarVersion": "radar-v1", "radaresEmCache": 11, "radaresGeradosMes": 7 },
     "orcamento": { "mes": "2026-11", "nivel": "NORMAL" },
     "indiceAfinidade": {
       "disponivel": true,
@@ -688,11 +762,11 @@ Conferência dos números (para o `tester`): `Σ parcelas = −2.400 − 1.161,6
       { "modoComparacao": "average", "janela": 12, "mesBase": "2026-10", "carregadoEm": "2026-11-24T14:00:40.022Z", "expiraEm": "2026-11-24T20:00:40.022Z", "duracaoCargaMs": 9870, "pares": 9144 }
     ]
   },
-  "meta": { "timestamp": "2026-11-24T14:12:00.000Z", "version": "1.1.0", "dataReferencia": "2026-11-24" }
+  "meta": { "timestamp": "2026-11-24T14:12:00.000Z", "version": "1.2.0", "dataReferencia": "2026-11-24" }
 }
 ```
 
-`ia.ligada` é o kill-switch `TREND_AI_ENABLED` (booleano); não existe campo de credencial (Vertex AI usa a conta de serviço). `orcamento.nivel` ∈ `NORMAL`, `ALERTA`, `ESGOTADO`. `indiceAfinidade.origem` ∈ `GCS`, `LOCAL`. `cacheMigracao` não traz SKUs nem clientes, só contagem de pares. **Erros:** nenhum específico.
+`radar` traz só a versão do prompt do radar e contagens de objetos (sem valores, consultas ou assuntos). `ia.ligada` é o kill-switch `TREND_AI_ENABLED` (booleano); não existe campo de credencial (Vertex AI usa a conta de serviço). `orcamento.nivel` ∈ `NORMAL`, `ALERTA`, `ESGOTADO`. `indiceAfinidade.origem` ∈ `GCS`, `LOCAL`. `cacheMigracao` não traz SKUs nem clientes, só contagem de pares. **Erros:** nenhum específico.
 
 ---
 
@@ -720,7 +794,7 @@ Conferência dos números (para o `tester`): `Σ parcelas = −2.400 − 1.161,6
     "durationMs": 38215,
     "geracaoObjeto": "1764039641512000"
   },
-  "meta": { "timestamp": "2026-11-24T03:00:41.900Z", "version": "1.1.0" }
+  "meta": { "timestamp": "2026-11-24T03:00:41.900Z", "version": "1.2.0" }
 }
 ```
 
@@ -741,7 +815,7 @@ Conferência dos números (para o `tester`): `Σ parcelas = −2.400 − 1.161,6
 ```json
 {
   "error": { "code": "TIA-001", "message": "Parâmetros inválidos para o diagnóstico.", "fields": ["window", "comparisonMode"], "motivo": null },
-  "meta": { "timestamp": "2026-11-24T14:00:00.000Z", "version": "1.1.0" }
+  "meta": { "timestamp": "2026-11-24T14:00:00.000Z", "version": "1.2.0" }
 }
 ```
 
@@ -772,22 +846,22 @@ Exemplos:
 
 ```json
 { "error": { "code": "TIA-002", "message": "Produto ou fornecedor não encontrado no catálogo ativo.", "fields": [], "motivo": null },
-  "meta": { "timestamp": "2026-11-24T14:00:00.000Z", "version": "1.1.0" } }
+  "meta": { "timestamp": "2026-11-24T14:00:00.000Z", "version": "1.2.0" } }
 ```
 
 ```json
 { "error": { "code": "TIA-003", "message": "Não há variação relevante para analisar.", "fields": [], "motivo": null },
-  "meta": { "timestamp": "2026-11-24T14:00:00.000Z", "version": "1.1.0" } }
+  "meta": { "timestamp": "2026-11-24T14:00:00.000Z", "version": "1.2.0" } }
 ```
 
 ```json
 { "error": { "code": "TIA-004", "message": "Limite de análises com IA atingido. A parte numérica continua disponível.", "fields": [], "motivo": "LIMITE_DE_PEDIDOS" },
-  "meta": { "timestamp": "2026-11-24T14:00:00.000Z", "version": "1.1.0" } }
+  "meta": { "timestamp": "2026-11-24T14:00:00.000Z", "version": "1.2.0" } }
 ```
 
 ```json
 { "error": { "code": "ANL-001", "message": "Base de vendas indisponível no momento. Tente novamente em instantes.", "fields": [], "motivo": null },
-  "meta": { "timestamp": "2026-11-24T14:00:00.000Z", "version": "1.1.0" } }
+  "meta": { "timestamp": "2026-11-24T14:00:00.000Z", "version": "1.2.0" } }
 ```
 
 - A validação do FastAPI é convertida pela classe de rota do módulo (`InsightsAPIRoute`), sem handler global (ADR-009 DA-11).
@@ -816,7 +890,8 @@ Nenhuma resposta (rotas de produto, fornecedor, `health`, erros) nem objeto salv
 | Tokens de entrada/saída/*thinking* | Log estruturado da etapa (sem prompt) |
 | Consultas de busca executadas e cota de *grounding* | Livro e log |
 | Tabela de preços (`TREND_AI_PRICING_JSON`) e constantes de orçamento | Variáveis de ambiente |
-| `evidenceHash`, chave de cache, caminhos e gerações do GCS | Interno (DA-07). O `StoredInsight` gravado guarda custo, tokens e consultas, mas o mapper da API os descarta |
+| `evidenceHash`, chave de cache, caminhos e gerações do GCS, `radarRef` do `StoredInsight` | Interno (DA-07). O `StoredInsight` gravado guarda custo, tokens e consultas, mas o mapper da API os descarta |
+| Consultas de busca do radar, teto de busca do mês, `radarHash`, chave e caminho `radar/...` no GCS, gasto e contadores de radar no livro, texto bruto das páginas | Objeto do radar, livro e log. A API só devolve dimensões, tema, frase fixa, fontes validadas e idade. Atingir o teto de busca aparece ao cliente apenas como radar `AUSENTE`/`DESATUALIZADO` e `SEM_RADAR_EXTERNO`, sem citar limite ou custo |
 | Credenciais (não há chave de API; o Vertex usa ADC) | — |
 
 Teste de contrato: serializar todas as respostas e falhar se aparecer qualquer chave `usd`, `custo`, `token`, `consultas`, `preco`, `teto`, `gasto`, `saldo`, `evidenceHash` (T-7.2.9).

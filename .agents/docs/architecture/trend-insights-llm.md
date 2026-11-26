@@ -16,6 +16,8 @@
 > 4. **Meta financeira: no máximo US$ 2,00/mês com IA** (LLM + grounding + armazenamento/agendador da F7). O teto anterior de US$ 30 e as tabelas de custo da §10 estão superados pela **§14**.
 > 5. **A IA não escreve números** (CP-10 do usuário): só cita fatores e marcadores; todo número vem da cascata do motor determinístico (já era o desenho; mantido).
 
+> **REVISÃO v3 (2026-11-25, diretriz do usuário):** a pesquisa externa não é mais condicional. Vale a **§15 Investigação externa v3** (radar externo por matéria-prima/categoria e mês, cacheado e compartilhado; checklist fixo de 8 dimensões em todo diagnóstico; busca do produto só complementar). Ficam **superados**: o gate de grounding da §14.6 e o P-180.1, os modelos de consulta da §6.2, o limite `MAX_SEARCH_QUERIES`, a "capacidade mensal" da §14.10 (agora ~60 diagnósticos/mês, §15.9) e o item "a 80% o limiar sobe a 0,50" (a 80% a busca do produto desliga). `PROMPT_VERSION` passa a `tia-v3`.
+
 > Este documento detalha **só a camada de IA** (cliente Gemini, prompts, pacote de evidências, schema, validação, custo, avaliação e observabilidade). O Motor de Evidências, a API e a persistência estão no plano e no ADR-009. Nada aqui é código de produção: os trechos são contratos e exemplos de forma.
 
 ---
@@ -617,7 +619,7 @@ Ordem de decisão em `POST /generate`, da mais barata para a mais cara (cada pas
 3 gate de explicabilidade (§14.7)                              ─► template
 4 orçamento (§14.8): mensal, diário, por usuário               ─► template / 503 TIA-004
 5 single-flight (§14.3)                                         ─► aguarda o pedido em voo
-6 chamada Hydrogen (grounding só se o gate §14.6 liberar)
+6 chamada Hydrogen (grounding só se o gate §14.6 liberar)   [SUPERADO: ver §15.8 (radar + diagnóstico)]
 7 falha de infraestrutura ─► 1 chamada Flash ─► falha ─► template
 ```
 
@@ -672,7 +674,9 @@ O texto muda, então `PROMPT_VERSION = "tia-v2"`.
 | *Thinking* (`low`) | 600 | 700 |
 | **Saída** | **1.100** | **1.300** |
 
-### 14.6 Gate de grounding (determinístico, antes da chamada)
+### 14.6 Gate de grounding (determinístico, antes da chamada) — **SUPERADA pela §15 (Investigação externa v3, 2026-11-25)**
+
+> A pesquisa externa deixa de depender deste gate: todo diagnóstico chamado ao LLM considera o checklist de 8 dimensões via radar externo (§15). Estas condições passam a governar apenas a **busca específica do produto** (1 consulta, §15.5). O texto abaixo é histórico; valem a §15 e o P-180 revisto.
 
 Grounding **só liga** se houver termo de busca (§6.1) **e** pelo menos uma condição:
 
@@ -775,3 +779,290 @@ Conclusão: **nenhuma parte do plano (índice no GCS, locks, livro, diagnóstico
 4. **Qualidade com os gates** (resíduo < 0,20 vira template; pacote de 8 mil; 5 fatores): a 7.5 mede a perda de concordância; se faltar, subir só o que pagar (ex.: pacote de 10 mil).
 5. **Acerto por `evidenceHash` exige pacote determinístico** (listas ordenadas, arredondamento, sem timestamps): teste de contrato "mesmo dado, mesmo hash".
 6. **Termos do grounding** (exibir Search Suggestions; não alterar Grounded Results) seguem em CP-4; o cache guarda `searchSuggestionsHtml` junto.
+
+---
+
+## 15. Investigação externa v3 (radar externo + checklist fixo de dimensões) — 2026-11-25
+
+**Substitui o gate de grounding da §14.6 e o P-180.1.** Diretriz do usuário: a pesquisa no Google não pode ser só em casos específicos; política, clima, custo e demanda da matéria-prima e outros fatores externos devem ser considerados **sempre que o LLM for chamado**. O gate de explicabilidade (§14.7, P-188: template quando |Δ| < 2%, sem base, |ΔR$| < R$ 1.000, resíduo < 0,20 sem mercado/REGIONAL) **não muda**: onde não há LLM, não há análise nova. Preços desta seção: Hydrogen regional US$ 1,65 / 8,25 por 1M tokens e Flash US$ 0,825 / 4,125 (até 31/12/2026; 1,65 / 8,25 depois), busca US$ 0,014 por consulta (valores de `TREND_AI_PRICING_JSON`).
+
+### 15.1 Desenho em três peças
+
+| Peça | O que é | Quando roda | Compartilhamento |
+| :--- | :--- | :--- | :--- |
+| **Radar externo** | 1 chamada Hydrogen **com grounding**, sem dado da empresa, que avalia as 8 dimensões (§15.2) para um **assunto** (matéria-prima ou categoria) em um **mês-base** | Só se não existir radar válido para `(assunto, mês)` (§15.4) | Cache GCS **entre produtos e usuários** |
+| **Diagnóstico do produto** | Chamada Hydrogen **sem ferramentas** que recebe o pacote de evidências + o radar como dado e preenche `avaliacoesExternas` (uma linha por dimensão) | A cada diagnóstico que passar pelos gates | Cache por `evidenceHash` (inalterado) |
+| **Busca específica do produto** (opcional) | A mesma chamada do diagnóstico liga a ferramenta de busca com **1 consulta sugerida** | Só se `product_search_enabled` (§15.5) | Vale só para aquele diagnóstico |
+
+Efeitos: (1) a pesquisa de custo, safra e regulação, igual para todos os produtos da mesma matéria-prima, é paga **uma vez por mês**; (2) o radar é gerado **às cegas** quanto à variação do produto (sem "queda"/"alta" nas consultas, sem SKU), o que reduz viés de confirmação e elimina dado da empresa na chamada com busca; (3) o diagnóstico sem busca usa só JSON Schema (sem a combinação Preview schema + grounding) e **o Flash passa a poder fazer o fallback com o mesmo contexto externo**.
+
+### 15.2 Checklist fixo de dimensões (`ExternalDimension`, 8, ordem fixa)
+
+| # | `dimensao` | Cobre | Consulta-modelo do radar (`{mp}` matéria-prima, `{cat}` categoria) | `fatores[].tipo` mapeado |
+| :-: | :--- | :--- | :--- | :--- |
+| 1 | `POLITICA_REGULATORIO` | ANVISA, MAPA, tributos, tarifas de importação, fiscalização, proibições, eleições, greves | `ANVISA {cat} {ano}` + `tributo tarifa importação {mp} {mes_ano}` (1 consulta combinada) | `POLITICO_REGULATORIO` |
+| 2 | `CLIMA_SAFRA` | Seca, geada, chuva, calor/frio, quebra ou recorde de safra | `safra {mp} clima {mes_ano}` | `CLIMA` |
+| 3 | `CUSTO_MATERIA_PRIMA` | Preço do insumo, cotação internacional, energia | `preço oferta demanda {mp} {mes_ano}` (consulta única das dimensões 3 e 4) | `MATERIA_PRIMA` |
+| 4 | `OFERTA_DEMANDA_MATERIA_PRIMA` | Escassez, estoque global, demanda de outras indústrias, fornecedores | (mesma consulta da 3) | `MATERIA_PRIMA` |
+| 5 | `CAMBIO_LOGISTICA_IMPORTACAO` | Dólar, frete, porto, greve de transporte, anuência | `importação {mp} dólar frete {mes_ano}` | `MATERIA_PRIMA` |
+| 6 | `CONSUMO_MIDIA_SAUDE` | Tendência de consumo, mídia, influenciadores, estudos de saúde, estação | `tendência consumo {cat} {mes_ano}` | `OUTRO` |
+| 7 | `CONCORRENCIA` | Lançamentos, preços e campanhas de marcas e varejistas | `{cat} lançamento preço concorrência {mes_ano}` (consulta única das dimensões 7 e 8) | `CONCORRENCIA_MERCADO` |
+| 8 | `EVENTOS_MERCADO` | Feiras, datas comerciais, recalls, crises, fusões | (mesma consulta da 7) | `OUTRO` |
+
+Cinco consultas de tema (1, 2, 3+4, 5, 6) mais a 7+8 = **6 consultas sugeridas**; reserva de 8 (o modelo decide e a cobrança é por consulta executada). Os textos vêm de tabela fixa (`RADAR_QUERY_TEMPLATES`), nunca de texto livre do ERP ou da galeria.
+
+### 15.3 Assunto do radar: matéria-prima inferida de forma determinística
+
+`infer_radar_subject(evidence) -> RadarSubject(slug, termo, tipo)`; sem LLM, para a chave de cache ser estável.
+1. `funcaoPrimaria` → `PRIMARY_FUNCTION_RAW_MATERIAL_TERMS` (ex.: `creatina → "creatina monohidratada"`, `colageno_pele → "colágeno hidrolisado"`, `omega → "óleo de peixe"`, `whey → "soro de leite"`, `cha_infusao → "ervas e plantas medicinais"`), `tipo = MATERIA_PRIMA`.
+2. Sem função: palavra-chave da **cascata/galeria** em lista fechada (`RAW_MATERIAL_KEYWORDS`: própolis, cúrcuma, spirulina, ginseng...). A descrição da galeria só é **comparada** com a lista; nunca vai ao prompt do radar (é dado não confiável).
+3. Sem nada: `galleryCategory` ou `Tipo` do catálogo, `tipo = CATEGORIA`. Sem nenhum termo: radar não gerado e as 8 dimensões saem `NAO_AVALIADA` com `motivoNaoAvaliado = SEM_TERMO_BUSCA`.
+
+`slug` = termo normalizado (minúsculas, sem acento, `-`). Estimativa: até ~12 assuntos ativos por mês no catálogo atual.
+
+### 15.4 Radar: chave, conteúdo, validade e geração
+
+| Item | Especificação |
+| :--- | :--- |
+| Chave GCS | `radar/{RADAR_PROMPT_VERSION}/{slug}/{AAAA-MM}.json` (`AAAA-MM` = mês-base da análise). Sem usuário, SKU, cliente ou variação na chave ou no conteúdo |
+| Conteúdo | `geradoEm`, `modelo`, `assunto{slug,termo,tipo}`, `mesBase`, `dimensoes[8]`, `fontes[]` com id `F1..F16`, `consultasExecutadas`, `searchSuggestionsHtml`, `radarHash` |
+| `dimensoes[i]` | `{dimensao, status: AVALIADA\|SEM_EVIDENCIA, movimento: SUBIU\|CAIU\|ESTAVEL\|MUDOU\|INDEFINIDO, intensidade: FORTE\|MODERADA\|FRACA\|null, nota (≤ 140, sem dígitos), fonteIds[≤ 2]}`. `SEM_EVIDENCIA` = "dimensão avaliada, nada relevante achado": **nunca é omitida** |
+| `fontes[i]` | `{id, url, dominio, titulo, dataPublicacao\|null, origemData: MODELO\|URL\|SEM_DATA}`, validadas como na §8.3 (allow-list de citações, datas, http/https, IP literal descartado) |
+| Janela de pesquisa | de (início do mês-base − `RADAR_LOOKBACK_MONTHS` = 6) até o fim do mês-base. Fonte mais antiga que `RADAR_SOURCE_LOOKBACK_DAYS` (270) do fim do mês-base: `NOTICIA_ANTIGA`, descartada. Fonte posterior ao mês-base é guardada com a data (o backend a rotula por análise, §15.7) |
+| Validade (TTL lógico) | `RADAR_TTL_DAYS = 30` para o mês-base corrente e o anterior; `RADAR_TTL_PAST_DAYS = 90` para meses mais antigos (o passado muda pouco). Retenção física 120 dias (ciclo de vida do prefixo `radar/`, `devops`) |
+| Renovação | Só por TTL vencido ou `RADAR_PROMPT_VERSION` novo. **`force` do diagnóstico não renova o radar** (evita gasto de busca por clique) |
+| Geração | Hydrogen, `thinking low`, `max_output_tokens = 3.000`, busca ligada, schema `RadarOutput` raso (2 níveis). Single-flight por `radar/{slug}/{mês}` (mesmo `lease_store`, TTL 90 s). 1 nova tentativa por violação de schema; **sem fallback Flash** (schema + grounding não confirmado no Flash); contingência `two_step` só aqui (+~US$ 0,01) se a combinação Preview falhar |
+| Orçamento | Reserva e acerto no livro; `RADAR_BUDGET_SHARE = 0,35` do teto mensal (US$ 0,63) é o máximo com radares; no máximo `RADAR_MAX_NEW_PER_DAY = 3` novos por dia |
+| Privacidade | A chamada do radar não leva dado da empresa: só termo de assunto, mês e a lista de dimensões. Por isso pode ser compartilhado entre usuários |
+
+### 15.5 Diagnóstico do produto: consultas e contexto
+
+- **Entrada nova (bloco U5):** `<radar_externo_{nonce}>` com JSON compacto do radar (8 linhas: `dimensao`, `movimento`, `intensidade`, `nota`, ids e data `AAAA-MM` das fontes), até `MAX_RADAR_CONTEXT_CHARS = 3.000` (~900 tokens). Tratado como **dado não confiável** (§15.11). S2 (guia de fatores) é reescrito como checklist: "avalie as 8 dimensões, uma linha cada; sem evidência, diga SEM_EVIDENCIA".
+- **Busca específica do produto (`product_search_enabled`)**, função pura antes da chamada: há termo de busca **e** modo ≠ `QUALITATIVO` **e** nível de orçamento `NORMAL` **e** uma condição: (a) `diagnosticoMercado ∈ {MERCADO_EM_QUEDA, MERCADO_EM_ALTA}` com `REGIONAL` avaliado; ou (b) resíduo ≥ 0,30; ou (c) `REGIONAL` avaliado e resíduo ≥ 0,15; ou (d) `PERDA/GANHO_DE_PARTICIPACAO` com fornecedor identificável. Ela **complementa** o radar (fornecedor, UF, lançamento de afim); deixa de ser o que liga a pesquisa externa.
+- **Consultas por análise:** radar 6 (reserva 8), só quando é gerado, **mais 0 ou 1** do produto (`PRODUCT_SEARCH_MAX_QUERIES = 1`). Consulta do produto por tabela: participação → `"{fornecedor} {cat} {ano}"`; mercado/REGIONAL → `"{mp} {UF por extenso} {mes_ano}"`; demais → `"{cat} {fornecedor} lançamento {ano}"`. Sem nome comercial e sem "queda/alta".
+- **Saída nova do LLM, `avaliacoesExternas`, exatamente 8 itens, um por dimensão, ordem fixa:** `{dimensao, direcao, confianca, relevanciaAoProduto, fonteIds[≤2], nota (≤ 160)}`. O modelo só **referencia fontes por id** (`F1..F16` do radar ou `P1` da busca do produto); o backend preenche url, título, domínio e data. Dimensão omitida pelo modelo é completada pelo backend como `NAO_AVALIADA` (violação não bloqueante, só log).
+- **"IA não escreve dígitos" (mantida e ampliada):** `resumo`, `explicacao`, `nota` e `descricao` sem nenhum dígito (P-182.1 revisada); `fonteIds` seguem `^[FP][0-9]{1,2}$` e só aparecem nesse campo; números e datas exibidos vêm do motor ou das fontes validadas. O radar também guarda `nota` sem dígito.
+
+### 15.6 Forma no JSON de resposta (contrato a ajustar pelo `architect`)
+
+```json
+"fatoresExternos": [
+  { "dimensao": "CUSTO_MATERIA_PRIMA", "status": "AVALIADA",
+    "direcao": "PRESSAO_BAIXA", "confianca": "MEDIA", "relevanciaAoProduto": "ALTA",
+    "relacaoTemporal": "ANTERIOR", "rotulo": "POSSIVEL", "origemEvidencia": "RADAR",
+    "nota": "Insumo importado ficou mais caro e pode ter pressionado o preço de venda.",
+    "fontes": [ { "id": "F3", "url": "https://...", "dominio": "...", "titulo": "...", "dataPublicacao": "2026-07-14", "origemData": "MODELO" } ] },
+  { "dimensao": "CLIMA_SAFRA", "status": "SEM_EVIDENCIA", "direcao": "INDETERMINADA",
+    "confianca": "BAIXA", "relevanciaAoProduto": "NENHUMA", "relacaoTemporal": null,
+    "rotulo": "SEM_EVIDENCIA", "origemEvidencia": "NENHUMA",
+    "nota": "Nenhuma evidência encontrada nesta dimensão na pesquisa feita.", "fontes": [] }
+]
+```
+
+| Campo | Valores e regra |
+| :--- | :--- |
+| `status` | `AVALIADA` (há fonte válida), `SEM_EVIDENCIA` (avaliada, nada achado), `NAO_AVALIADA` (sem radar, sem termo, orçamento ou falha; traz `motivoNaoAvaliado`) |
+| `direcao` | Pressão sobre as **vendas do produto**: `PRESSAO_ALTA`, `PRESSAO_BAIXA`, `NEUTRA` (só com fonte dizendo estabilidade), `INDETERMINADA` (padrão de `SEM_EVIDENCIA` e `NAO_AVALIADA`; "sem evidência" nunca vira "neutra") |
+| `confianca` | `MEDIA` ou `BAIXA`; **nunca `ALTA`**. `BAIXA` se a data é `origemData = MODELO` sem confirmação pela URL, se a fonte é única ou se o radar é stale |
+| `relevanciaAoProduto` | `ALTA`, `MEDIA`, `BAIXA`, `NENHUMA` (julgada pelo modelo com função primária, matéria-prima e categoria do pacote) |
+| `relacaoTemporal`, `rotulo` | Calculados **pelo backend** (§15.7), nunca pelo modelo |
+| `origemEvidencia` | `RADAR`, `BUSCA_PRODUTO`, `NENHUMA` |
+
+Promoção a `fatores[]` (máx. 5 no total, no máx. `MAX_EXTERNAL_FACTORS_IN_FACTORS = 3` externos): só item `AVALIADA`, `rotulo = POSSIVEL`, `relevanciaAoProduto ∈ {ALTA, MEDIA}` e coerência direcional (§15.7). O item não promovido continua visível em `fatoresExternos`. `fatores[].tipo` usa o mapeamento da §15.2; novo `fatores[].dimensao`.
+
+### 15.7 Como não inventar causalidade (tempo, direção, linguagem)
+
+O backend calcula, por fonte, `relacaoTemporal` contra a **Janela Atual** (`ini_cur..fim_cur`):
+
+| Data da fonte (`d`) | `relacaoTemporal` | `rotulo` | Pode ser hipótese causal? |
+| :--- | :--- | :--- | :--- |
+| `ini_pre − EXTERNAL_SOURCE_LOOKBACK_DAYS ≤ d < ini_cur` | `ANTERIOR` | `POSSIVEL` | Sim |
+| `ini_cur ≤ d ≤ fim_cur` | `CONTEMPORANEA` | `POSSIVEL` | Sim |
+| `d > fim_cur` | `POSTERIOR` | `CONTEXTO` | **Não** (consequência ou contexto, nunca causa); aparece em `fatoresExternos`, não em `fatores[]` |
+| `d` ausente ou inválida | `SEM_DATA` | `SEM_DATA` | **Não**; só em `hipotesesNaoConfirmadas` (`SEM_DATA`) |
+| `d` anterior ao limite | `ANTIGA` | `DESCARTADA` | Não (`FORA_DO_PERIODO`) |
+
+Regras adicionais: (1) **coerência direcional**: `PRESSAO_BAIXA` só se promove com variação negativa e `PRESSAO_ALTA` com positiva; direção contrária fica `CONTEXTO`; (2) fator externo **nunca** tem `parcelaEstimada`, e o resumo mantém a leitura de que o resíduo não está explicado (linguagem fixa "pode ter contribuído", "não confirmado"); (3) `SEM_EVIDENCIA` é exibida como "não encontramos evidência na pesquisa feita", **nunca** como "não houve"; (4) hipótese com fonte `POSTERIOR` ou `SEM_DATA` não ganha confiança; (5) como o radar é independente da variação, uma notícia só vira hipótese pela checagem determinística acima, não porque o modelo "procurou" a explicação.
+
+### 15.8 Ordem de decisão (substitui os passos 5 e 6 da §14.2)
+
+```
+1 kill-switch / credencial                      -> template
+2 cache de resultado (evidenceHash)             -> devolve salvo
+3 gate de explicabilidade (P-188)               -> template (+ radar existente, sem custo, §15.10)
+4 orçamento e limites                           -> template (+ radar stale) / 429
+5 single-flight do diagnóstico
+6 radar: fresco -> usa | ausente/vencido e orçamento permite -> gera (single-flight próprio) | senão stale | senão SEM_RADAR
+7 diagnóstico Hydrogen (sem ferramentas; com 1 consulta se product_search_enabled)
+8 falha de infraestrutura -> 1 chamada Flash SEM ferramentas, mesmo radar -> senão template
+```
+
+> **Otimização v3.1 (2026-11-26): a §15.14 prevalece sobre §15.1 a §15.13 onde houver divergência** (radar sem texto livre, 5 consultas, diagnóstico sem busca própria por padrão, teto duro de consultas, modelo do radar configurável, números de custo e capacidade). Os números da §15.9 abaixo são os da primeira versão do desenho (~60 diagnósticos/mês) e ficam como histórico.
+
+### 15.9 Custo por cenário e capacidade mensal (Hydrogen regional 1,65 / 8,25) — primeira versão, superada em números pela §15.14
+
+Premissas a calibrar no spike: radar 5.000 tokens de entrada (inclui ~3.000 de contexto das buscas) e 2.500 de saída; diagnóstico com radar 4.600 / 1.500 (v2 sem busca: 3.800 / 1.100); com 1 consulta do produto 5.600 / 1.650.
+
+| Cenário | Tokens (ent./saída) | Busca (US$) | **Custo (US$)** |
+| :--- | :-: | :-: | :-: |
+| Acerto de cache do diagnóstico ou template | — | — | **0,0000** |
+| **Radar** (6 consultas), cota grátis | 5.000 / 2.500 | 0 | **0,0289** |
+| Radar, busca cobrada (6 × 0,014) | idem | 0,084 | 0,1129 |
+| Diagnóstico com radar em cache, sem busca do produto | 4.600 / 1.500 | 0 | **0,0200** |
+| Idem + 1 consulta do produto (grátis / cobrada) | 5.600 / 1.650 | 0 / 0,014 | 0,0229 / 0,0369 |
+| Radar novo + diagnóstico (grátis) | — | 0 | **0,0489** a 0,0518 |
+| Radar novo + diagnóstico, tudo cobrado | — | 0,098 | 0,1329 a 0,1489 |
+| Fallback Flash (sem ferramentas) | 4.600 / 1.500 | — | 0,0100 até 31/12/2026; 0,0200 depois |
+| Nova tentativa por schema (~8%) | repete | — | +0,0200 |
+| Referência v2 (gate): sem busca / com busca grátis | 3.800 / 1.100; 5.300 / 1.300 | 0 | 0,0153 / 0,0195 |
+
+**Capacidade no teto de LLM de US$ 1,80** (diagnósticos: 70% sem busca do produto e 30% com; +8% de novas tentativas = US$ 0,0225 médio; radares +5% de novas tentativas):
+
+| Radares novos/mês | Gasto com radares | Diagnósticos/mês | Diagnósticos por radar |
+| :-: | :-: | :-: | :-: |
+| 8 | 0,24 | ~69 | ~8,6 |
+| **15 (base)** | **0,46** | **~60** | **4** |
+| 25 | 0,76 | ~46 | ~1,8 |
+| 15, **toda a busca cobrada** (pior caso) | trava em `RADAR_BUDGET_SHARE` (0,63): ~5 radares | ~46 (demais com radar stale ou `SEM_RADAR`) | — |
+
+Contra a v2 (~96 gerações/mês a preços regionais, só ~50% com alguma busca), a v3 **troca ~36 diagnósticos/mês por cobertura externa de 100%** dos diagnósticos gerados. Custo amortizado por diagnóstico: ~US$ 0,030 (US$ 1,80 ÷ 60). Acertos de cache e templates seguem ilimitados e gratuitos. Meta total de US$ 2,00 inalterada (infra da §14.11 ≈ US$ 0,00 a 0,12; o único acréscimo é o prefixo `radar/` no bucket existente, < US$ 0,001).
+
+**Consumo de busca:** base = 15 radares × 6 + ~18 consultas de produto = **~110 consultas/mês, 2,2% das 5.000 grátis** (3,4% com 25 radares) e 7% do contador conservador `GROUNDING_FREE_QUERIES_ASSUMED = 1.500`. O teto de 1.500/dia do plano pago não é alcançável.
+
+### 15.10 Cota grátis, orçamento esgotado e degradação
+
+| Situação | Comportamento |
+| :--- | :--- |
+| Cota de 5.000 grátis esgotada (por outro uso do projeto) | O livro já trata acima de 1.500/mês como cobrado (0,014/consulta). A reserva do radar sobe a ~0,15; `RADAR_BUDGET_SHARE` (35%) e `RADAR_MAX_NEW_PER_DAY` limitam a ~5 radares/mês; os demais diagnósticos usam radar **stale** (até `RADAR_STALE_MAX_DAYS = 120`) ou saem `SEM_RADAR` |
+| Nível `ALERTA` (≥ 80% = US$ 1,44) | Sem busca do produto; radar novo **só se não existir nenhum** (fresco ou stale) para o assunto; `force` e "Atualizar" desabilitados (P-178.4) |
+| Orçamento ou limite diário esgotado | Sem LLM e sem busca. **Template + bloco `radarExterno` somente leitura** se houver radar (fresco ou stale): dimensão, `movimento`, `nota` e fontes do radar, rotulado "Radar externo de N dias (sem análise de IA para este produto)", sem `direcao` nem `relevanciaAoProduto` (`INDETERMINADA`). O texto do resumo continua sem citar fator externo |
+| Radar stale usado como contexto do diagnóstico | `meta.ia.radar.estado = DESATUALIZADO`, aviso `RADAR_DESATUALIZADO`; as fontes passam pela mesma checagem temporal; confiança externa `BAIXA` |
+| Sem radar e sem orçamento para radar | Diagnóstico segue só com fatores internos; as 8 dimensões saem `NAO_AVALIADA` com `motivoNaoAvaliado = SEM_RADAR` e aviso `SEM_RADAR_EXTERNO`. A dimensão não é omitida |
+| Hydrogen indisponível no diagnóstico | 1 chamada Flash sem ferramentas com o mesmo radar; busca do produto pulada; aviso `SEM_BUSCA_EXTERNA` só se não havia radar |
+| Radar falhou (infraestrutura, ou schema após 1 nova tentativa) | Não é gravado; o custo consumido entra no livro; usa stale ou `SEM_RADAR`; não derruba o diagnóstico |
+| Prazos | Radar `RADAR_DEADLINE_SECONDS = 55`; `LLM_TOTAL_DEADLINE_SECONDS` 110 → **125** e `IN_FLIGHT_LOCK_TTL_SECONDS` 120 → **150** para o pior caso radar + diagnóstico (timeout HTTP de 150 s: o `architect` confirma) |
+
+### 15.11 Riscos e mitigações
+
+| Risco | Mitigação |
+| :--- | :--- |
+| **Prompt injection indireto vindo da web, agora persistente** (radar compartilhado: um envenenamento atinge todos até o TTL) | (1) A chamada com busca **não tem dado da empresa** nem ferramenta de ação: não há o que exfiltrar; (2) saída do radar fechada (enums, `maxItems`, `nota` ≤ 140 sem dígitos, sem URL nem `<>{}` no texto, nota com marcadores de injeção `ignore`/`instruç`/`system`/`prompt`/`http` é rejeitada); (3) o diagnóstico recebe o radar em `<radar_externo_{nonce}>` como **dado** (regra 5 de S1 estendida); (4) o modelo só referencia fontes por id e não escreve URL; (5) `radarHash` registrado; invalidar um radar suspeito = subir `RADAR_PROMPT_VERSION` ou apagar o objeto (runbook `devops`); (6) log `tia.radar.injectionSuspect` sem payload |
+| **Notícia antiga ou posterior** apresentada como causa | `relacaoTemporal` calculado pelo backend (§15.7); `POSTERIOR`, `SEM_DATA` e `ANTIGA` nunca viram fator causal |
+| **Viés de confirmação** | Radar gerado sem a variação do produto e com consultas neutras; a coerência direcional só entra **depois**, no backend |
+| **Overfitting narrativo** (8 dimensões sempre preenchidas induzem a "achar" causa) | `SEM_EVIDENCIA` é resposta válida e explícita; teto de 3 externos em `fatores[]`; confiança nunca `ALTA`; sem `parcelaEstimada`; métrica de falso positivo causal na 7.5 |
+| **Viés de fonte** (domínio único, blog, conteúdo patrocinado) | Fontes por dimensão ≤ 2 e domínio visível; selo "fonte oficial" (gov.br, anvisa.gov.br, inmet.gov.br, cepea.esalq.usp.br) como peso, não bloqueio (CP-7), medido na 7.5 |
+| **Termos do grounding** (exibir Search Suggestions; não alterar Grounded Results) | `searchSuggestionsHtml` do radar guardado e exibido sob o bloco do radar (mesma exceção `iframe sandbox` de CP-4); a `nota` é síntese própria, não Grounded Result editado: confirmar com avaliação jurídica |
+| Custo da busca acima do esperado (o modelo decide quantas consultas) | Custo pelo número real; alerta se a média do radar passar de 8 consultas; `max_output_tokens` 3.000; trava `RADAR_BUDGET_SHARE` |
+| Subestimativa de tokens (ferramenta de busca não documentada) | Calibrar no spike: se o radar passar de US$ 0,05 (cota grátis), reduzir para 4 consultas (fundir 5 e 6) |
+| Radar do mês corrente gerado cedo, sem notícias do fim do mês | TTL de 30 dias; `geradoEm` visível na tela; "Atualizar" do diagnóstico reusa o radar vigente |
+| Preço e cota de grounding no **Vertex** não confirmados (a cota de 5.000 é da doc do AI Studio) | Tratar como não confirmado; o livro cobra acima de 1.500; `devops` confere SKU de grounding no Billing antes de liberar |
+
+### 15.12 Parâmetros novos, alterados e removidos
+
+| Ação | Constante | Valor |
+| :--- | :--- | :--- |
+| Novas | `RADAR_PROMPT_VERSION`, `RADAR_TTL_DAYS`, `RADAR_TTL_PAST_DAYS`, `RADAR_STALE_MAX_DAYS` | `"radar-v1"`, 30, 90, 120 |
+| | `RADAR_LOOKBACK_MONTHS`, `RADAR_SOURCE_LOOKBACK_DAYS` | 6, 270 |
+| | `RADAR_MAX_SEARCH_QUERIES_SUGGESTED`, `RADAR_RESERVATION_QUERIES` | 6, 8 |
+| | `RADAR_BUDGET_SHARE`, `RADAR_MAX_NEW_PER_DAY`, `RADAR_DEADLINE_SECONDS`, `RADAR_MAX_OUTPUT_TOKENS` | 0,35, 3, 55, 3.000 |
+| | `PRODUCT_SEARCH_MAX_QUERIES`, `MAX_RADAR_CONTEXT_CHARS`, `MAX_EXTERNAL_FACTORS_IN_FACTORS` | 1, 3.000, 3 |
+| | `EXTERNAL_DIMENSIONS` (8, ordem fixa), `RADAR_QUERY_TEMPLATES`, `PRIMARY_FUNCTION_RAW_MATERIAL_TERMS`, `RAW_MATERIAL_KEYWORDS` | tabelas |
+| Alteradas | `PROMPT_VERSION` | `"tia-v2"` → `"tia-v3"` |
+| | `LLM_TOTAL_DEADLINE_SECONDS`, `IN_FLIGHT_LOCK_TTL_SECONDS` | 110 → 125, 120 → 150 |
+| | `GROUNDING_MIN_RESIDUAL_SHARE` (0,30), `GROUNDING_REGIONAL_MIN_RESIDUAL_SHARE` (0,15) | mantêm o valor; passam a governar só a **busca do produto** (renomear `PRODUCT_SEARCH_*`) |
+| | `MAX_SEARCH_QUERIES` (2) | → `PRODUCT_SEARCH_MAX_QUERIES` (1) |
+| | `INSIGHT_SOFT_TTL_DAYS` (30) | passa a valer para **todo** diagnóstico gerado por LLM (todos têm dimensão externa) |
+| Removidas | `GROUNDING_MIN_RESIDUAL_SHARE_ALERT` (0,50), `MAX_SEARCH_QUERIES_QUALITATIVE` | a 80% a busca do produto simplesmente desliga |
+
+### 15.13 Acréscimos à avaliação da fase 7.5
+
+| Métrica | Meta |
+| :--- | :--- |
+| Falso positivo causal (fator externo promovido que o comercial considera sem sustentação) | ≤ 10% dos promovidos |
+| Cobertura (diagnósticos com as 8 dimensões presentes) | 100% (completadas pelo backend) |
+| Fontes de `fatores[]` externos com `relacaoTemporal ∈ {ANTERIOR, CONTEMPORANEA}` | 100% |
+| Consultas médias por radar / custo médio por radar | ≤ 8 / ≤ US$ 0,05 |
+| Radares com injeção bloqueada nos casos de red team | 100% |
+
+Red team adicional: página com instrução dentro de uma nota do radar; fonte `POSTERIOR` apresentada como causa; fonte sem data; dimensão sem evidência convertida em "neutra".
+
+### 15.14 Otimização de custo v3.1 (2026-11-26): como recuperar capacidade mantendo as 8 dimensões
+
+Objetivo: voltar o mais perto possível das ~96 gerações/mês da v2, sem perder a cobertura das 8 dimensões.
+
+#### 15.14.1 Confirmações oficiais (consultadas em 26/11/2026)
+
+| Item | Resultado | Situação |
+| :--- | :--- | :--- |
+| Cobrança do grounding no Vertex (Gemini 3) | "Billing occurs for each search query generated by Gemini": **por consulta executada**, não por pedido ([docs Vertex](https://docs.cloud.google.com/vertex-ai/generative-ai/docs/grounding/grounding-with-google-search)). A mesma página cita limite de 1 milhão de *grounding prompts* por dia (irrelevante aqui) e não cobre o Gemini 4 | Confirmado para Gemini 3; **não confirmado para Gemini 4** |
+| Preço e cota grátis no Vertex | Resultados de busca mostram versões da página de preços do Vertex com **5.000 consultas grátis/mês agregadas entre Gemini 3 e 4, depois US$ 14/1.000**, e uma versão antiga com US$ 35/1.000 *prompts* aterrados; a página de preços do Vertex veio **truncada** nas duas leituras e há aviso de mudança de preço em 13/11/2026 sem detalhe | **Não confirmado**; manter US$ 14/1.000 e tratar a cota como incerta (teto duro, §15.14.3) |
+| `gemini-3.8-flash` combina busca + JSON Schema | **Sim, em Preview**: a página de saída estruturada lista `gemini-3.8-flash` com `gemini-4-*` entre os modelos que combinam saída estruturada com Google Search ([Structured output](https://aistudio.google.com/docs/structured-output)); a página do modelo lista os dois recursos mas não a combinação ([modelo](https://aistudio.google.com/docs/models/gemini-3.8-flash)) | Confirmado no AI Studio; **Vertex não confirmado**: validar no spike |
+| *Thinking* do 3.8 Flash | `low`/`medium`/`high`; `minimal` dá erro | Confirmado (já na §14.1) |
+
+Consequência: o radar **pode** usar o Flash (e ter fallback Flash), com a ressalva de validar a combinação no Vertex.
+
+#### 15.14.2 Alavancas avaliadas, com números (Hydrogen regional 1,65 / 8,25; Flash 0,825 / 4,125 até 31/12/2026 e 1,65 / 8,25 depois)
+
+Base de comparação (v3 primeira versão): radar 5.000 / 2.500 = US$ 0,0289; diagnóstico 4.600 / 1.500 = US$ 0,0200.
+
+| Alavanca | Decisão | Efeito calculado |
+| :--- | :--- | :--- |
+| **Radar sem texto livre** (por dimensão: `movimento`, `intensidade`, `tema` de lista fechada por dimensão, `fonteIdx`; a frase exibida vem de **modelo de texto fixo no backend**) | **Adotar** | Saída do radar 2.500 → ~1.000 tokens (~560 visíveis + ~400 de *thinking*); elimina o texto livre vindo da web (injeção persistente quase zerada, sem dígitos). Economia de ~US$ 0,0124 por radar |
+| **Consultas do radar 6 → 5** (funde 3+4+5: custo, oferta/demanda, câmbio/logística em 1 consulta; 1, 2, 6 e 7+8 mantidas) | **Adotar** (máx. 5 sugeridas, reserva 6) | Entrada do radar 5.000 → ~3.300 (system 500 + usuário 300 + contexto de busca ~2.500). Economia de ~US$ 0,0028 e de 1 consulta de cota |
+| **Prompt do radar comprimido** (system ~500 tokens, em inglês conciso, sem exemplos) | **Adotar** | Incluído na linha acima |
+| *Thinking* mínimo | **Já `low`** (o Hydrogen só tem `low` a `xhigh`; o 3.8 Flash não aceita `minimal`) | Sem ganho adicional |
+| **Fontes por dimensão no radar: 1** (2 só em dimensão `FORTE`) | **Adotar** | Contexto do radar no diagnóstico 900 → ~450 tokens |
+| **Diagnóstico sem busca própria por padrão** | **Adotar**: a busca do produto só liga se **não houver radar** (`SEM_RADAR`), modo ≠ `QUALITATIVO`, nível `NORMAL`, resíduo ≥ 0,30 e dentro do teto duro | Remove os 30% de diagnósticos com busca: ~US$ 0,0009 por diagnóstico em média |
+| Diagnóstico: contexto do radar ~450 tokens e `avaliacoesExternas` com `nota` (≤ 100) só para relevância ALTA/MEDIA | **Adotar** | Diagnóstico 4.600 / 1.500 → **4.250 / 1.300 = US$ 0,0177** |
+| **Radar em lote** (1 chamada para vários assuntos) | **Rejeitar** | O custo fixo por chamada (~800 tokens de entrada + ~200 de saída ≈ US$ 0,003) só se dilui: lote de 3 assuntos economiza ~US$ 0,002 por radar (~14%), ~US$ 0,03/mês com 15 radares (≈ 1,5 diagnóstico). Em troca: schema maior (risco de `400`), o contexto de busca e a saída crescem linearmente de qualquer forma, o radar sob demanda teria de esperar outros assuntos e uma falha derruba vários |
+| **Radar por categoria** em vez de matéria-prima | **Rejeitar** (híbrido) | Cairia de ~15 para ~8 radares (~US$ 0,07/mês, ~4 diagnósticos), mas perderia custo, safra e câmbio **do insumo**, que é o pedido do usuário. Adotar só a **fusão de famílias de matéria-prima** (ex.: `colageno_pele` e `colageno_tipo2` → "colágeno hidrolisado"), que reduz ~15 para ~12 radares |
+| **TTL por dimensão e refresh incremental** (política 60-90 d, demais 30 d) | **Rejeitar** | Com a chave por mês-base, a única dimensão que seria reaproveitada entre meses é a política: economiza ~1 dimensão (~US$ 0,0016) em ~2 de cada 3 radares, ~US$ 0,016/mês (≈ 1 diagnóstico), e exige radar montado de partes com datas diferentes. Mantém-se TTL único; **`RADAR_TTL_PAST_DAYS` sobe de 90 para 180** (mês passado não muda) |
+| **Flash como modelo do radar** | **Configurável** (`TREND_AI_MODEL_RADAR`), padrão `gemini-4-hydrogen` | Radar no Flash custa US$ 0,0068 até 31/12/2026 e **US$ 0,0137 depois** (igual ao Hydrogen): economia só de ~US$ 0,12 em 15 radares até 31/12. Usar só se a avaliação 7.5 mostrar qualidade equivalente; o fallback Flash do radar passa a ser permitido (combinação confirmada no AI Studio, validar no Vertex) |
+| **Prefixo estável para cache implícito (≥ 4.096 tokens)** | **Reordenar de graça, não orçar nem preencher** | Ordem do prompt: system → radar → evidências do produto. O prompt total (~4.250) já passa de 4.096; um acerto cobraria ~1.650 tokens de prefixo a ~US$ 0,08/1M em vez de 1,65: ~US$ 0,0026. Só ocorre se dois produtos do mesmo assunto forem analisados na janela (não documentada) do cache: com 30% de acerto, ~US$ 0,0008 (4%) |
+
+#### 15.14.3 Teto duro de busca (mantém o grounding na cota grátis)
+
+- **`GROUNDING_HARD_CAP_QUERIES = 1.500` por mês** (30% das 5.000 grátis): ao atingi-lo, o livro **não gera radar novo nem busca do produto**; o diagnóstico usa radar *stale* ou `SEM_RADAR`. Nunca se paga busca de propósito (sai o cenário "busca cobrada"). Se a cota real for menor ou compartilhada com outro uso, o pior caso é uma cobrança pequena acima do teto lógico, medida pelo Billing Budget.
+- Consumo esperado: 15 radares × 5 = **75 consultas/mês (1,5% da cota; 5% do teto duro)**; 25 radares = 125 (2,5%). Reserva por radar: 6 consultas.
+- `RADAR_MAX_NEW_PER_DAY = 3` e `RADAR_BUDGET_SHARE` (agora 0,25 do teto, US$ 0,45) permanecem como segunda trava.
+
+#### 15.14.4 Nova tabela de custo por cenário (US$)
+
+| Cenário | Tokens (ent./saída) | **Custo** |
+| :--- | :-: | :-: |
+| Acerto de cache do diagnóstico, template | — | **0,0000** |
+| **Radar v3.1** (Hydrogen, 5 consultas na cota grátis) | 3.300 / 1.000 | **0,0137** |
+| Radar v3.1 no Flash, até 31/12/2026 / depois | 3.300 / 1.000 | 0,0068 / 0,0137 |
+| **Diagnóstico com radar em cache** (Hydrogen, sem busca) | 4.250 / 1.300 | **0,0177** |
+| Diagnóstico sem radar, com 1 consulta do produto (`SEM_RADAR`) | ~4.800 / 1.400 | 0,0195 |
+| **Radar novo + diagnóstico** | — | **0,0314** |
+| Fallback Flash do diagnóstico (sem ferramentas) | 4.250 / 1.300 | 0,0089 até 31/12/2026; 0,0177 depois |
+| Nova tentativa por schema (~8%) | repete | +0,0177 |
+| Referências: v2 sem busca / v3 primeira versão (radar, diagnóstico) | — | 0,0153 / 0,0289 e 0,0200 |
+
+#### 15.14.5 Capacidade mensal no teto de US$ 1,80 de LLM
+
+Diagnóstico médio US$ 0,0177 × 1,08 (novas tentativas) = US$ 0,0191; radar US$ 0,0137 × 1,05 = US$ 0,0144.
+
+| Cenário | Gasto com radares | Diagnósticos/mês | Consultas de busca/mês |
+| :--- | :-: | :-: | :-: |
+| 8 radares/mês | 0,12 | ~88 | 40 |
+| 12 radares/mês (com fusão de famílias) | 0,17 | ~85 | 60 |
+| **15 radares/mês (base, conservador)** | **0,22** | **~83** | **75** |
+| 25 radares/mês | 0,36 | ~75 | 125 |
+| 15 radares com o radar no Flash até 31/12/2026 | 0,11 | ~88 | 75 |
+| v3 primeira versão (referência) | 0,46 | ~60 | ~110 |
+| v2 (referência, busca em ~50%) | — | ~96 | ~100 |
+
+Resultado: **de ~60 para ~83 diagnósticos/mês (+38%), 86% da capacidade da v2, mas com as 8 dimensões em 100% dos diagnósticos** (a v2 só buscava em ~50%). Custo amortizado: ~US$ 0,022 por diagnóstico (US$ 1,80 ÷ 83). O restante do teto é consumido quase todo pelo diagnóstico; reduzi-lo mais exigiria cortar o pacote de evidências (2.700 tokens), o que degrada a qualidade das parcelas internas e não foi proposto.
+
+#### 15.14.6 Ajustes de parâmetros e regras derivados
+
+| Ação | Item |
+| :--- | :--- |
+| Novas | `GROUNDING_HARD_CAP_QUERIES = 1.500`, `TREND_AI_MODEL_RADAR = gemini-4-hydrogen`, `RADAR_THEMES` (lista fechada de temas por dimensão) e `RADAR_THEME_TEXTS` (frases fixas pt-BR) |
+| Alteradas | `RADAR_MAX_SEARCH_QUERIES_SUGGESTED` 6 → **5**; `RADAR_RESERVATION_QUERIES` 8 → **6**; `RADAR_MAX_OUTPUT_TOKENS` 3.000 → **1.500**; `RADAR_TTL_PAST_DAYS` 90 → **180**; `RADAR_BUDGET_SHARE` 0,35 → **0,25**; `MAX_RADAR_CONTEXT_CHARS` 3.000 → **2.000**; busca do produto: só com `SEM_RADAR` (P-180.1 revista) |
+| Contrato | `radar.dimensoes[].nota` passa a ser texto fixo gerado pelo backend a partir de `tema`; `fatoresExternos[].fontes` ≤ 1 por padrão (2 em dimensão `FORTE`); novo campo `tema` (enum) |
+| Fallback do radar | Flash permitido (substitui "sem Flash" da §15.4) após validar a combinação no Vertex |
+| Reordenação do prompt | system → radar → evidências (prefixo estável, sem custo) |
+| Riscos novos | Consulta fundida (3+4+5) reduz a profundidade de câmbio/logística: medir na 7.5 por dimensão (taxa de `SEM_EVIDENCIA`); tema fechado perde nuance: ampliar a lista na 7.5 se a taxa de tema `OUTRO` passar de 20% |

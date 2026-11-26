@@ -1,6 +1,6 @@
 # Entidade / Feature: Diagnóstico de Motivos da Tendência de Vendas com IA (F7)
 
-Checklist técnico de execução da F7. Plano de produto: `.agents/docs/tasks/ia-tendencia-vendas-motivos.md` (v2 aprovado). Decisões técnicas: `.agents/docs/adr/ADR-009-diagnostico-tendencia-ia.md`. Contrato: `.agents/docs/api_contracts/sales-trend-insights.md` (1.1.0). Regras: `.agents/docs/business_rules/analytics-tendencia-ia.md` (P-150..P-188). Camada de IA (custo e teto: §14): `.agents/docs/architecture/trend-insights-llm.md`. Privacidade: `.agents/docs/privacy/analytics-tendencia-ia.md` (LGPD-TIA-01..14). Design Plan: `.agents/docs/design/plans/analytics-tendencia-ia.md`.
+Checklist técnico de execução da F7. Plano de produto: `.agents/docs/tasks/ia-tendencia-vendas-motivos.md` (v2 aprovado). Decisões técnicas: `.agents/docs/adr/ADR-009-diagnostico-tendencia-ia.md`. Contrato: `.agents/docs/api_contracts/sales-trend-insights.md` (**1.2.0**; radar externo, ADR-009 DA-13). Regras: `.agents/docs/business_rules/analytics-tendencia-ia.md` (P-150..P-188). Camada de IA (custo e teto: §14): `.agents/docs/architecture/trend-insights-llm.md`. Privacidade: `.agents/docs/privacy/analytics-tendencia-ia.md` (LGPD-TIA-01..14). Design Plan: `.agents/docs/design/plans/analytics-tendencia-ia.md`.
 
 **Status Etapa 3 (tester, 2026-11-24):** suite RED escrita em `tests/trend_insights/` (262 testes; ver `STATE_Testes_TendenciaIA.md`). Cobertos: T-7.1.1..7.1.7, 7.1.12, 7.1.13 (parcial), 7.1.17/18 (parcial), 7.2B.1..8, 7.2.1..7.2.4, 7.2.6..7.2.9. Pendentes: T-7.0c.*, T-7.1.14, 7.4.
 
@@ -141,7 +141,9 @@ Checklist técnico de execução da F7. Plano de produto: `.agents/docs/tasks/ia
 - [ ] **Schema + *grounding* no `gemini-3.8-flash`:** testar `google_search` + JSON Schema + `thinking low` (nunca `minimal`). Resultado define se o fallback roda **com** busca ou **sem** busca (aviso `SEM_BUSCA_EXTERNA`).
 - [ ] **Vertex:** confirmar SKU e preço do Hydrogen e do 3.8 Flash, disponibilidade da Interactions API (senão `generate_content`), citações presentes junto com saída JSON, campos de `usage` e contagem de consultas executadas, endpoint `global`, ausência de retenção de interação, escopo da cota grátis de 5.000 consultas.
 - [ ] **Pacote determinístico:** o mesmo dado gera o mesmo `evidenceHash` em execuções repetidas.
-- [ ] Números reais gravados em `STATE_IA_TendenciaIA.md` e em `trend-insights-llm.md` §14; `TREND_AI_PRICING_JSON` e `GROUNDING_FREE_QUERIES_ASSUMED` ajustados.
+- [ ] **(v3, DA-13) Vertex grounding e preço:** confirmar no projeto real, por Billing e página oficial, (a) SKU e preço do grounding no Vertex para Gemini 4 e Gemini 3.8 Flash (documentação com versões divergentes: US$ 14/1.000 consultas ou US$ 35/1.000 *prompts*; aviso de mudança de 13/11/2026), (b) escopo e valor da cota grátis (5.000/mês agregada?), (c) cobrança **por consulta executada** no Gemini 4 (confirmada só no Gemini 3), (d) busca + JSON Schema na mesma chamada **no Vertex** em `gemini-4-hydrogen` e `gemini-3.8-flash` (Preview no AI Studio), (e) citações e `usage` com a busca. Resultado decide `TREND_AI_MODEL_RADAR`, o fallback Flash do radar e `GROUNDING_HARD_CAP_QUERIES`.
+- [ ] **(v3) Calibração do radar:** 5 a 8 assuntos reais, medir entrada (estimada 3.300), saída (1.000), consultas executadas (esperado ≤ 5) e custo por radar (meta ≤ US$ 0,05; se passar, reduzir para 4 consultas fundindo a 6). Medir também o diagnóstico com radar em cache (estimado 4.250/1.300) e o contexto do radar (~450 tokens).
+- [ ] Números reais gravados em `STATE_IA_TendenciaIA.md` e em `trend-insights-llm.md` §14 e §15; `TREND_AI_PRICING_JSON` e `GROUNDING_FREE_QUERIES_ASSUMED` ajustados.
 
 ---
 
@@ -210,6 +212,64 @@ Checklist técnico de execução da F7. Plano de produto: `.agents/docs/tasks/ia
 
 ---
 
+### Tarefa 7.2-R: Investigação externa v3 (radar externo compartilhado, 8 dimensões, matéria-prima, teto de consultas)
+
+**Descritivo Detalhado:** implementa o ADR-009 **DA-13** e `trend-insights-llm.md` §15 e §15.14, sobre o que a 7.2 e a 7.2-B já entregaram (`PROMPT_VERSION` `tia-v2` → `tia-v3`). Contrato: `sales-trend-insights.md` 1.2.0 (`fatoresExternos[8]`, `radar`, `radarExterno`, `meta.ia.radar`, avisos e motivos novos). Depende da 7.2, da 7.2-B e do spike 7.2-S ampliado; fases R1 a R3 podem ser escritas antes do spike. Regras `P-180.1` a `P-180.5`, `P-181`, `P-182.x`, `P-184`, `P-178.x` revisadas pelo `analyst` (CP-18) antes de fechar a R5. Sem LLM real nos testes: dublê do `LlmClient`, do `RadarStore` e do `BudgetLedger`.
+
+**Critérios de Aceite:**
+- [ ] **LLM chamado sempre leva radar** (ou `SEM_RADAR` explícito): nenhuma resposta com `diagnosticoIa` traz menos de 8 `fatoresExternos`; `SEM_EVIDENCIA` nunca vira `NEUTRA` nem "não houve".
+- [ ] Radar sem dado da empresa: JSON enviado à chamada com busca não contém SKU, cliente, variação, valor nem descrição da galeria; chave do objeto sem usuário/SKU.
+- [ ] **Nenhuma string da web chega ao radar armazenado nem à API:** só enums, `tema` fechado e frases fixas do backend.
+- [ ] Teto duro de 1.500 consultas/mês: acima dele, nenhum radar novo e nenhuma busca do produto, e **nunca** se paga busca; a API não expõe o motivo em termos de custo.
+- [ ] Custo: radar dentro da reserva (~US$ 0,02, 6 consultas); capacidade simulada de ~83 diagnósticos/mês no teto de US$ 1,80 com 15 radares/mês; chave de cache do diagnóstico sem o radar.
+- [ ] Prazos: `LLM_TOTAL_DEADLINE_SECONDS = 125`, `IN_FLIGHT_LOCK_TTL_SECONDS = 150`, `RADAR_DEADLINE_SECONDS = 55`, `RESERVATION_TTL_SECONDS = 180`; HTTP da tela 150 s.
+
+**Etapas de Execução (Checklist Técnico):**
+
+*Fase R1: matéria-prima e assunto do radar `[PARALLEL]`*
+- [ ] **T-7.2R.1** (tester, red) `test_radar_subject.py`: função primária → matéria-prima; **fusão de famílias** (`colageno_pele` e `colageno_tipo2` geram o mesmo slug); palavra-chave só por lista fechada (descrição da galeria apenas comparada, nunca vai ao prompt); fallback categoria/`Tipo`; sem termo → `SEM_TERMO_BUSCA`; slug estável (minúsculas, sem acento, `-`). *P-180.4*
+- [ ] **D-7.2R.2** `domain/raw_material.py`: tabela de matéria-prima (`PRIMARY_FUNCTION_RAW_MATERIAL_TERMS`, `RAW_MATERIAL_KEYWORDS`, famílias) e `infer_radar_subject(evidence) -> RadarSubject(slug, termo, tipo)`.
+
+*Fase R2: dimensões, tabelas fechadas e sanitização `[PARALLEL]`*
+- [ ] **T-7.2R.3** (tester, red) `test_external_dimensions.py` e `test_radar_themes.py`: 8 dimensões em ordem fixa; mapeamento para `fatores[].tipo`; `RADAR_THEMES` por dimensão (lista fechada, inclui `OUTRO`) e `RADAR_THEME_TEXTS` sem dígitos e sem dado de produto; `temporal_relation` (`ANTERIOR`/`CONTEMPORANEA`/`POSTERIOR`/`SEM_DATA`/`ANTIGA`) nas bordas da Janela Atual; `directional_coherence`. *P-180.5*
+- [ ] **T-7.2R.4** (tester, red) `test_radar_injection.py` **(C-42)**: saída do radar com tema fora da lista, texto livre, URL, `<>{}` ou marcador (`ignore`, `instruç`, `system`, `prompt`, `http`) é **rejeitada inteira** e não gravada; radar envenenado não altera schema, tipos nem cria número; página com instrução não chega ao armazenado; log `tia.radar.injectionSuspect` sem payload. *P-184*
+- [ ] **D-7.2R.5** `domain/external_dimensions.py`, `domain/radar_themes.py`, `llm/radar_schema.py` (`RadarOutput` raso: `movimento`, `intensidade`, `tema`, `fonteIdx`; sem string livre), sanitização e lista fechada em `llm/validation.py`.
+
+*Fase R3: radar externo (store, serviço, runner, política) `[PARALLEL]` com R2*
+- [ ] **T-7.2R.6** (tester, red) `test_radar_store_policy.py` **(C-37)**: chave `radar/{versão}/{slug}/{AAAA-MM}.json` sem SKU/usuário; TTL 30 dias (corrente e anterior) e 180 (meses antigos), *stale* até 120; `force` não renova; single-flight (2 usuários e 2 instâncias compartilham 1 geração); escrita `if_generation_match`; objeto sem dado da empresa. *P-180.3*
+- [ ] **T-7.2R.7** (tester, red) `test_gates_template.py` ampliado **(C-36)**: `radar_policy(radar_state, budget_level, daily_new, share_spent, hard_cap)` → `USE_FRESH | GENERATE | USE_STALE | NONE`; `product_search_enabled` só com `SEM_RADAR`, modo ≠ `QUALITATIVO`, `NORMAL`, resíduo ≥ 0,30 e abaixo do teto duro; `evaluate_llm_gates` inalterado; todo diagnóstico por LLM leva radar. *P-180.1, P-188*
+- [ ] **T-7.2R.8** (tester, red) `test_evidence_payload.py` ampliado: radar **fora do `evidenceHash`**; bloco do radar ≤ `MAX_RADAR_CONTEXT_CHARS = 2.000`, sem dado de cliente; ordem do prompt system → radar → evidências. *P-179*
+- [ ] **D-7.2R.9** `store/radar_store.py`, `service/radar_service.py` (`get_or_create`, lease próprio 90 s), `RadarRunner` em `service/llm_runner.py` (modelo `TREND_AI_MODEL_RADAR`, 1 nova tentativa por schema, fallback Flash conforme o spike, `two_step` como contingência), `domain/gates.py` (`radar_policy`, `product_search_enabled`), `llm/search_queries.py` (`build_radar_queries` por `RADAR_QUERY_TEMPLATES`; `build_product_query`), `llm/prompts.py` (`radar_v1`, `tia_v3`, bloco `<radar_externo_{nonce}>`).
+
+*Fase R4: teto duro de consultas e orçamento `[PARALLEL]` com R3*
+- [ ] **T-7.2R.10** (tester, red) `test_budget.py` ampliado **(C-43, C-44)**: reserva do radar (6 consultas); `RADAR_BUDGET_SHARE = 0,25`; `RADAR_MAX_NEW_PER_DAY = 3`; `GROUNDING_HARD_CAP_QUERIES = 1.500`: no teto, sem radar novo e sem busca do produto, radar *stale* ou `SEM_RADAR`, **nunca** cobrança de busca; campos `gastoRadarMes`, `radaresNovosMes`, `radaresNovosDia` no livro; a 80% sem busca do produto e radar só se ausente; esgotado → template com `radarExterno` *stale* sem nova chamada; simulação de capacidade (~83 diagnósticos com 15 radares). *P-178.2..P-178.5*
+- [ ] **D-7.2R.11** `domain/budget.py` (variante radar), `store/budget_ledger.py` (`reserve`/`settle` por tipo `RADAR`/`DIAGNOSTICO`, consultas assumidas, trava `RADAR_BUDGET_SHARE`, teto duro), `llm/pricing.py` (preço de busca por consulta, sem cobrar acima do teto), `config.py` (`TREND_AI_MODEL_RADAR`, `GROUNDING_HARD_CAP_QUERIES`, `RADAR_*`; validação da lista permitida de modelos).
+
+*Fase R5: diagnóstico com 8 dimensões, causalidade e orquestração*
+- [ ] **T-7.2R.12** (tester, red) `test_external_validation.py` **(C-38 a C-41)**: 8 dimensões sempre (omitida → `NAO_AVALIADA`/`DIMENSAO_OMITIDA_PELA_IA`); `SEM_EVIDENCIA` ≠ `NEUTRA`; `POSTERIOR`/`SEM_DATA`/`ANTIGA` nunca em `fatores[]`; coerência direcional; confiança nunca `ALTA`; no máximo 3 externos; sem `parcelaEstimada`; `fonteIds` fora do radar ∪ busca rejeitado; dígito em `nota` bloqueia; `fonteIds` com gramática `^[FP][0-9]{1,2}$`. *P-180.5, P-181, P-182*
+- [ ] **T-7.2R.13** (tester, red) `test_llm_orchestrator.py` ampliado **(C-45)**: ordem da §15.8 (kill-switch → cache → gate → orçamento → single-flight → radar → diagnóstico → Flash); radar falha → diagnóstico segue com `SEM_RADAR` e aviso `SEM_RADAR_EXTERNO` (sem `IA_FALHOU`); Flash do diagnóstico usa o mesmo radar sem ferramentas; **cache do diagnóstico não depende do radar**; revisar **C-28b** (resíduo 25% agora chama o LLM com radar e sem busca do produto) e **C-29a** (a 80% a busca do produto desliga); prazos 125/150 s com relógio falso. *P-183*
+- [ ] **D-7.2R.14** `llm/output_schema.py` (`avaliacoesExternas`), `llm/validation.py` (8 dimensões, `fonteIds`, promoção a `fatores[]`), `llm/evidence_payload.py` (bloco do radar fora do hash), `store/insight_store.py` (`radarRef`, TTL de 30 dias para todo diagnóstico por LLM), `service/llm_orchestrator.py` (passos 6 a 8 da §15.8), `domain/template_summary.py` (`radarExterno` somente leitura, texto do resumo inalterado), constantes e `PROMPT_VERSION = "tia-v3"`.
+
+*Fase R6: contrato e API*
+- [ ] **T-7.2R.15** (tester, red) `test_api_contract.py` ampliado: `fatoresExternos` (8 itens, enums de 2.4), `fontes[].id`, `radar` (`origem`, `diasDesdeGeracao`, `desatualizado`), `meta.ia.radar.estado`, `data.radarExterno` (GET e `POST` em template, sem `direcao`), avisos `RADAR_DESATUALIZADO` e `SEM_RADAR_EXTERNO`, motivos `POSTERIOR_AO_PERIODO`/`SEM_COERENCIA_DIRECIONAL`, `health.radar` e `ia.modeloRadar`, `promptVersion = "tia-v3"`, `version = "1.2.0"`; **varredura de custo (contrato 4.4) estendida:** nenhuma chave `usd`, `custo`, `token`, `consultas`, `preco`, `teto`, `gasto`, `saldo`, `evidenceHash`, `radarHash` nem caminho `radar/` em qualquer resposta.
+- [ ] **D-7.2R.16** `service/insights_service.py` e `api/router.py` (campos novos, `meta.ia.radar`, avisos, `radarExterno` no `GET`), mapper que descarta `radarRef`, `radarHash` e campos de custo; `GET` nunca gera radar.
+
+*Fase R7: infraestrutura e script de budget (`devops`)*
+- [ ] **D-7.2R.17 (`devops`)** Atualizar `infra/trend-insights/lifecycle.json` com o prefixo `radar/` (retenção **210 dias**, acima de 180 dias de validade do passado e 120 de *stale*) e `01-bucket.sh` (comentário de prefixos); `env.sh` e `.github/workflows/deploy-cloud-run.yml` repassam `TREND_AI_MODEL_RADAR`, `GROUNDING_HARD_CAP_QUERIES`, `RADAR_*`, `LLM_TOTAL_DEADLINE_SECONDS=125`, `IN_FLIGHT_LOCK_TTL_SECONDS=150`, `RESERVATION_TTL_SECONDS=180`; `pricing.json` ganha o preço de busca por consulta **após o spike** (valor do Vertex confirmado); `verify_checks.py`/`06-verify.sh` conferem o ciclo de vida de `radar/` e as novas variáveis; `04-budget.sh` (Cloud Billing Budget de US$ 2, 50/80/100%) **inalterado**, mas o alerta de 50% passa a ser lido junto com o contador de consultas do livro; runbook `.agents/docs/devops/trend-insights-infra.md` ganha: invalidar radar suspeito (subir `RADAR_PROMPT_VERSION` ou apagar `radar/{versão}/{slug}/`), conferir SKU de grounding no Billing e acompanhar o teto de 1.500 consultas.
+- [ ] **D-7.2R.18 (`privacy_officer`)** Registrar no RIPD/parecer que a chamada com busca do radar não leva dado comercial nem pessoal (só termo de assunto, mês e lista de dimensões).
+- [ ] **D-7.2R.19 (`security`)** Red team da §15.11 sobre o radar (página com instrução, fonte `POSTERIOR` como causa, fonte sem data, "sem evidência" convertida em "neutra") antes do release.
+
+*Fase R8: frontend e avaliação*
+- [ ] **D-7.2R.20 (`designer`/`developer`)** Painel de fatores externos: 8 linhas fixas com `SEM_EVIDENCIA` como "não encontramos evidência na pesquisa feita" (nunca "não houve"), selo de idade do radar e `RADAR_DESATUALIZADO`, bloco `radarExterno` somente leitura com o rótulo "Radar externo de N dias (sem análise de IA para este produto)"; ajustar o Design Plan.
+
+**Audit (Testes e Validação):**
+- [ ] **Cenário 1:** dois produtos da mesma matéria-prima no mesmo mês: 1 radar gerado (`GERADO_AGORA`) e o segundo diagnóstico com `radar.origem = "CACHE"`; consultas de busca do mês +5 no livro.
+- [ ] **Cenário 2:** `GROUNDING_HARD_CAP_QUERIES` baixado para 5 em homologação: segundo radar não é gerado; diagnóstico sai com `SEM_RADAR` ou radar *stale*; fatura sem item de busca.
+- [ ] **Cenário 3:** orçamento esgotado com radar existente: `POST` devolve template com `radarExterno`; sem nenhuma chamada ao Vertex.
+- [ ] **Cenário 4:** objeto de radar com `tema` inválido plantado no GCS é rejeitado e ignorado.
+
+---
+
 ### Tarefa 7.3: Frontend — painel "Por que?"
 
 **Descritivo Detalhado:** painel lateral/tela cheia na página `/tendencia-vendas`, conforme `design/plans/analytics-tendencia-ia.md` e contrato §5. Pode começar com a 7.1 pronta (cascata) usando dublê HTTP para a parte de IA.
@@ -242,6 +302,7 @@ Checklist técnico de execução da F7. Plano de produto: `.agents/docs/tasks/ia
 
 - [ ] **D-7.5.1** `tests/eval/trend_insights/cases.jsonl` com pacotes congelados (o teste de privacidade LGPD-TIA-03 roda também nesse arquivo).
 - [ ] **D-7.5.2** Medir concordância do fator principal, taxa de fontes válidas, fontes com `origemData = MODELO` e precisão de mercado × concorrência; **medir a perda de concordância causada pelos gates (resíduo < 0,20 vira template), pelo pacote de 8.000 caracteres e pelo texto sem números**; recalibrar limiares (`MIN_EXPLAINABLE_VARIATION_PCT`, `DOMINANT_EFFECT_RATIO`, `LLM_MIN_RESIDUAL_SHARE`, `GROUNDING_MIN_RESIDUAL_SHARE`) se necessário, subindo só o que couber no teto de US$ 2.
+- [ ] **D-7.5.4 (v3)** Métricas do radar (`trend-insights-llm.md` §15.13 e red team §15.11): falso positivo causal ≤ 10% dos fatores externos promovidos; cobertura 100% das 8 dimensões; 100% das fontes de `fatores[]` externos `ANTERIOR`/`CONTEMPORANEA`; consultas médias por radar ≤ 5 e custo ≤ US$ 0,05; radares com injeção bloqueada 100% nos casos de red team; taxa de `SEM_EVIDENCIA` por dimensão (consulta fundida 3+4+5) e de tema `OUTRO` (> 20%: ampliar `RADAR_THEMES`); comparar Hydrogen × Flash no radar para decidir `TREND_AI_MODEL_RADAR`.
 - [ ] **D-7.5.3** Registrar o custo real por diagnóstico (do livro e da fatura), comparar com ~US$ 0,014 a 0,018 e ajustar `TREND_AI_PRICING_JSON`, `GROUNDING_FREE_QUERIES_ASSUMED` e as reservas. Revisar o preço do Flash na virada de 01/01/2027.
 
 ---
@@ -258,7 +319,7 @@ Checklist técnico de execução da F7. Plano de produto: `.agents/docs/tasks/ia
 | LGPD-TIA-08 | T-7.2.9, D-7.2.13 (`devops`: Vertex com faturamento, sem chave de API) |
 | LGPD-TIA-09, 10 | T-7.2.7, T-7.2.8, T-7.2B.1, D-7.0c.9 (`devops`) |
 | LGPD-TIA-11 | T-7.2.7 |
-| LGPD-TIA-12 | T-7.2.2 |
+| LGPD-TIA-12 | T-7.2.2, T-7.2R.4 (radar sem dado da empresa e sem texto livre), D-7.2R.18 |
 | LGPD-TIA-13 | T-7.1.17 |
 | LGPD-TIA-14 | T-7.0c.3, T-7.1.17 |
 
@@ -266,7 +327,7 @@ Checklist técnico de execução da F7. Plano de produto: `.agents/docs/tasks/ia
 
 ```
 7.0c ───────────────┐ (pode ir a produção sozinha)
-7.1 (A ∥, B ∥) → 7.1-M ─┬─► 7.2-S (spike) ─┬─► 7.2 ─► 7.5
+7.1 (A ∥, B ∥) → 7.1-M ─┬─► 7.2-S (spike, ampliado v3) ─┬─► 7.2 ─► 7.2-R (radar; R1..R3 ∥, R4 ∥) ─► 7.5
                         │                   └─► 7.2-B (orçamento, ∥ com 7.2) ─┘
                         ├─► 7.3 (cascata; IA após 7.2)
                         └─► 7.4

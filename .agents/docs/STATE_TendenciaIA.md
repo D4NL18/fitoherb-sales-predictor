@@ -36,5 +36,12 @@ Regras reescritas conforme `STATE_IA_TendenciaIA.md` e ADR-009: último ID P ago
 - **Nova:** P-188 (gates sem LLM e resumo por template). Matriz: C-21a/b, C-25a/b, C-28a..d, C-29a, C-33a/b.
 - **Pendente do `architect`:** contrato e ADR ainda refletem a v1 (remover `deep`/`tipoAnalise`; decidir 200 com template em vez de 503 `TIA-004`).
 
+## Revisão v3/v3.1 (2026-11-26, investigação externa e otimização de custo)
+Regras aplicadas conforme `STATE_IA_TendenciaIA.md` (impactos v3 e v3.1) e `architecture/trend-insights-llm.md` §15/§15.14. Nenhum ID renumerado.
+- **Alteradas:** P-174.1 (ordem de decisão com radar; template + `radarExterno`), P-175/P-175.6 (`tia-v3`, radar fora da chave, TTL vale para todo LLM), P-176.2 (trava 150 s; radar 90 s), P-177.5/.6, P-178.1/.2/.3/.4/.5, P-179 (radar 2.000 caracteres fora do hash), P-180 e P-180.1/.2, P-181, P-182.1/.4/.5, P-183.5, P-184.3, P-186/P-187, P-188 (inalterado, nota). Constantes: teto duro 1.500 consultas, TTL 30/180 e stale 120 d, 5 consultas (reserva 6), `RADAR_BUDGET_SHARE` 0,25, prazos 125/150 s.
+- **Novas:** P-178.8, P-180.3 a P-180.6, P-181.3, P-184.6; matriz C-36 a C-45 (C-28, C-28b, C-29a revisados). O antigo C-36 (SQL fora do ar) passou a **C-35a** para liberar a numeração da v3.
+- **Glossário:** Radar Externo, Dimensão Externa, Tema (do Radar), Sem Evidência, Relação Temporal.
+- **Pendente:** `architect` (contrato 1.2.0 e ADR-009), `devops` (SKU/cota de grounding no Vertex, ciclo de vida `radar/`), `privacy_officer` (RIPD do radar).
+
 ## Log
 - **2026-11-24 — analyst:** regras F7 P-150..P-187 redigidas; doc da Canibalização alinhada ao código (índice de afinidade); glossário seção 6.
