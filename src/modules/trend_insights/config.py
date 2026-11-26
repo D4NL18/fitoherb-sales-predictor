@@ -39,6 +39,13 @@ def _read_float(env: Mapping[str, str], name: str, default: float) -> float:
         raise SettingsError("Valor numerico invalido.", field=name) from None
 
 
+def _read_non_negative_int(env: Mapping[str, str], name: str, default: int) -> int:
+    value = _read_float(env, name, float(default))
+    if value < 0 or value != int(value):
+        raise SettingsError("Valor inteiro nao negativo esperado.", field=name)
+    return int(value)
+
+
 def _read_model(env: Mapping[str, str], name: str, default: str) -> str:
     value = (env.get(name) or default).strip()
     if value not in ALLOWED_MODELS:
@@ -95,6 +102,10 @@ class TrendInsightsSettings:
             bucket_name=env.get("TREND_INSIGHTS_BUCKET") or None,
             gcp_project=env.get("GOOGLE_CLOUD_PROJECT") or None,
             vertex_location=_read_location(env),
+            # Cota gratis de busca ASSUMIDA pelo livro. No Vertex ela nao esta confirmada: com 0 toda consulta e
+            # contada como paga (livro correto) e a busca sugere 1 consulta so. Ajuste sem deploy de codigo.
+            free_queries=_read_non_negative_int(
+                env, "TREND_AI_GROUNDING_FREE_QUERIES", constants.GROUNDING_FREE_QUERIES_ASSUMED),
         )
 
 

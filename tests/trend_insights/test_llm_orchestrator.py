@@ -138,6 +138,41 @@ def test_search_queries_are_billed_above_free_quota_and_passed_through_usage():
     assert _spent(rig) == pytest.approx(0.01425 + 0.014)
 
 
+def _suggested_queries(request):
+    return [line for line in request.user_prompt.splitlines() if line.startswith("- ")]
+
+
+def test_free_quota_available_suggests_two_queries():
+    rig = make_rig(llm=FakeLlm([make_llm_response(queries=2)]))
+    _go(rig, make_evidence(residual_share=0.6))
+    request = rig.llm.calls[0]
+    assert request.use_search_grounding is True
+    assert len(_suggested_queries(request)) == 2 and "no maximo 2 busca" in request.user_prompt
+
+
+def test_paid_search_is_capped_at_one_suggested_query():
+    # cota gratis esgotada no livro: cada consulta custa, entao so a de maior valor e sugerida
+    rig = make_rig(llm=FakeLlm([make_llm_response(queries=1)]))
+    seed_budget(rig, month=0.0, queries=1500)
+    _go(rig, make_evidence(residual_share=0.6))
+    request = rig.llm.calls[0]
+    assert len(_suggested_queries(request)) == 1 and "no maximo 1 busca" in request.user_prompt
+
+
+def test_no_free_quota_configured_means_paid_mode_from_the_first_query():
+    rig = make_rig(llm=FakeLlm([make_llm_response(queries=1)]), settings_env={"TREND_AI_GROUNDING_FREE_QUERIES": 0})
+    _go(rig, make_evidence(residual_share=0.6))
+    assert len(_suggested_queries(rig.llm.calls[0])) == 1
+    assert _spent(rig) == pytest.approx(0.01425 + 0.014)
+
+
+def test_search_off_does_not_read_the_query_counter_or_suggest_queries():
+    rig = make_rig(llm=FakeLlm([make_llm_response()]))
+    _go(rig, make_evidence(residual_share=0.25, diagnostico_mercado={"classificacao": "PERDA_DE_PARTICIPACAO"}))
+    request = rig.llm.calls[0]
+    assert request.use_search_grounding is False and _suggested_queries(request) == []
+
+
 # --- modelos, retries, schema
 def test_transient_failures_then_single_flash_call_is_fallback_and_saved():
     err = _ex().LlmTransientError

@@ -1,17 +1,12 @@
 """
-Pacote de evidencias do Motor (P-179, P-175): visao tipada sobre o mapa canonico do diagnostico e o
-`evidenceHash` deterministico que identifica o diagnostico salvo. Nenhum dado de cliente entra aqui.
+Pacote de evidencias do Motor (P-179, P-175): visao tipada sobre o mapa canonico do diagnostico. O
+`evidenceHash` que identifica o diagnostico salvo e calculado sobre o que o modelo ve (`llm/evidence_payload.py`).
+Nenhum dado de cliente entra aqui.
 """
 import copy
-import hashlib
-import json
 from dataclasses import dataclass
 from datetime import date
 from typing import Any, Dict, FrozenSet, List, Mapping, Optional, Tuple
-
-HASH_FLOAT_DECIMALS = 2
-HASH_SCORE_DECIMALS = 3
-_SCORE_KEYS = ("affinity_score", "residual_share")
 
 INTERNAL_FACTOR_TYPES: Tuple[str, ...] = (
     "SAZONALIDADE", "PRECO", "PRODUTO_NOVO", "CANIBALIZACAO_MESMO_FORNECEDOR",
@@ -145,26 +140,3 @@ class EvidencePackage:
         }
 
 
-def _round_node(node: Any, key: str = "") -> Any:
-    if isinstance(node, bool) or node is None or isinstance(node, (int, str)):
-        return node
-    if isinstance(node, float):
-        decimals = HASH_SCORE_DECIMALS if key in _SCORE_KEYS else HASH_FLOAT_DECIMALS
-        return round(node, decimals) + 0.0
-    if isinstance(node, Mapping):
-        return {str(k): _round_node(v, str(k)) for k, v in node.items()}
-    if isinstance(node, (list, tuple)):
-        rounded = [_round_node(v, key) for v in node]
-        return sorted(rounded, key=lambda v: json.dumps(v, sort_keys=True, ensure_ascii=False))
-    return str(node)
-
-
-def canonical_evidence_json(evidence: EvidencePackage) -> str:
-    """JSON canonico: floats arredondados, listas ordenadas, sem timestamps nem `dataReferencia` (P-175.7)."""
-    canonical = _round_node(evidence.data)
-    return json.dumps(canonical, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
-
-
-def compute_evidence_hash(evidence: EvidencePackage) -> str:
-    """sha256 do pacote canonico: mesmo dado, mesmo hash (P-175)."""
-    return hashlib.sha256(canonical_evidence_json(evidence).encode("utf-8")).hexdigest()

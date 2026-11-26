@@ -18,12 +18,13 @@ from src.modules.trend_insights.domain.constants import (
     LOGGER_NAME,
     PROMPT_VERSION,
 )
-from src.modules.trend_insights.domain.evidence import EvidencePackage, compute_evidence_hash
+from src.modules.trend_insights.domain.evidence import EvidencePackage
 from src.modules.trend_insights.domain.gates import evaluate_llm_gates, grounding_enabled
 from src.modules.trend_insights.domain.exceptions import BudgetDenied, BudgetUnavailable
 from src.modules.trend_insights.domain.ports import InFlightLease, ObjectConflict, ObjectStoreUnavailable
 from src.modules.trend_insights.domain.template_summary import build_template_summary
 from src.modules.trend_insights.llm.client import LlmClient
+from src.modules.trend_insights.llm.evidence_payload import compute_evidence_hash
 from src.modules.trend_insights.service.generation_guard import GenerationGuard
 from src.modules.trend_insights.service.llm_runner import LlmRunner, RunResult
 from src.modules.trend_insights.store.budget_ledger import BudgetLedger

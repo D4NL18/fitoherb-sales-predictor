@@ -7,6 +7,7 @@ from typing import List, Optional
 
 from src.modules.trend_insights.domain.constants import (
     MAX_SEARCH_QUERIES,
+    MAX_SEARCH_QUERIES_PAID,
     MAX_SEARCH_QUERIES_QUALITATIVE,
     MODE_QUALITATIVE,
 )
@@ -45,8 +46,18 @@ def _year(evidence: EvidencePackage) -> str:
     return evidence.base_month[:4]
 
 
-def build_search_queries(evidence: EvidencePackage) -> List[str]:
-    """1 a 2 consultas (1 no modo qualitativo), em ordem de prioridade."""
+def search_query_limit(evidence: EvidencePackage, is_paid_search: bool) -> int:
+    """
+    Consultas sugeridas: 2, ou 1 no modo qualitativo (sinal fraco) e quando a cota gratis do mes acabou
+    (cada consulta passa a custar). A API nao impoe o limite; ele e uma sugestao no prompt (CP-2).
+    """
+    if evidence.mode == MODE_QUALITATIVE:
+        return MAX_SEARCH_QUERIES_QUALITATIVE
+    return MAX_SEARCH_QUERIES_PAID if is_paid_search else MAX_SEARCH_QUERIES
+
+
+def build_search_queries(evidence: EvidencePackage, limit: int = MAX_SEARCH_QUERIES) -> List[str]:
+    """Ate `limit` consultas, em ordem de prioridade."""
     term = _category_term(evidence)
     if not term:
         return []
@@ -59,5 +70,4 @@ def build_search_queries(evidence: EvidencePackage) -> List[str]:
     if supplier and classification not in _MARKET_CLASSES:
         queries.append(f"{supplier} {term} {year}")
     queries.append(f"{term} mercado {year}")
-    limit = MAX_SEARCH_QUERIES_QUALITATIVE if evidence.mode == MODE_QUALITATIVE else MAX_SEARCH_QUERIES
     return list(dict.fromkeys(queries))[:limit]

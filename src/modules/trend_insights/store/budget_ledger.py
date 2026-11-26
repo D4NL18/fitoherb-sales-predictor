@@ -44,7 +44,7 @@ class BudgetLedger:
         self._store = store
         self._settings = settings
         self._clock = clock
-        self._level_cache: Optional[Tuple[datetime, str]] = None
+        self._level_cache: Optional[Tuple[datetime, str, int]] = None  # (leitura, nivel, consultas do mes)
 
     # ---------------------------------------------------------------- tempo
     def _local_now(self) -> datetime:
@@ -130,24 +130,32 @@ class BudgetLedger:
 
         self._mutate(apply)
 
-    def level(self) -> str:
-        """NORMAL/ALERTA/ESGOTADO com cache de 60 s; livro ilegivel conta como ESGOTADO (falha fechada)."""
+    def _snapshot(self) -> Tuple[str, int]:
+        """`(nivel, consultas do mes)` com cache de 60 s; livro ilegivel = ESGOTADO e cota gratis ja usada (falha fechada)."""
         now = self._clock()
         if self._level_cache and (now - self._level_cache[0]).total_seconds() < LEVEL_CACHE_SECONDS:
-            return self._level_cache[1]
+            return self._level_cache[1], self._level_cache[2]
         try:
             document, _generation = self._read(self._path())
         except ObjectStoreUnavailable:
             logger.warning("tia.budget.unavailable")
-            return "ESGOTADO"
+            return "ESGOTADO", self._settings.free_queries
         level = budget_level(
             document["gastoMes"], document["gastoDia"]["valor"],
             self._settings.monthly_budget_usd, self._settings.daily_budget_usd,
         )
-        self._level_cache = (now, level)
+        self._level_cache = (now, level, int(document["consultasMes"]))
         if level == "ALERTA":
             logger.warning("tia.budget.alert")
-        return level
+        return level, int(document["consultasMes"])
+
+    def level(self) -> str:
+        """NORMAL/ALERTA/ESGOTADO com cache de 60 s; livro ilegivel conta como ESGOTADO (falha fechada)."""
+        return self._snapshot()[0]
+
+    def month_queries(self) -> int:
+        """Consultas de busca executadas no mes (mesmo cache de 60 s do nivel); ilegivel conta como cota gratis usada."""
+        return self._snapshot()[1]
 
     def month_label(self) -> str:
         return f"{self._local_now():%Y-%m}"

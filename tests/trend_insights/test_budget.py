@@ -184,3 +184,23 @@ def test_settings_defaults_and_validation():
     assert s.monthly_budget_usd == pytest.approx(1.80) and s.daily_budget_usd == pytest.approx(0.20)
     assert s.model_default == HYDROGEN and s.model_fallback == FLASH
     assert make_settings(TREND_AI_ENABLED="false").ai_enabled is False
+
+
+def test_grounding_free_quota_is_configurable_and_validated():
+    assert make_settings().free_queries == 1500
+    assert make_settings(TREND_AI_GROUNDING_FREE_QUERIES=0).free_queries == 0
+    assert make_settings(TREND_AI_GROUNDING_FREE_QUERIES=5000).free_queries == 5000
+    for invalid in ("-1", "1.5", "muitas"):
+        with pytest.raises(mod("domain.exceptions").SettingsError):
+            make_settings(TREND_AI_GROUNDING_FREE_QUERIES=invalid)
+
+
+def test_month_queries_reader_follows_the_ledger_and_fails_toward_paid_mode():
+    rig, ledger = _ledger()
+    assert ledger.month_queries() == 0
+    rig.clock.advance(61)
+    seed_budget(rig, month=0.5, queries=1500)
+    assert ledger.month_queries() == 1500
+    rig.clock.advance(61)
+    rig.objects.fail = True
+    assert ledger.month_queries() >= rig.settings.free_queries

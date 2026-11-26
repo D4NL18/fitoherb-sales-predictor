@@ -8,8 +8,12 @@ import pytest
 from tests.trend_insights.helpers import FakeClock, FakeObjectStore, canonical_evidence, make_evidence, mod
 
 
+def _compute(evidence):
+    return mod("llm.evidence_payload").compute_evidence_hash(evidence)
+
+
 def _hash(**kw):
-    return mod("domain.evidence").compute_evidence_hash(make_evidence(**kw))
+    return _compute(make_evidence(**kw))
 
 
 def test_hash_is_sha256_hex_and_deterministic():
@@ -22,13 +26,52 @@ def test_hash_ignores_list_order_rounding_and_reference_date():
     afins2 = base["afins"] + [{**base["afins"][0], "sku": 5200}]
     a = mod("domain.evidence").EvidencePackage.from_mapping({**base, "afins": afins2}, data_referencia=date(2026, 11, 9))
     b = mod("domain.evidence").EvidencePackage.from_mapping({**base, "afins": list(reversed(afins2))}, data_referencia=date(2026, 11, 20))
-    ev = mod("domain.evidence").compute_evidence_hash
-    assert ev(a) == ev(b)
+    assert _compute(a) == _compute(b)
     assert _hash(delta_observado=-3000.001, variacao_pct=-30.0001) == _hash()
 
 
 def test_hash_changes_when_evidence_changes():
     assert _hash(delta_observado=-3500.0, variacao_pct=-35.0) != _hash()
+
+
+# --- o hash cobre so o que o modelo ve (arquitetura 14.3): ruido que nao chega ao prompt nao invalida o cache
+def test_hash_ignores_fields_the_model_never_sees():
+    base = canonical_evidence()
+    noisy = copy.deepcopy(base)
+    noisy["afins"][0]["valor_venda_atual"] = 99.9      # preco atual do afim: fora do prompt
+    noisy["afins"][0]["affinity_score"] = 0.714        # 3a casa: o prompt arredonda para 2
+    noisy["afins"][0]["categoria_galeria"] = "outra"   # fora do prompt
+    noisy["cascata"][0]["valor"] = -1000.3             # menos de R$ 1: o prompt envia reais inteiros
+    noisy["cascata"][0]["pontos_percentuais"] = -10.4  # fora do prompt
+    noisy["periodo"] = {"fator_ajuste": 1.07, "base_parcial": True, "contigua": True}
+    noisy["delta_observado"] = -3000.4
+    a = mod("domain.evidence").EvidencePackage.from_mapping(base, data_referencia=date(2026, 11, 9))
+    b = mod("domain.evidence").EvidencePackage.from_mapping(noisy, data_referencia=date(2026, 11, 9))
+    assert _compute(a) == _compute(b)
+
+
+def test_hash_ignores_affines_beyond_the_payload_limit():
+    limit = mod("domain.constants").MAX_AFFINES_IN_PAYLOAD
+    base = canonical_evidence()
+    top = [{**base["afins"][0], "sku": 6000 + i, "affinity_score": 0.9 - i / 100} for i in range(limit)]
+    tail = {**base["afins"][0], "sku": 7000, "affinity_score": 0.1}
+    cls = mod("domain.evidence").EvidencePackage
+    a = cls.from_mapping({**base, "afins": top}, data_referencia=date(2026, 11, 9))
+    b = cls.from_mapping({**base, "afins": top + [tail]}, data_referencia=date(2026, 11, 9))
+    assert _compute(a) == _compute(b)
+
+
+def test_hash_changes_with_anything_the_model_sees():
+    base = _hash()
+    seen_by_model = [
+        dict(residual_share=0.4),
+        dict(cascata=[{**canonical_evidence()["cascata"][0], "valor": -1200.0}]),
+        dict(afins=[{**canonical_evidence()["afins"][0], "variacao_pct": 25.0}]),
+        dict(diagnostico_mercado={"classificacao": "MERCADO_EM_QUEDA"}),
+    ]
+    assert all(_hash(**change) != base for change in seen_by_model)
+    new_gallery = "Texto novo da galeria, bem diferente do anterior e com mais de quarenta caracteres."
+    assert _compute(make_evidence(produto={"descricao_galeria": new_gallery})) != base
 
 
 def test_key_object_path_follows_adr():

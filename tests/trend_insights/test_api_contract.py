@@ -188,7 +188,7 @@ def test_no_response_leaks_cost_tokens_or_hash():
     client = _app(rig)
     bodies = [_post(client).json(), _post(client).json(), client.get(BASE + "/product/5102").json(),
               client.get(BASE + "/health").json()]
-    stored_hash = mod("domain.evidence").compute_evidence_hash(make_evidence())
+    stored_hash = mod("llm.evidence_payload").compute_evidence_hash(make_evidence())
     for body in bodies:
         keys = [k.lower() for k in collect_keys(body)]
         assert not [k for k in keys if any(bad in k for bad in FORBIDDEN_COST_KEYS)], keys

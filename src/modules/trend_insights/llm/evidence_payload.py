@@ -3,10 +3,11 @@ Pacote de evidencias enviado ao LLM, montado por LISTA BRANCA (P-179, LGPD-TIA-0
 Nada de cliente, custo unitario ou contagem pequena exata entra; o pacote tem no maximo 8.000 caracteres.
 A descricao da galeria NAO vai neste JSON: segue em bloco proprio, delimitado e sanitizado (P-184).
 """
+import hashlib
 import json
 import re
 from datetime import date, timedelta
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from src.modules.trend_insights.domain.constants import (
     EXTERNAL_SOURCE_LOOKBACK_DAYS,
@@ -206,10 +207,29 @@ def _shrink_once(payload: Dict[str, Any]) -> bool:
     return False
 
 
-def build_llm_payload(evidence: EvidencePackage) -> str:
-    """JSON compacto, deterministico (chaves ordenadas) e dentro do limite de caracteres."""
+def _fit_payload(evidence: EvidencePackage) -> Tuple[Dict[str, Any], str]:
+    """Pacote ja cortado para caber no limite de caracteres, com o JSON correspondente."""
     payload = _build_dict(evidence)
     text = _dump(payload)
     while len(text) > MAX_EVIDENCE_PAYLOAD_CHARS and _shrink_once(payload):
         text = _dump(payload)
-    return text
+    return payload, text
+
+
+def build_llm_payload(evidence: EvidencePackage) -> str:
+    """JSON compacto, deterministico (chaves ordenadas) e dentro do limite de caracteres."""
+    return _fit_payload(evidence)[1]
+
+
+def compute_evidence_hash(evidence: EvidencePackage) -> str:
+    """
+    Chave de reuso do diagnostico salvo (P-175): sha256 de TUDO que o modelo ve e de nada mais.
+    Por que: cada geracao custa dinheiro, e a mesma entrada produz o mesmo diagnostico. Hash sobre o mapa interno
+    inteiro (preco atual dos afins, score com 3 casas, afins alem dos enviados) invalidava o cache por mudancas que
+    nunca chegam ao prompt. Aqui valem os mesmos cortes e arredondamentos do prompt (R$ inteiros, 1 casa em %).
+    Ficam de fora o periodo de fontes (termina na data de referencia, que muda a cada carga) e o nonce.
+    """
+    payload, _ = _fit_payload(evidence)
+    payload["janela"] = {key: value for key, value in payload["janela"].items() if key != "fontes"}
+    payload["galeria"] = sanitize_gallery_description(evidence.data["produto"].get("descricao_galeria"))
+    return hashlib.sha256(_dump(payload).encode("utf-8")).hexdigest()

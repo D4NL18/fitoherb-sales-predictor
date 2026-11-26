@@ -36,7 +36,7 @@ from src.modules.trend_insights.llm.client import (
 from src.modules.trend_insights.llm.output_schema import LLM_OUTPUT_SCHEMA
 from src.modules.trend_insights.llm.pricing import compute_cost
 from src.modules.trend_insights.llm.prompts import build_prompts
-from src.modules.trend_insights.llm.search_queries import build_search_queries
+from src.modules.trend_insights.llm.search_queries import build_search_queries, search_query_limit
 from src.modules.trend_insights.llm.validation import ValidationContext, ValidationOutcome, validate_llm_output
 from src.modules.trend_insights.store.budget_ledger import BudgetLedger
 
@@ -94,11 +94,17 @@ class LlmRunner:
             reference_date=evidence.data_referencia,
         )
 
+    # ---------------------------------------------------------------- consultas de busca
+    def _suggested_queries(self, evidence: EvidencePackage) -> List[str]:
+        """Com a cota gratis do mes esgotada (ou inexistente), sugere so a consulta de maior valor."""
+        is_paid_search = self._ledger.month_queries() >= self._settings.free_queries
+        return build_search_queries(evidence, search_query_limit(evidence, is_paid_search))
+
     # ---------------------------------------------------------------- uma tentativa
     def _build_request(
         self, evidence: EvidencePackage, model_id: str, with_search: bool, violations: List[str], remaining: float,
     ) -> LlmRequest:
-        queries = build_search_queries(evidence) if with_search else []
+        queries = self._suggested_queries(evidence) if with_search else []
         system_prompt, user_prompt = build_prompts(
             evidence, secrets.token_hex(NONCE_BYTES), violations, queries, with_search)
         return LlmRequest(

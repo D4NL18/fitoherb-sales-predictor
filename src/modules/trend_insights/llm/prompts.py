@@ -4,7 +4,6 @@ Montagem dos prompts `tia-v2` (funcao pura). Regras so no `system`; dados so no 
 """
 from typing import Optional, Sequence, Tuple
 
-from src.modules.trend_insights.domain.constants import MODE_QUALITATIVE
 from src.modules.trend_insights.domain.evidence import EvidencePackage
 from src.modules.trend_insights.llm.evidence_payload import build_llm_payload, sanitize_gallery_description
 
@@ -47,12 +46,13 @@ def _gallery_block(evidence: EvidencePackage, nonce: str) -> str:
     )
 
 
-def _queries_block(queries: Sequence[str], is_qualitative: bool) -> str:
+def _queries_block(queries: Sequence[str]) -> str:
+    """O limite dito ao modelo e o numero de consultas sugeridas (o backend ja cortou a lista no limite)."""
     if not queries:
         return ""
-    limit = 1 if is_qualitative else 2
     items = "\n".join(f"- {query}" for query in queries)
-    return f"Faca no maximo {limit} busca(s). Comece por estas consultas, sem usar o nome comercial do produto:\n{items}"
+    return (f"Faca no maximo {len(queries)} busca(s). Comece por estas consultas, "
+            f"sem usar o nome comercial do produto:\n{items}")
 
 
 def build_prompts(
@@ -64,6 +64,6 @@ def build_prompts(
 ) -> Tuple[str, str]:
     """Devolve `(system_prompt, user_prompt)`."""
     evidence_block = f"<evidencias_{nonce}>\n{build_llm_payload(evidence)}\n</evidencias_{nonce}>"
-    search_block: Optional[str] = _queries_block(queries, evidence.mode == MODE_QUALITATIVE) if with_search else ""
+    search_block: Optional[str] = _queries_block(queries) if with_search else ""
     blocks = [_task_block(evidence, violations), evidence_block, _gallery_block(evidence, nonce), search_block]
     return SYSTEM_PROMPT, "\n\n".join(block for block in blocks if block)
