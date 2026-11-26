@@ -11,6 +11,7 @@ PERMITTED_LOCATIONS = ("us", "eu", "southamerica-east1")
 EXPECTED_LIFECYCLE = {
     ("Delete", "insights/", 90),
     ("Delete", "ai-budget/", 400),
+    ("Delete", "radar/", 210),
     ("Delete", "locks/", 1),
     ("AbortIncompleteMultipartUpload", "", 1),
 }
@@ -84,7 +85,8 @@ def check_service(data, bucket, location, runtime_sa, url, scheduler_sa):
     pricing = env.get("TREND_AI_PRICING_JSON", "")
     if not pricing or "neon" in pricing.lower():
         errs.append("TREND_AI_PRICING_JSON ausente ou com neon")
-    for key in ("TREND_AI_ENABLED", "TREND_AI_MONTHLY_BUDGET_USD", "TREND_AI_DAILY_BUDGET_USD"):
+    for key in ("TREND_AI_ENABLED", "TREND_AI_MONTHLY_BUDGET_USD", "TREND_AI_DAILY_BUDGET_USD",
+                "TREND_AI_MODEL_RADAR", "TREND_AI_GROUNDING_HARD_CAP_QUERIES", "TREND_AI_GROUNDING_FREE_QUERIES"):
         if key not in env:
             errs.append(f"{key} ausente")
     return errs

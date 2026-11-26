@@ -10,6 +10,10 @@
     },
     {
       "action": {"type": "Delete"},
+      "condition": {"age": 210, "matchesPrefix": ["radar/"]}
+    },
+    {
+      "action": {"type": "Delete"},
       "condition": {"age": 1, "matchesPrefix": ["locks/"]}
     },
     {

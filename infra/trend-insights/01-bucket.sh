@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # D-7.0c.9 / LGPD-TIA-09 e 10: bucket privado da F7, idempotente (pode rodar quantas vezes quiser).
 # UBLA + Public Access Prevention + sem versionamento + sem soft delete + lifecycle por prefixo
-# (insights/ 90 d, ai-budget/ 400 d, locks/ 1 d, multipart abortado em 1 d).
+# (insights/ 90 d, ai-budget/ 400 d, radar/ 210 d [ADR-009 DA-13: > 180 d de validade do passado], locks/ 1 d, multipart abortado em 1 d).
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/env.sh"
 
