@@ -5,7 +5,6 @@
  * - Nenhum valor de custo, saldo ou orçamento é exibido.
  */
 import { ChangeDetectionStrategy, Component, computed, ElementRef, inject, input, output, viewChild } from '@angular/core';
-import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { AiDiagnosis, AiFactor, ExternalDimension, ParcelType } from '../models/trend-insights.model';
 import { InlineNoticeComponent } from '../../components/inline-notice/inline-notice.component';
 import { AI_NOTICE_TEXT, CONFIDENCE_LABELS, GENERATING_TEXT, HYPOTHESIS_REASONS, SLOW_AI_TEXT, factorLabel } from '../utils/insight-copy';
@@ -198,7 +197,7 @@ const PARCEL_KEYS: readonly string[] = [
             </ol>
           }
 
-          @if (suggestions(d); as html) {
+          @if (d.sugestoesBuscaHtml; as html) {
             <iframe
               class="suggestions-frame"
               title="Sugestões de busca do Google"
@@ -206,7 +205,7 @@ const PARCEL_KEYS: readonly string[] = [
               referrerpolicy="no-referrer"
               loading="lazy"
               height="80"
-              [srcdoc]="html"
+              [attr.srcdoc]="html"
             ></iframe>
           }
 
@@ -309,8 +308,6 @@ const PARCEL_KEYS: readonly string[] = [
   `],
 })
 export class AiDiagnosisBlockComponent {
-  private readonly sanitizer = inject(DomSanitizer);
-
   readonly view = input.required<AiBlockView>();
   /** Alta (true) ou queda (false), para os rótulos dos fatores. */
   readonly rise = input<boolean>(false);
@@ -367,14 +364,6 @@ export class AiDiagnosisBlockComponent {
 
   protected parcelKey(f: AiFactor): ParcelType | null {
     return f.evidenciaInterna && PARCEL_KEYS.includes(f.evidenciaInterna) ? (f.evidenciaInterna as ParcelType) : null;
-  }
-
-  /**
-   * Termos do grounding: HTML do Google entregue sem alteração, isolado em iframe sem scripts nem same-origin.
-   * O bypass é seguro só por causa do sandbox; nunca usar este HTML fora do iframe.
-   */
-  protected suggestions(d: AiDiagnosis): SafeHtml | null {
-    return d.sugestoesBuscaHtml ? this.sanitizer.bypassSecurityTrustHtml(d.sugestoesBuscaHtml) : null;
   }
 
   focusTitle(): void {

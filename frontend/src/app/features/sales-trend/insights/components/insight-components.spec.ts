@@ -197,7 +197,9 @@ describe('AiDiagnosisBlockComponent', () => {
     const sandbox = frame.getAttribute('sandbox') ?? '';
     expect(sandbox).not.toContain('allow-scripts');
     expect(sandbox).not.toContain('allow-same-origin');
-    expect(frame.getAttribute('srcdoc')).toContain('<script>window.__s=1</script>'); // entregue sem alteração
+    const srcdoc = frame.getAttribute('srcdoc') ?? '';
+    expect(srcdoc).toContain('https://www.google.com/search?q=x');
+    expect(srcdoc).not.toContain('<script>');
   });
 
   it('template: selo "Resumo automático (sem IA)", nota do motivo e sem aviso fixo de IA', () => {
