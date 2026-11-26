@@ -19,7 +19,7 @@ from src.modules.trend_insights.domain.evidence import EvidencePackage
 from src.modules.trend_insights.domain.exceptions import BudgetDenied, BudgetUnavailable
 from src.modules.trend_insights.domain.gates import evaluate_llm_gates, product_search_enabled
 from src.modules.trend_insights.domain.ports import InFlightLease, ObjectConflict, ObjectStoreUnavailable
-from src.modules.trend_insights.domain.radar_policy import STATE_ABSENT, STATE_FRESH, radar_age_days, radar_freshness
+from src.modules.trend_insights.domain.radar_policy import STATE_ABSENT
 from src.modules.trend_insights.domain.raw_material import infer_radar_subject
 from src.modules.trend_insights.domain.template_summary import build_template_summary
 from src.modules.trend_insights.llm.client import LlmClient
@@ -30,6 +30,7 @@ from src.modules.trend_insights.service.llm_runner import DiagnosisInputs, LlmRu
 from src.modules.trend_insights.service.radar_service import (
     RadarService,
     RadarView,
+    cached_radar_ref,
     public_radar_ref,
     public_radar_view,
 )
@@ -137,19 +138,6 @@ class LlmOrchestrator:
             radar_externo=public_radar_view(view) if view else None,
         )
 
-    def _cached_radar_ref(self, stored: StoredInsight) -> Optional[Dict[str, Any]]:
-        """RadarRef do diagnostico salvo com idade e validade recalculadas agora (origem sempre `CACHE`)."""
-        ref = stored.radar_ref
-        if not ref:
-            return None
-        generated_at, now = datetime.fromisoformat(ref["geradoEm"]), self._clock()
-        state = radar_freshness(generated_at, ref["mesBase"], now)
-        return {
-            "assunto": {"termo": ref["termo"], "tipo": ref["tipo"]}, "mesBase": ref["mesBase"],
-            "geradoEm": ref["geradoEm"], "diasDesdeGeracao": radar_age_days(generated_at, now),
-            "desatualizado": state != STATE_FRESH, "origem": "CACHE",
-        }
-
     def _cached(self, key: InsightKey) -> Optional[GenerationOutcome]:
         try:
             stored = self._insights.get(key)
@@ -162,7 +150,7 @@ class LlmOrchestrator:
             return None
         return GenerationOutcome(
             origem="cache", diagnostico=stored.diagnostico, modelo=stored.modelo, gerado_em=stored.gerado_em,
-            reutilizado=True, stored=stored, radar=self._cached_radar_ref(stored),
+            reutilizado=True, stored=stored, radar=cached_radar_ref(stored.radar_ref, self._clock()),
         )
 
     # ---------------------------------------------------------------- entrada

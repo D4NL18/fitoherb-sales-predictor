@@ -148,10 +148,14 @@ def test_hard_cap_is_invisible_to_the_client():
     rig = make_radar_rig()
     seed_ledger(rig, queries=1500)
     resp = _app(rig).post(GEN, json=BODY)
-    text = resp.text.lower()
     assert resp.status_code == 200 and "SEM_RADAR_EXTERNO" in resp.text
-    for word in ("1500", "teto", "limite de", "cota", "custo", "consulta", "usd", "gasto"):
+    # Revisado pelo developer: a varredura crua de "custo" e "1500" reprovava respostas validas, pois o nome
+    # contratual da dimensao `CUSTO_MATERIA_PRIMA` (contrato 2.4) e o residuo do motor (-1500.0 em `somaParcelas`)
+    # contem esses trechos. Agora: o enum da dimensao e descontado e "1500" so e proibido na `meta` (avisos, orcamento).
+    text = resp.text.lower().replace("custo_materia_prima", "")
+    for word in ("teto", "limite de", "cota", "custo", "consulta", "usd", "gasto"):
         assert word not in text
+    assert "1500" not in json.dumps(resp.json()["meta"])
 
 
 def test_health_has_radar_block_and_radar_model():

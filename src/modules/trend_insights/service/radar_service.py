@@ -77,6 +77,18 @@ def public_radar_ref(view: RadarView) -> Dict[str, Any]:
     }
 
 
+def cached_radar_ref(ref: Optional[Dict[str, Any]], now: datetime) -> Optional[Dict[str, Any]]:
+    """RadarRef de um diagnostico salvo, com idade e validade recalculadas agora (origem sempre `CACHE`)."""
+    if not ref:
+        return None
+    generated_at = datetime.fromisoformat(ref["geradoEm"])
+    return {
+        "assunto": {"termo": ref["termo"], "tipo": ref["tipo"]}, "mesBase": ref["mesBase"],
+        "geradoEm": ref["geradoEm"], "diasDesdeGeracao": radar_age_days(generated_at, now),
+        "desatualizado": radar_freshness(generated_at, ref["mesBase"], now) != STATE_FRESH, "origem": ORIGIN_CACHE,
+    }
+
+
 def public_radar_view(view: RadarView) -> Dict[str, Any]:
     """`data.radarExterno` somente leitura: SEM `direcao`, `relevanciaAoProduto` e `confianca`."""
     radar = view.radar

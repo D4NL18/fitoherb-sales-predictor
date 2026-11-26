@@ -1,6 +1,6 @@
 """
 Casos de uso da F7: `GET` (cascata + diagnostico salvo, sem custo de token), `POST /generate` e `health`.
-O servico monta `data` e `meta` do contrato 1.1.0 (camelCase). Custos, tokens, precos, tetos e `evidenceHash`
+O servico monta `data` e `meta` do contrato 1.2.0 (camelCase), com o radar externo SOMENTE LIDO no `GET`. Custos, tokens, precos, tetos e `evidenceHash`
 nunca saem daqui (contrato 4.4): so o `nivel` do orcamento.
 """
 import logging
@@ -16,12 +16,21 @@ from src.modules.trend_insights.domain.constants import (
     MODE_NO_VARIATION,
     MODE_QUANTITATIVE,
     PROMPT_VERSION,
+    RADAR_PROMPT_VERSION,
 )
 from src.modules.trend_insights.domain.evidence import EvidencePackage
 from src.modules.trend_insights.domain.exceptions import InvalidInsightParametersError, NoRelevantVariationError
 from src.modules.trend_insights.domain.ports import InFlightLease, ObjectStoreUnavailable
 from src.modules.trend_insights.domain.privacy import format_small_count
+from src.modules.trend_insights.domain.radar_policy import STATE_ABSENT
+from src.modules.trend_insights.domain.raw_material import infer_radar_subject
 from src.modules.trend_insights.service.llm_orchestrator import GenerationOutcome, LlmOrchestrator
+from src.modules.trend_insights.service.radar_service import (
+    RadarService,
+    RadarView,
+    cached_radar_ref,
+    public_radar_view,
+)
 from src.modules.trend_insights.store.budget_ledger import BudgetLedger
 from src.modules.trend_insights.store.insight_store import InsightKey, InsightStore, StoredInsight
 
@@ -33,6 +42,8 @@ WARNING_MESSAGES = {
     "FORNECEDOR_NAO_INFORMADO": "Fornecedor do produto não informado.",
     "IA_FALHOU": "Não foi possível gerar a análise com IA agora. Exibindo o resumo automático.",
     "SEM_BUSCA_EXTERNA": "Análise feita sem busca externa.",
+    "RADAR_DESATUALIZADO": "Os fatores externos usam uma pesquisa desatualizada.",
+    "SEM_RADAR_EXTERNO": "Fatores externos não avaliados nesta análise.",
 }
 _SNAKE = re.compile(r"_([a-z0-9])")
 
@@ -87,6 +98,7 @@ class InsightsService:
         clock: Callable[[], datetime],
         index_status_provider: Callable[[], Dict[str, Any]],
         migration_cache_status_provider: Callable[[], List[Dict[str, Any]]],
+        radar_service: Optional[RadarService] = None,
     ):
         self._provider = evidence_provider
         self._orchestrator = orchestrator
@@ -97,6 +109,7 @@ class InsightsService:
         self._clock = clock
         self._index_status = index_status_provider
         self._migration_status = migration_cache_status_provider
+        self._radar = radar_service
 
     # ---------------------------------------------------------------- validacao
     def _validate(self, query: InsightQuery) -> None:
@@ -111,13 +124,24 @@ class InsightsService:
             raise InvalidInsightParametersError(("baseMonth",))
 
     # ---------------------------------------------------------------- casos de uso
+    def _peek_radar(self, evidence: EvidencePackage) -> Optional[RadarView]:
+        """Radar existente do assunto do produto (so leitura: o `GET` nunca gera radar nem chama o LLM)."""
+        if self._radar is None:
+            return None
+        return self._radar.peek(infer_radar_subject(evidence), evidence.base_month)
+
     def get_product_insight(self, query: InsightQuery) -> InsightResult:
         self._validate(query)
         evidence = self._provider(query)
         key = LlmOrchestrator.key_for(evidence)
         stored = self._read_stored(key)
-        data = self._build_data(evidence, stored.diagnostico if stored else None, None)
-        return InsightResult(data=data, meta=self._build_meta(evidence, key, stored, []))
+        view = self._peek_radar(evidence)
+        diagnosis_ref = cached_radar_ref(stored.radar_ref, self._clock()) if stored else None
+        data = self._build_data(
+            evidence, stored.diagnostico if stored else None, None, diagnosis_ref,
+            public_radar_view(view) if view else None)
+        warnings = ["RADAR_DESATUALIZADO"] if view is not None and view.is_stale else []
+        return InsightResult(data=data, meta=self._build_meta(evidence, key, stored, warnings, self._radar_meta(view)))
 
     def generate_product_insight(self, query: InsightQuery, caller_id: str) -> InsightResult:
         self._validate(query)
@@ -127,10 +151,21 @@ class InsightsService:
         outcome = self._orchestrator.generate(evidence, caller_id, query.force)
         key = LlmOrchestrator.key_for(evidence)
         stored = self._read_stored(key)
-        data = self._build_data(evidence, outcome.diagnostico, outcome.resumo_automatico)
-        meta = self._build_meta(evidence, key, stored, outcome.avisos)
+        data = self._build_data(evidence, outcome.diagnostico, outcome.resumo_automatico, outcome.radar,
+                                outcome.radar_externo)
+        radar_meta = self._radar_meta(self._peek_radar(evidence), outcome)
+        meta = self._build_meta(evidence, key, stored, outcome.avisos, radar_meta)
         meta.update(self._generate_meta(outcome))
         return InsightResult(data=data, meta=meta)
+
+    @staticmethod
+    def _radar_meta(view: Optional[RadarView], outcome: Optional[GenerationOutcome] = None) -> Dict[str, Any]:
+        """`meta.ia.radar`: estado e data de geracao, sem custo nem consultas (contrato 4.4)."""
+        if outcome is not None and outcome.radar_estado and outcome.radar:
+            return {"estado": outcome.radar_estado, "geradoEm": outcome.radar["geradoEm"]}
+        if view is None:
+            return {"estado": STATE_ABSENT, "geradoEm": None}
+        return {"estado": view.state, "geradoEm": view.radar.generated_at.isoformat()}
 
     def get_health(self) -> InsightResult:
         index = self._index_status()
@@ -139,9 +174,11 @@ class InsightsService:
                 "ligada": self._settings.ai_enabled,
                 "modeloPadrao": self._settings.model_default,
                 "modeloFallback": self._settings.model_fallback,
+                "modeloRadar": self._settings.model_radar,
                 "promptVersion": PROMPT_VERSION,
             },
             "orcamento": {"mes": self._ledger.month_label(), "nivel": self._ledger.level()},
+            "radar": self._radar_health(),
             "indiceAfinidade": {
                 "disponivel": index.get("disponivel", False), "lastSyncAt": index.get("lastSyncAt"),
                 "totalActiveSkus": index.get("totalActiveSkus"), "origem": index.get("origem"),
@@ -150,6 +187,12 @@ class InsightsService:
         }
         meta = {"timestamp": self._clock().isoformat(), "version": CONTRACT_VERSION}
         return InsightResult(data=data, meta=meta)
+
+    def _radar_health(self) -> Dict[str, Any]:
+        """So versao do prompt do radar e contagens de objetos (sem valores, consultas ou assuntos)."""
+        cached = self._radar.cached_count() if self._radar else 0
+        generated = self._radar.generated_this_month() if self._radar else 0
+        return {"radarVersion": RADAR_PROMPT_VERSION, "radaresEmCache": cached, "radaresGeradosMes": generated}
 
     # ---------------------------------------------------------------- leitura do salvo
     def _read_stored(self, key: InsightKey) -> Optional[StoredInsight]:
@@ -167,7 +210,8 @@ class InsightsService:
             codes.append("FORNECEDOR_NAO_INFORMADO")
         return [{"codigo": c, "mensagem": WARNING_MESSAGES[c]} for c in dict.fromkeys(codes) if c in WARNING_MESSAGES]
 
-    def _ia_state(self, evidence: EvidencePackage, key: InsightKey, stored: Optional[StoredInsight]) -> Dict[str, Any]:
+    def _ia_state(self, evidence: EvidencePackage, key: InsightKey, stored: Optional[StoredInsight],
+                  radar_meta: Dict[str, Any]) -> Dict[str, Any]:
         level = self._ledger.level()
         is_blocked = evidence.mode == MODE_NO_VARIATION
         is_running = self._lease.is_held(LlmOrchestrator.lease_key(key))
@@ -184,10 +228,12 @@ class InsightsService:
             "podeForcar": level == "NORMAL",
             "geracaoEmAndamento": is_running,
             "orcamento": {"nivel": level},
+            "radar": radar_meta,
         }
 
     def _build_meta(
         self, evidence: EvidencePackage, key: InsightKey, stored: Optional[StoredInsight], extra_warnings: List[str],
+        radar_meta: Dict[str, Any],
     ) -> Dict[str, Any]:
         index = self._index_status()
         reference = evidence.data_referencia
@@ -203,7 +249,7 @@ class InsightsService:
             "promptVersion": PROMPT_VERSION,
             "indiceAfinidade": {"disponivel": index.get("disponivel", False), "lastSyncAt": index.get("lastSyncAt")},
             "avisos": self._warnings(evidence, extra_warnings),
-            "ia": self._ia_state(evidence, key, stored),
+            "ia": self._ia_state(evidence, key, stored, radar_meta),
         }
 
     @staticmethod
@@ -231,16 +277,20 @@ class InsightsService:
         }
 
     @staticmethod
-    def _public_diagnosis(diagnostico: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-        """Diagnostico exibido: `sugestoesBuscaHtml` fica nulo ate o checkpoint CP-10 (ADR-009)."""
+    def _public_diagnosis(
+        diagnostico: Optional[Dict[str, Any]], radar_ref: Optional[Dict[str, Any]],
+    ) -> Optional[Dict[str, Any]]:
+        """Diagnostico exibido: `sugestoesBuscaHtml` nulo ate o CP-10 (ADR-009); traz a referencia publica ao radar."""
         if diagnostico is None:
             return None
         public = dict(diagnostico)
         public["sugestoesBuscaHtml"] = None
+        public["radar"] = radar_ref
         return public
 
     def _build_data(
         self, evidence: EvidencePackage, diagnostico: Optional[Dict[str, Any]], summary_text: Optional[str],
+        radar_ref: Optional[Dict[str, Any]], radar_view: Optional[Dict[str, Any]],
     ) -> Dict[str, Any]:
         data = evidence.data
         afins = to_camel(data.get("afins") or [])
@@ -257,6 +307,7 @@ class InsightsService:
             "diagnosticoMercado": to_camel(data.get("diagnostico_mercado")),
             "grupoAfim": {"status": "AVALIADO" if afins else "SEM_GRUPO_AFIM", "afins": afins},
             "impactoEmOutrosProdutos": to_camel(data.get("impacto_outros")),
-            "diagnosticoIa": self._public_diagnosis(diagnostico),
+            "diagnosticoIa": self._public_diagnosis(diagnostico, radar_ref),
+            "radarExterno": None if diagnostico is not None else radar_view,
             "resumoAutomatico": summary_text,
         }

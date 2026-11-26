@@ -21,9 +21,11 @@ from src.modules.trend_insights.service.generation_guard import GenerationGuard
 from src.modules.trend_insights.service.insights_service import InsightsService
 from src.modules.trend_insights.service.llm_orchestrator import LlmOrchestrator
 from src.modules.trend_insights.service.migration_cache import MigrationCache
+from src.modules.trend_insights.service.radar_service import RadarService
 from src.modules.trend_insights.store.budget_ledger import BudgetLedger
 from src.modules.trend_insights.store.insight_store import InsightStore
 from src.modules.trend_insights.store.lease_store import GcsInFlightLease
+from src.modules.trend_insights.store.radar_store import RadarStore
 
 _SERVICE: Optional[InsightsService] = None
 _LOCK = threading.Lock()
@@ -68,13 +70,14 @@ def _build_service() -> InsightsService:
     insights = InsightStore(object_store, _utc_now)
     lease = GcsInFlightLease(object_store, _utc_now)
     guard = GenerationGuard(settings, _utc_now)
-    orchestrator = LlmOrchestrator(llm, ledger, insights, lease, guard, settings, _utc_now, time.sleep)
+    radar = RadarService(llm, ledger, RadarStore(object_store, _utc_now), lease, settings, _utc_now, time.sleep)
+    orchestrator = LlmOrchestrator(llm, ledger, insights, lease, guard, settings, _utc_now, time.sleep, radar)
     sources = FactorSources(EvidenceCache(_utc_now))
     cache = MigrationCache(make_migration_builder(factor_sources=sources), _utc_now)
     return InsightsService(
         evidence_provider=EvidenceBuilder(cache, sources), orchestrator=orchestrator, insight_store=insights, ledger=ledger,
         lease=lease, settings=settings, clock=_utc_now, index_status_provider=_index_status,
-        migration_cache_status_provider=lambda: _migration_status(cache),
+        migration_cache_status_provider=lambda: _migration_status(cache), radar_service=radar,
     )
 
 
