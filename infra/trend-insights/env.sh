@@ -18,6 +18,13 @@
 : "${BUDGET_AMOUNT:=2}"                                 # na moeda da conta de faturamento (ver docs, secao 5)
 : "${FREE_SCHEDULER_JOBS:=3}"                           # cota gratis por conta de faturamento
 
+# Radar externo v3.1 e prazos da F7 (ADR-009 DA-13); repassados ao Cloud Run no deploy (config.py le estes nomes).
+: "${TREND_AI_MODEL_RADAR:=gemini-4-hydrogen}"          # modelo do radar (Flash so se a avaliacao 7.5 aprovar)
+: "${TREND_AI_GROUNDING_HARD_CAP_QUERIES:=1500}"        # teto duro de consultas de busca no mes (P-178.8)
+: "${TREND_AI_LLM_TOTAL_DEADLINE_SECONDS:=125}"         # radar + diagnostico (P-183.5); cabe no HTTP de 150 s
+: "${TREND_AI_IN_FLIGHT_LOCK_TTL_SECONDS:=150}"         # trava do diagnostico em voo (P-176.2)
+: "${TREND_AI_RESERVATION_TTL_SECONDS:=180}"            # reserva orfa do livro de gastos (DA-13 item 8)
+
 if [[ -z "${PROJECT_ID}" ]]; then
   echo "ERRO: defina PROJECT_ID (export PROJECT_ID=...) ou 'gcloud config set project'." >&2
   return 1 2>/dev/null || exit 1
