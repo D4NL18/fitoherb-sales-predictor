@@ -34,7 +34,7 @@ import { SourceLinkComponent } from './source-link.component';
               <summary>Ver as 8 dimensões</summary>
               <ul class="ext-list" aria-label="Fatores externos">
                 @for (r of v.rows; track r.dimension) {
-                  <li class="ext-row compact">
+                  <li class="ext-row compact" [attr.aria-label]="r.ariaLabel">
                     <span class="ext-label">{{ r.label }}</span>
                     <span class="ext-muted">{{ r.statusText }}. {{ r.reasonText }}</span>
                   </li>
@@ -46,7 +46,7 @@ import { SourceLinkComponent } from './source-link.component';
           <div class="ext-box">
             <ul class="ext-list" aria-label="Fatores externos">
               @for (r of v.rows; track r.dimension) {
-                <li class="ext-row" [class.compact]="r.compact" [attr.data-dimension]="r.dimension">
+                <li class="ext-row" [class.compact]="r.compact" [attr.data-dimension]="r.dimension" [attr.aria-label]="r.ariaLabel">
                   <div class="ext-line">
                     <span class="ext-label">{{ r.label }}</span>
                     @if (!r.compact) {

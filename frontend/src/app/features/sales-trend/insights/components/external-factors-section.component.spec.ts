@@ -49,6 +49,21 @@ describe('ExternalFactorsSectionComponent', () => {
     expect(el.textContent).toContain('sem data de publicação');
   });
 
+  it('fonte http não vira link clicável', () => {
+    const f = externalFactor('CUSTO_MATERIA_PRIMA', {});
+    f.fontes = [{ ...f.fontes[0], url: 'http://exemplo.com/a' }];
+    const el = render(buildExternalFactorsView([f], RADAR, [])!);
+    expect(el.querySelector('a')).toBeNull();
+  });
+
+  it('cada linha das 8 dimensões tem aria-label para leitor de tela', () => {
+    const el = render(buildExternalFactorsView([externalFactor('CLIMA_SAFRA', {})], RADAR, [])!);
+    const lis = Array.from(el.querySelectorAll('ul[aria-label="Fatores externos"] > li'));
+    expect(lis.length).toBe(8);
+    expect(lis.every((li) => !!li.getAttribute('aria-label'))).toBe(true);
+    expect(lis.find((li) => li.getAttribute('data-dimension') === 'CLIMA_SAFRA')!.getAttribute('aria-label')).toContain('Hipótese');
+  });
+
   it('radar desatualizado mostra aviso em role=status; idade visível', () => {
     const el = render(buildExternalFactorsView([], { ...RADAR, desatualizado: true, diasDesdeGeracao: 40 }, ['RADAR_DESATUALIZADO'])!);
     expect(el.querySelector('[data-testid="external-stale"]')?.getAttribute('role')).toBe('status');
@@ -99,5 +114,24 @@ describe('AiDiagnosisBlockComponent com fatores externos', () => {
     f.detectChanges();
     el = f.nativeElement as HTMLElement;
     expect(el.querySelector('[data-testid="external-factors"]')).toBeNull();
+  });
+
+  it('"Também listado" leva o foco ao fator interno da mesma dimensão', () => {
+    TestBed.configureTestingModule({ imports: [AiDiagnosisBlockComponent] });
+    const diag = {
+      ...DIAGNOSIS,
+      fatores: [{ ...DIAGNOSIS.fatores[1], dimensao: 'CLIMA_SAFRA' as const }],
+      fatoresExternos: [externalFactor('CLIMA_SAFRA', {})],
+      radar: RADAR,
+    };
+    const f = TestBed.createComponent(AiDiagnosisBlockComponent);
+    f.componentRef.setInput('view', aiView(makeInsight({ diagnosticoIa: diag }), undefined, { diagnosticoSalvo: true }));
+    f.detectChanges();
+    const el = f.nativeElement as HTMLElement;
+    document.body.appendChild(el);
+    (el.querySelector('.ext-link') as HTMLButtonElement).click();
+    const target = el.querySelector('li[data-factor-dimension="CLIMA_SAFRA"]') as HTMLElement;
+    expect(document.activeElement).toBe(target);
+    el.remove();
   });
 });

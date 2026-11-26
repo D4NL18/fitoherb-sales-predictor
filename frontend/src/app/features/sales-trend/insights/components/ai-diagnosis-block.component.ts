@@ -6,7 +6,7 @@
  */
 import { ChangeDetectionStrategy, Component, computed, ElementRef, inject, input, output, viewChild } from '@angular/core';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
-import { AiDiagnosis, AiFactor, ParcelType } from '../models/trend-insights.model';
+import { AiDiagnosis, AiFactor, ExternalDimension, ParcelType } from '../models/trend-insights.model';
 import { InlineNoticeComponent } from '../../components/inline-notice/inline-notice.component';
 import { AI_NOTICE_TEXT, CONFIDENCE_LABELS, GENERATING_TEXT, HYPOTHESIS_REASONS, SLOW_AI_TEXT, factorLabel } from '../utils/insight-copy';
 import { AiBlockView, formatSigned } from '../utils/insight-view';
@@ -119,7 +119,7 @@ const PARCEL_KEYS: readonly string[] = [
           } @else {
             <ul class="factor-list">
               @for (f of d.fatores; track $index) {
-                <li class="factor">
+                <li class="factor" tabindex="-1" [attr.data-factor-dimension]="f.dimensao ?? null">
                   <div class="factor-line">
                     <span class="factor-glyph" aria-hidden="true">{{ f.sentido === 'POSITIVO' ? '▲' : f.sentido === 'NEGATIVO' ? '▼' : '' }}</span>
                     <strong>{{ label(f) }}</strong>
@@ -147,7 +147,7 @@ const PARCEL_KEYS: readonly string[] = [
             </ul>
           }
 
-          <app-external-factors-section [view]="view().external" />
+          <app-external-factors-section [view]="view().external" (focusFactors)="focusFactor($event)" />
 
           @if (d.hipotesesNaoConfirmadas.length > 0) {
             <div class="hypotheses" data-testid="ai-hipoteses">
@@ -261,6 +261,7 @@ const PARCEL_KEYS: readonly string[] = [
     .factor-list, .source-list, .hyp-list, .reco-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--space-2); }
     .reco-list { list-style: decimal; padding-left: var(--space-5); }
     .factor { display: flex; flex-direction: column; gap: var(--space-1); padding-bottom: var(--space-2); border-bottom: 1px solid var(--border-subtle); }
+    .factor:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
     .factor-line { display: flex; align-items: baseline; gap: var(--space-2); flex-wrap: wrap; font-size: 0.875rem; }
     .factor-value { font-family: var(--font-family-mono); font-variant-numeric: tabular-nums; margin-left: auto; }
     .factor-conf { font-size: 0.75rem; color: var(--text-secondary); }
@@ -309,6 +310,13 @@ export class AiDiagnosisBlockComponent {
   readonly confirmRef = viewChild<ElementRef<HTMLElement>>('confirmText');
   readonly mainBtnRef = viewChild<ElementRef<HTMLButtonElement>>('mainBtn');
   readonly retryRef = viewChild<ElementRef<HTMLButtonElement>>('retryBtn');
+
+  private readonly host = inject(ElementRef<HTMLElement>);
+
+  protected focusFactor(dimension: ExternalDimension): void {
+    const target = (this.host.nativeElement as HTMLElement).querySelector<HTMLElement>(`li[data-factor-dimension="${dimension}"]`);
+    target?.focus();
+  }
 
   protected readonly fixedNotice = AI_NOTICE_TEXT;
   protected readonly generatingText = GENERATING_TEXT;
