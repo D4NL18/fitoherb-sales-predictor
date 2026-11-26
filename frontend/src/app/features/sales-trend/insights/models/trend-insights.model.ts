@@ -1,5 +1,5 @@
 /**
- * Tipos do contrato `sales-trend-insights` 1.1.0 (GET e POST /generate de produto).
+ * Tipos do contrato `sales-trend-insights` 1.2.0 (GET e POST /generate de produto).
  * Sem `any`. Nenhum tipo carrega custo, tokens ou orçamento em dólar (contrato §4.4).
  */
 import { TrendCell, TrendComparisonMode, TrendMetric, TrendSortWindow } from '../../models/sales-trend.model';
@@ -49,7 +49,27 @@ export type HypothesisReason =
   | 'FONTE_NAO_CITADA'
   | 'SEM_DATA'
   | 'FORA_DO_PERIODO'
-  | 'SKU_FORA_DO_PACOTE';
+  | 'SKU_FORA_DO_PACOTE'
+  | 'POSTERIOR_AO_PERIODO'
+  | 'SEM_COERENCIA_DIRECIONAL';
+export type ExternalDimension =
+  | 'POLITICA_REGULATORIO'
+  | 'CLIMA_SAFRA'
+  | 'CUSTO_MATERIA_PRIMA'
+  | 'OFERTA_DEMANDA_MATERIA_PRIMA'
+  | 'CAMBIO_LOGISTICA_IMPORTACAO'
+  | 'CONSUMO_MIDIA_SAUDE'
+  | 'CONCORRENCIA'
+  | 'EVENTOS_MERCADO';
+export type ExternalStatus = 'AVALIADA' | 'SEM_EVIDENCIA' | 'NAO_AVALIADA';
+export type ExternalDirection = 'PRESSAO_BAIXA' | 'PRESSAO_ALTA' | 'NEUTRA' | 'INDETERMINADA';
+export type ExternalRelevance = 'ALTA' | 'MEDIA' | 'BAIXA' | 'NENHUMA';
+export type TemporalRelation = 'ANTERIOR' | 'CONTEMPORANEA' | 'POSTERIOR' | 'SEM_DATA' | 'ANTIGA';
+export type ExternalNotEvaluatedReason = 'SEM_RADAR' | 'SEM_TERMO_BUSCA' | 'DIMENSAO_OMITIDA_PELA_IA';
+export type RadarMovement = 'SUBIU' | 'CAIU' | 'ESTAVEL' | 'MUDOU' | 'INDEFINIDO';
+export type RadarIntensity = 'FORTE' | 'MODERADA' | 'FRACA';
+export type RadarOrigin = 'GERADO_AGORA' | 'CACHE';
+export type RadarState = 'FRESCO' | 'DESATUALIZADO' | 'AUSENTE' | 'GERADO_AGORA';
 export type ClientCount = number | '<3';
 export type RateLimitReason = 'LIMITE_DE_PEDIDOS' | 'LIMITE_DIARIO';
 
@@ -152,7 +172,60 @@ export interface SourceRef {
   dominio: string;
   titulo: string;
   dataPublicacao: string | null;
-  origemData: 'MODELO' | 'URL' | null;
+  origemData: 'MODELO' | 'URL' | 'SEM_DATA' | null;
+  /** 1.2.0: `F1..F16` (radar) ou `P1` (busca do produto). */
+  id?: string;
+}
+
+export interface ExternalFactor {
+  dimensao: ExternalDimension;
+  status: ExternalStatus;
+  direcao: ExternalDirection;
+  /** O contrato garante MEDIA|BAIXA; a tela trata ALTA como BAIXA. */
+  confianca: Confidence;
+  relevanciaAoProduto: ExternalRelevance;
+  relacaoTemporal: TemporalRelation | null;
+  rotulo: string;
+  origemEvidencia: 'RADAR' | 'BUSCA_PRODUTO' | 'NENHUMA';
+  motivoNaoAvaliado: ExternalNotEvaluatedReason | null;
+  tema: string | null;
+  notaRadar: string | null;
+  nota: string | null;
+  fontes: SourceRef[];
+}
+
+export interface RadarSubject {
+  termo: string;
+  tipo: 'MATERIA_PRIMA' | 'CATEGORIA';
+}
+
+export interface RadarRef {
+  assunto: RadarSubject;
+  mesBase: string;
+  geradoEm: string;
+  diasDesdeGeracao: number;
+  desatualizado: boolean;
+  origem: RadarOrigin;
+}
+
+export interface RadarDimension {
+  dimensao: ExternalDimension;
+  status: ExternalStatus;
+  movimento: RadarMovement | null;
+  intensidade: RadarIntensity | null;
+  tema: string | null;
+  notaRadar: string | null;
+  fontes: SourceRef[];
+}
+
+/** `data.radarExterno`: leitura da pesquisa, sem direção sobre vendas, confiança nem relevância. */
+export interface RadarExterno {
+  assunto: RadarSubject;
+  mesBase: string;
+  geradoEm: string;
+  diasDesdeGeracao: number;
+  desatualizado: boolean;
+  dimensoes: RadarDimension[];
 }
 
 export interface AiFactor {
@@ -161,6 +234,8 @@ export interface AiFactor {
   parcelaEstimada: number | null;
   confianca: Confidence;
   rotulo: 'POSSIVEL' | 'EVIDENCIA';
+  /** 1.2.0: preenchido só em fator externo promovido. */
+  dimensao?: ExternalDimension | null;
   explicacao: string;
   evidenciaInterna: string | null;
   skusCitados: number[];
@@ -179,6 +254,9 @@ export interface AiDiagnosis {
   diagnosticoMercado: MarketDiagnosis | null;
   resumo: string;
   fatores: AiFactor[];
+  /** 1.2.0: sempre 8 itens na ordem fixa (ausente em respostas 1.1.x). */
+  fatoresExternos?: ExternalFactor[];
+  radar?: RadarRef | null;
   hipotesesNaoConfirmadas: AiHypothesis[];
   recomendacoes: string[];
   sugestoesBuscaHtml: string | null;
@@ -227,6 +305,8 @@ export interface ProductInsight {
   diagnosticoIa: AiDiagnosis | null;
   /** Só quando `meta.origem = 'template'`. */
   resumoAutomatico?: string | null;
+  /** 1.2.0: radar somente leitura (sem IA do produto). */
+  radarExterno?: RadarExterno | null;
 }
 
 export interface InsightWarning {
@@ -246,6 +326,7 @@ export interface InsightAiState {
   geracaoEmAndamento: boolean;
   /** Nível apenas; a tela não o exibe (contrato §4.4). */
   orcamento: { nivel: 'NORMAL' | 'ALERTA' | 'ESGOTADO' };
+  radar?: { estado: RadarState; geradoEm: string | null; diasDesdeGeracao?: number; desatualizado?: boolean } | null;
 }
 
 export interface InsightMeta {
