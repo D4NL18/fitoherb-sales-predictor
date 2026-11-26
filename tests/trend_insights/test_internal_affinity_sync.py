@@ -113,7 +113,7 @@ def test_valid_token_runs_sync_and_returns_contract_summary(rig):
     r = rig.client.post(PATH, headers=_bearer("good"))
     assert r.status_code == 200 and rig.runner.calls == [False]
     body = r.json()
-    assert set(body) == {"data", "meta"} and body["meta"]["version"] == "1.1.0"
+    assert set(body) == {"data", "meta"} and body["meta"]["version"] == "1.2.0"
     assert body["data"] == {
         "lastSyncAt": "2026-11-24T03:00:41.512Z", "recomputed": True, "totalActiveSkus": 1339,
         "galleryProductsFetched": 1180, "galleryMatchedSkus": 1021, "addedCount": 3, "updatedCount": 1,

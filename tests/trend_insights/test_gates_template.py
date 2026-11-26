@@ -42,29 +42,6 @@ def test_value_gate_is_always_in_reais_even_for_quantity_metric():
     assert mod("domain.gates").evaluate_llm_gates(ev) is None
 
 
-def _ground(level="NORMAL", **over):
-    return mod("domain.gates").grounding_enabled(make_evidence(**over), budget_level=level)
-
-
-@pytest.mark.parametrize("over,level,expected", [
-    (dict(residual_share=0.0, diagnostico_mercado=_mkt("MERCADO_EM_QUEDA")), "NORMAL", True),
-    (dict(residual_share=0.0, diagnostico_mercado=_mkt("MERCADO_EM_ALTA")), "NORMAL", True),
-    (dict(residual_share=0.30), "NORMAL", True),
-    (dict(residual_share=0.29), "NORMAL", False),
-    (dict(residual_share=0.15, indicadores=REGIONAL), "NORMAL", True),
-    (dict(residual_share=0.14, indicadores=REGIONAL), "NORMAL", False),
-    (dict(residual_share=0.30), "ALERTA", False),
-    (dict(residual_share=0.50), "ALERTA", True),
-])
-def test_grounding_gate(over, level, expected):
-    assert _ground(level, **over) is expected
-
-
-def test_grounding_needs_a_search_term():
-    ev = make_evidence(residual_share=0.9, produto={"funcao_primaria": None, "categoria_galeria": None})
-    assert mod("domain.gates").grounding_enabled(ev, budget_level="NORMAL") is False
-
-
 # --- Template
 def test_template_is_label_digit_free_deterministic_and_never_external():
     tpl = mod("domain.template_summary")
@@ -84,11 +61,29 @@ def test_template_for_rise_and_qualitative_still_has_no_digits():
 
 
 # --- Consultas sugeridas (LGPD-TIA-12)
-def test_search_queries_limits_and_terms():
-    fn = mod("llm.search_queries").build_search_queries
-    queries = fn(make_evidence())
-    assert 1 <= len(queries) <= 2
+# SUPERADOS pela v3.1 (STATE_Testes): `grounding_enabled` e `build_search_queries` (2 consultas por diagnostico) deram
+# lugar a `product_search_enabled` (coberto em `test_radar_store_policy.py`), `build_radar_queries` (5 consultas por
+# tabela, so assunto + mes) e `build_product_query` (no maximo 1 consulta, so sem radar).
+def test_radar_queries_use_only_subject_and_month_from_the_closed_table():
+    raw = mod("domain.raw_material")
+    queries = mod("llm.search_queries").build_radar_queries(raw.infer_radar_subject(make_evidence()), "2026-10")
     joined = " ".join(queries).lower()
-    assert "cha" in joined or "infus" in joined
-    assert "hibisco 100g" not in joined
-    assert len(fn(make_evidence(modo_diagnostico="QUALITATIVO"))) == 1
+    assert len(queries) == 5 and "ervas e plantas medicinais" in joined and "outubro de 2026" in joined
+    for forbidden in ("5102", "hibisco", "queda", "ervas delta", "100g"):
+        assert forbidden not in joined
+
+
+@pytest.mark.parametrize("over,expected", [
+    (dict(), "lancamento"),
+    (dict(diagnostico_mercado=_mkt("PERDA_DE_PARTICIPACAO")), "ervas delta"),
+    (dict(indicadores=REGIONAL, diagnostico_mercado=_mkt("MERCADO_EM_QUEDA")), "são paulo"),
+])
+def test_product_query_is_single_by_table_without_commercial_name(over, expected):
+    query = mod("llm.search_queries").build_product_query(make_evidence(**over)).lower()
+    assert expected in query.replace("lançamento", "lancamento")
+    assert "hibisco" not in query and "queda" not in query.replace("mercado_em_queda", "")
+
+
+def test_product_query_needs_a_subject():
+    ev = make_evidence(produto={"funcao_primaria": None, "categoria_galeria": None, "descricao_galeria": None})
+    assert mod("llm.search_queries").build_product_query(ev) is None

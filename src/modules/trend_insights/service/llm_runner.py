@@ -1,7 +1,8 @@
 """
-Execucao das chamadas ao LLM (P-183): Hydrogen com ate 2 tentativas por falha de infraestrutura (backoff),
-1 nova tentativa por violacao de schema (mesmo modelo, com os codigos no prompt), uma unica chamada ao
-fallback e prazo total de 110 s. Cada tentativa reserva no livro e acerta com o `usage` real; tentativas que
+Execucao das chamadas do DIAGNOSTICO ao LLM (P-183): Hydrogen com ate 2 tentativas por falha de infraestrutura
+(backoff), 1 nova tentativa por violacao de schema (mesmo modelo, com os codigos no prompt), uma unica chamada ao
+Flash (sem ferramentas, com o MESMO radar) e prazo total de 125 s contado desde o inicio do radar. O radar entra no
+prompt como dado (bloco com nonce) e a busca do produto so existe sem radar (1 consulta). Cada tentativa reserva no livro e acerta com o `usage` real; tentativas que
 gastaram tokens contam mesmo quando falham na validacao. Nunca loga prompt, pacote, resposta ou mensagem do SDK.
 """
 import logging
@@ -9,6 +10,7 @@ import secrets
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Callable, Dict, List, Optional, Tuple
+from urllib.parse import urlparse
 
 from src.modules.trend_insights.config import TrendInsightsSettings
 from src.modules.trend_insights.domain.constants import (
@@ -16,7 +18,6 @@ from src.modules.trend_insights.domain.constants import (
     LLM_BACKOFF_BASE_SECONDS,
     LLM_SCHEMA_RETRY_LIMIT,
     LLM_TIMEOUT_SECONDS,
-    LLM_TOTAL_DEADLINE_SECONDS,
     LLM_TRANSIENT_RETRY_LIMIT,
     LOGGER_NAME,
     PROMPT_VERSION,
@@ -33,16 +34,26 @@ from src.modules.trend_insights.llm.client import (
     LlmResponse,
     LlmTransientError,
 )
+from src.modules.trend_insights.llm.evidence_payload import build_radar_block
 from src.modules.trend_insights.llm.output_schema import LLM_OUTPUT_SCHEMA
 from src.modules.trend_insights.llm.pricing import compute_cost
 from src.modules.trend_insights.llm.prompts import build_prompts
-from src.modules.trend_insights.llm.search_queries import build_search_queries, search_query_limit
-from src.modules.trend_insights.llm.validation import ValidationContext, ValidationOutcome, validate_llm_output
+from src.modules.trend_insights.llm.validation import (
+    ExternalContext,
+    ValidationContext,
+    ValidationOutcome,
+    date_from_url,
+    is_safe_url,
+    validate_llm_output,
+)
+from src.modules.trend_insights.service.radar_service import RadarView
 from src.modules.trend_insights.store.budget_ledger import BudgetLedger
 
 logger = logging.getLogger(LOGGER_NAME + ".llm")
 THINKING_LEVEL = "low"
 NONCE_BYTES = 4
+MAX_PRODUCT_SOURCES = 2
+MAX_SOURCE_TITLE_CHARS = 200
 BACKOFF_FACTOR = 2
 
 
@@ -58,6 +69,16 @@ class RunResult:
     cost_usd: float = 0.0
     queries: int = 0
     avisos: List[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class DiagnosisInputs:
+    """Entradas da geracao: pacote, radar utilizavel (ou o motivo de nao haver) e a consulta do produto (ou `None`)."""
+
+    evidence: EvidencePackage
+    radar: Optional[RadarView] = None
+    radar_missing_reason: Optional[str] = None
+    product_query: Optional[str] = None
 
 
 @dataclass
@@ -83,7 +104,36 @@ class LlmRunner:
 
     # ---------------------------------------------------------------- contexto de validacao
     @staticmethod
-    def _context(evidence: EvidencePackage, response: LlmResponse) -> ValidationContext:
+    def _product_sources(response: LlmResponse, with_search: bool) -> Dict[str, Dict[str, object]]:
+        """Fontes da busca do produto (`P1..`): so citacoes seguras; a data so vem do caminho da URL."""
+        sources: Dict[str, Dict[str, object]] = {}
+        for citation in response.citations if with_search else ():
+            if not is_safe_url(citation.url) or len(sources) >= MAX_PRODUCT_SOURCES:
+                continue
+            url, found = citation.url.strip(), date_from_url(citation.url)
+            sources[f"P{len(sources) + 1}"] = {
+                "id": f"P{len(sources) + 1}", "url": url, "dominio": urlparse(url).hostname,
+                "titulo": (citation.title or "")[:MAX_SOURCE_TITLE_CHARS],
+                "dataPublicacao": found.isoformat() if found else None, "origemData": "URL" if found else "SEM_DATA",
+            }
+        return sources
+
+    def _external(self, inputs: DiagnosisInputs, response: LlmResponse, with_search: bool) -> ExternalContext:
+        evidence, radar = inputs.evidence, inputs.radar
+        window = evidence.data["janela"]
+        sources = dict(radar.radar.source_by_id()) if radar else {}
+        sources.update(self._product_sources(response, with_search))
+        return ExternalContext(
+            dimensions=tuple(radar.radar.dimensions) if radar else (), sources=sources,
+            variation_pct=evidence.variation_pct, current_start=date.fromisoformat(window["atual"]["inicio"]),
+            current_end=date.fromisoformat(window["atual"]["fim"]),
+            previous_start=date.fromisoformat(window["anterior"]["inicio"]),
+            radar_stale=bool(radar and radar.is_stale),
+            radar_missing_reason=None if radar else (inputs.radar_missing_reason or "SEM_RADAR"),
+        )
+
+    def _context(self, inputs: DiagnosisInputs, response: LlmResponse, with_search: bool) -> ValidationContext:
+        evidence = inputs.evidence
         previous_start = date.fromisoformat(evidence.data["janela"]["anterior"]["inicio"])
         cited = frozenset(c.url for c in response.citations) | frozenset(response.search_result_urls)
         return ValidationContext(
@@ -91,22 +141,17 @@ class LlmRunner:
             parcel_values=evidence.parcel_values, cited_urls=cited,
             cited_titles={c.url: c.title for c in response.citations if c.title},
             lookback_start=previous_start - timedelta(days=EXTERNAL_SOURCE_LOOKBACK_DAYS),
-            reference_date=evidence.data_referencia,
+            reference_date=evidence.data_referencia, external=self._external(inputs, response, with_search),
         )
-
-    # ---------------------------------------------------------------- consultas de busca
-    def _suggested_queries(self, evidence: EvidencePackage) -> List[str]:
-        """Com a cota gratis do mes esgotada (ou inexistente), sugere so a consulta de maior valor."""
-        is_paid_search = self._ledger.month_queries() >= self._settings.free_queries
-        return build_search_queries(evidence, search_query_limit(evidence, is_paid_search))
 
     # ---------------------------------------------------------------- uma tentativa
     def _build_request(
-        self, evidence: EvidencePackage, model_id: str, with_search: bool, violations: List[str], remaining: float,
+        self, inputs: DiagnosisInputs, model_id: str, with_search: bool, violations: List[str], remaining: float,
     ) -> LlmRequest:
-        queries = self._suggested_queries(evidence) if with_search else []
+        nonce = secrets.token_hex(NONCE_BYTES)
+        radar_block = build_radar_block(inputs.radar.radar, nonce) if inputs.radar else None
         system_prompt, user_prompt = build_prompts(
-            evidence, secrets.token_hex(NONCE_BYTES), violations, queries, with_search)
+            inputs.evidence, nonce, violations, radar_block, inputs.product_query if with_search else None)
         return LlmRequest(
             model_id=model_id, system_prompt=system_prompt, user_prompt=user_prompt,
             response_schema=LLM_OUTPUT_SCHEMA, use_search_grounding=with_search, thinking_level=THINKING_LEVEL,
@@ -129,7 +174,8 @@ class LlmRunner:
             if not settled:
                 self._release_quietly(reservation)
         spec.totals.add(cost, response.executed_queries_count)
-        validation = validate_llm_output(response.text, self._context(spec.evidence, response), spec.drop_offending)
+        validation = validate_llm_output(
+            response.text, self._context(spec.inputs, response, spec.with_search), spec.drop_offending)
         self._log_call(spec, response, cost, validation)
         return _Attempt(response=response, validation=validation)
 
@@ -152,10 +198,10 @@ class LlmRunner:
 
     # ---------------------------------------------------------------- tempo
     def _remaining(self, started_at: datetime) -> float:
-        return LLM_TOTAL_DEADLINE_SECONDS - (self._clock() - started_at).total_seconds()
+        return self._settings.llm_total_deadline_seconds - (self._clock() - started_at).total_seconds()
 
     # ---------------------------------------------------------------- Hydrogen
-    def _primary(self, evidence, with_search, started_at, totals) -> Tuple[Optional[_Attempt], Optional[str]]:
+    def _primary(self, inputs, with_search, started_at, totals) -> Tuple[Optional[_Attempt], Optional[str]]:
         """Devolve `(tentativa valida, None)`, `(None, "INFRA")` para ir ao fallback ou `(None, "FALHOU")`."""
         model_id = self._settings.model_default
         transient_failures, schema_retries = 0, 0
@@ -163,8 +209,8 @@ class LlmRunner:
         number = 0
         while self._remaining(started_at) > 0:
             number += 1
-            request = self._build_request(evidence, model_id, with_search, violations, self._remaining(started_at))
-            spec = _AttemptSpec(evidence, model_id, with_search, request, schema_retries > 0, number, totals)
+            request = self._build_request(inputs, model_id, with_search, violations, self._remaining(started_at))
+            spec = _AttemptSpec(inputs, model_id, with_search, request, schema_retries > 0, number, totals)
             try:
                 attempt = self._attempt(spec)
             except (LlmTransientError, LlmQuotaExhaustedError):
@@ -186,12 +232,12 @@ class LlmRunner:
         return None, "FALHOU"
 
     # ---------------------------------------------------------------- Flash
-    def _fallback(self, evidence, started_at, totals) -> Optional[_Attempt]:
+    def _fallback(self, inputs, started_at, totals) -> Optional[_Attempt]:
         if self._remaining(started_at) <= 0:
             return None
         model_id = self._settings.model_fallback
-        request = self._build_request(evidence, model_id, False, [], self._remaining(started_at))
-        spec = _AttemptSpec(evidence, model_id, False, request, True, 1, totals)
+        request = self._build_request(inputs, model_id, False, [], self._remaining(started_at))
+        spec = _AttemptSpec(inputs, model_id, False, request, True, 1, totals)
         try:
             attempt = self._attempt(spec)
         except LlmError:
@@ -199,20 +245,22 @@ class LlmRunner:
         return attempt if attempt.validation.ok else None
 
     # ---------------------------------------------------------------- entrada
-    def run(self, evidence: EvidencePackage, with_search: bool) -> RunResult:
-        started_at = self._clock()
+    def run(self, inputs: DiagnosisInputs, started_at: Optional[datetime] = None) -> RunResult:
+        """`started_at` abre o prazo total (125 s): o chamador passa o inicio do radar para somar radar + diagnostico."""
+        started_at = started_at or self._clock()
         totals = _Totals()
+        with_search = inputs.product_query is not None
         try:
-            attempt, reason = self._primary(evidence, with_search, started_at, totals)
+            attempt, reason = self._primary(inputs, with_search, started_at, totals)
             is_fallback = False
             if attempt is None and reason == "INFRA":
-                attempt = self._fallback(evidence, started_at, totals)
+                attempt = self._fallback(inputs, started_at, totals)
                 is_fallback = attempt is not None
         except (BudgetDenied, BudgetUnavailable):
             return RunResult(failure="ORCAMENTO_ESGOTADO", cost_usd=totals.cost, queries=totals.queries)
         if attempt is None:
             return RunResult(failure="IA_FALHOU", avisos=["IA_FALHOU"], cost_usd=totals.cost, queries=totals.queries)
-        avisos = ["SEM_BUSCA_EXTERNA"] if is_fallback and with_search else []
+        avisos = ["SEM_BUSCA_EXTERNA"] if is_fallback and with_search and inputs.radar is None else []
         return RunResult(
             response=attempt.response, validation=attempt.validation, model_id=attempt.response.model_id,
             is_fallback=is_fallback, cost_usd=totals.cost, queries=totals.queries, avisos=avisos,
@@ -231,7 +279,7 @@ class _Totals:
 
 @dataclass
 class _AttemptSpec:
-    evidence: EvidencePackage
+    inputs: DiagnosisInputs
     model_id: str
     with_search: bool
     request: LlmRequest

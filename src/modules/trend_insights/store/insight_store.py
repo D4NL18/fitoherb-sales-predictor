@@ -47,19 +47,24 @@ class StoredInsight:
     output_tokens: int
     queries: int
     sugestoes_busca_html: Optional[str] = None
+    radar_ref: Optional[Dict[str, Any]] = None  # radar usado (so referencia): o cache do diagnostico nao depende dele
 
     def is_expired(self, now: datetime, ttl_days: int = INSIGHT_SOFT_TTL_DAYS) -> bool:
-        """So diagnosticos com fator externo envelhecem por tempo (P-175.6)."""
+        """Envelhece por tempo todo diagnostico com dimensao externa (P-175.6; na v3, todo diagnostico por LLM)."""
         if not self.has_external_factor:
             return False
         return now - datetime.fromisoformat(self.gerado_em) > timedelta(days=ttl_days)
 
     def to_json(self) -> Dict[str, Any]:
-        return asdict(self)
+        document = asdict(self)
+        document["radarRef"] = document.pop("radar_ref")
+        return document
 
     @classmethod
     def from_json(cls, payload: Dict[str, Any]) -> "StoredInsight":
-        return cls(**payload)
+        fields = dict(payload)
+        fields["radar_ref"] = fields.pop("radarRef", None)
+        return cls(**fields)
 
 
 class InsightStore:

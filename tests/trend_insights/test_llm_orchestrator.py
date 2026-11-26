@@ -142,21 +142,25 @@ def _suggested_queries(request):
     return [line for line in request.user_prompt.splitlines() if line.startswith("- ")]
 
 
-def test_free_quota_available_suggests_two_queries():
-    rig = make_rig(llm=FakeLlm([make_llm_response(queries=2)]))
+# SUPERADOS pela v3.1 (STATE_Testes, ADR-009 DA-13): a busca do produto so liga SEM radar utilizavel e sugere SEMPRE
+# 1 consulta (`PRODUCT_SEARCH_MAX_QUERIES`); a cota gratis deixou de alterar o numero de consultas sugeridas e, no
+# teto duro de consultas, nenhuma busca e feita (nunca se paga busca de proposito). Estes casos usam o orquestrador
+# sem `RadarService` (radar ausente = SEM_RADAR); a versao com radar esta em `test_radar_orchestrator.py`.
+def test_without_radar_and_high_residual_suggests_a_single_product_query():
+    rig = make_rig(llm=FakeLlm([make_llm_response(queries=1)]))
     _go(rig, make_evidence(residual_share=0.6))
     request = rig.llm.calls[0]
     assert request.use_search_grounding is True
-    assert len(_suggested_queries(request)) == 2 and "no maximo 2 busca" in request.user_prompt
-
-
-def test_paid_search_is_capped_at_one_suggested_query():
-    # cota gratis esgotada no livro: cada consulta custa, entao so a de maior valor e sugerida
-    rig = make_rig(llm=FakeLlm([make_llm_response(queries=1)]))
-    seed_budget(rig, month=0.0, queries=1500)
-    _go(rig, make_evidence(residual_share=0.6))
-    request = rig.llm.calls[0]
     assert len(_suggested_queries(request)) == 1 and "no maximo 1 busca" in request.user_prompt
+
+
+def test_hard_cap_reached_disables_product_search_even_without_radar():
+    rig = make_rig(llm=FakeLlm([make_llm_response()]))
+    seed_budget(rig, month=0.0, queries=1500)
+    out = _go(rig, make_evidence(residual_share=0.6))
+    request = rig.llm.calls[0]
+    assert request.use_search_grounding is False and _suggested_queries(request) == []
+    assert "SEM_RADAR_EXTERNO" in out.avisos
 
 
 def test_no_free_quota_configured_means_paid_mode_from_the_first_query():
@@ -230,9 +234,10 @@ def test_request_params_hydrogen_low_thinking_no_temperature():
     assert req.response_schema is not None
 
 
-def test_total_deadline_110s_skips_flash_when_exhausted():
+def test_total_deadline_125s_skips_flash_when_exhausted():
+    # SUPERADO (v3.1): o prazo total passou de 110 s para 125 s (P-183.5); 70 s por chamada esgota os 125 s.
     err = _ex().LlmTransientError
-    rig = make_rig(llm=FakeLlm([err(), err(), make_llm_response(model=FLASH)]), seconds_per_call=55)
+    rig = make_rig(llm=FakeLlm([err(), err(), make_llm_response(model=FLASH)]), seconds_per_call=70)
     out = _go(rig)
     assert FLASH not in rig.llm.models and out.origem == "template" and "IA_FALHOU" in out.avisos
 

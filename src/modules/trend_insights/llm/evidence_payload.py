@@ -15,6 +15,7 @@ from src.modules.trend_insights.domain.constants import (
     MAX_EVIDENCE_PAYLOAD_CHARS,
     MAX_GALLERY_DESCRIPTION_CHARS,
     MAX_MIGRATION_PAIRS_IN_PAYLOAD,
+    MAX_RADAR_CONTEXT_CHARS,
     MAX_UFS_IN_PAYLOAD,
     MIN_GALLERY_DESCRIPTION_CHARS,
     MIN_PARCEL_SHARE_IN_PAYLOAD,
@@ -233,3 +234,36 @@ def compute_evidence_hash(evidence: EvidencePackage) -> str:
     payload["janela"] = {key: value for key, value in payload["janela"].items() if key != "fontes"}
     payload["galeria"] = sanitize_gallery_description(evidence.data["produto"].get("descricao_galeria"))
     return hashlib.sha256(_dump(payload).encode("utf-8")).hexdigest()
+
+
+# ------------------------------------------------------------------ radar externo (fora do evidenceHash)
+def _radar_dimension_payload(dimension: Mapping[str, Any]) -> Dict[str, Any]:
+    return {
+        "dimensao": dimension["dimensao"], "status": dimension["status"], "movimento": dimension["movimento"],
+        "intensidade": dimension.get("intensidade"), "tema": dimension.get("tema"),
+        "fonteIds": list(dimension.get("fonteIds") or []),
+    }
+
+
+def _radar_source_months(radar: Any) -> Dict[str, str]:
+    """Mes (AAAA-MM) de cada fonte: so o necessario para o modelo; nunca URL, dominio ou titulo (dado da web)."""
+    months = {s["id"]: (s.get("dataPublicacao") or "")[:7] for s in radar.sources}
+    return {sid: month for sid, month in months.items() if month}
+
+
+def build_radar_block(radar: Any, nonce: str) -> str:
+    """
+    Bloco `<radar_externo_{nonce}>` do diagnostico (P-179, P-184.6): JSON compacto do radar tratado como DADO, com
+    ids e mes das fontes, sem URL/titulo e sem dado de cliente, ate `MAX_RADAR_CONTEXT_CHARS`. Fica FORA do
+    `evidenceHash` (o cache do diagnostico nao depende do radar).
+    """
+    payload = {
+        "assunto": radar.term, "mesBase": radar.base_month,
+        "dimensoes": [_radar_dimension_payload(d) for d in radar.dimensions],
+        "mesDasFontes": _radar_source_months(radar),
+    }
+    text = _dump(payload)
+    if len(text) > MAX_RADAR_CONTEXT_CHARS:  # pior caso: descarta datas das fontes antes de cortar qualquer dimensao
+        payload["mesDasFontes"] = {}
+        text = _dump(payload)
+    return f"<radar_externo_{nonce}>\n{text}\n</radar_externo_{nonce}>"
