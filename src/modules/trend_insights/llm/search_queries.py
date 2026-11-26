@@ -56,8 +56,10 @@ def search_query_limit(evidence: EvidencePackage, is_paid_search: bool) -> int:
     return MAX_SEARCH_QUERIES_PAID if is_paid_search else MAX_SEARCH_QUERIES
 
 
-def build_search_queries(evidence: EvidencePackage, limit: int = MAX_SEARCH_QUERIES) -> List[str]:
-    """Ate `limit` consultas, em ordem de prioridade."""
+def build_search_queries(evidence: EvidencePackage, limit: Optional[int] = None) -> List[str]:
+    """Ate `limit` consultas (padrao: search_query_limit, cota gratis), em ordem de prioridade."""
+    if limit is None:
+        limit = search_query_limit(evidence, False)
     term = _category_term(evidence)
     if not term:
         return []
